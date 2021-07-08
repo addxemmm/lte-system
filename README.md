@@ -231,4 +231,4 @@ ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff1
 
 ​	主要需要填写的为IMSI,KI,OP或者OPC,这几项需要与user_db.cv的数据对应,其他参数可以根据个人需要进行修改
 
-<img src="./image/card" alt="card" style="zoom:50%;" />
+<img src="./image/card.png" alt="card" style="zoom:50%;" />
