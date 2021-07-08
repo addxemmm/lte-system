@@ -150,7 +150,7 @@ ipaddress:8081/allinfo # 连接终端后获取更多的信息
 
 #### 4. allinfo
 
-	##### Request
+#####  Request
 
 ​	此功能无需参数
 
