@@ -1,5 +1,10 @@
 ## LTE白卡套件部署与使用
 
+### 版本更新记录
+
++ V1.0：初代项目
++ V1.1：增加user_db.csv与wordlist.list上传接口
+
 ### 一. 运行环境&设备要求
 
 * 操作系统 : 物理机运行Ubuntu20.04及以上;
@@ -13,13 +18,13 @@
 * docker镜像已推送至实验室服务器，可以在NERV下直接拉取
 
 ```bash
-docker pull https://registry.jiahao.li/addx/srslte:1.0
+docker pull https://registry.jiahao.li/addx/srslte:1.1
 ```
 
 * 容器启动命令
 
 ```bash
-docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srslte srslte:1.0
+docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srslte srslte:1.1
 ```
 
 宿主机USB整体映射到容器之中，已连接USRP B210这一USB设备;
@@ -35,6 +40,8 @@ ipaddress:8081/start # 启动LTE设备
 ipaddress:8081/stop # 停止LTE设备
 ipaddress:8081/basicinfo # 连接终端设备后获取基础信息
 ipaddress:8081/allinfo # 连接终端后获取更多的信息
+ipaddress:8081/userupload # user_db.csv文件上传
+ipaddress:8081/passwordupload # worldlist.list文件上传 
 ```
 
 #### 1. start
@@ -192,13 +199,65 @@ ipaddress:8081/allinfo # 连接终端后获取更多的信息
 
 + 执行该操作,会先关闭LTE设备,在读取信息,请注意.
 + 同basicinfo,只能获取到第一个连接至设备的终端设备信息,推荐只连接一个终端设备.
-+ 直接获取到的信息,密码为hash,需要使用hashcat和字典进行爆破,字典导入方式目前需要手动导入,如需要更多字典数据,请直接上传字典文件到docker的`/home/workspace`文件夹下,字典名字为` wordlist.list` 
++ 直接获取到的信息,密码为hash,需要使用hashcat和字典进行爆破,字典导入方式请参考passwordupload接口使用方法
+#### 5. userupload
+
+#####  Request	![userupload](./image/userupload.png)
+
+##### Response
+
+``` 
+{"status": true, "message_id": 1, "message": "upload success"}
+```
+
++ status : 执行结果, 上传成功为true,其他为false
+
++ message_id : 响应结果id
+
++ message : 响应信息
+
++ message_id与message对应关系
+
+  | message_id | message        | 备注         |
+  | ---------- | -------------- | ------------ |
+  | 0          | upload failed  | 上传失败     |
+  | 1          | upload success | 上传成功     |
+  | 2          | no file        | 上传文件为空 |
+##### 注意事项
+	user_db.list格式请参考项目文件
+
+#### 6. passwordupload
+
+#####  Request
+
+​	![passwordupload](./image/passwordupload.png)
+
+##### Response
+
+``` 
+{"status": true, "message_id": 1, "message": "upload success"}
+```
+
++ status : 执行结果, 上传成功为true,其他为false
+
++ message_id : 响应结果id
+
++ message : 响应信息
++ message_id与message对应关系
+
+  | message_id | message        | 备注         |
+  | ---------- | -------------- | ------------ |
+  | 0          | upload failed  | 上传失败     |
+  | 1          | upload success | 上传成功     |
+  | 2          | no file        | 上传文件为空 |
+##### 注意事项
+	worldlist.list格式请参考项目文件
 
 ### 四. 写卡方法
 
 #### docker配置文件
 
-写入电话卡的参数,需要位于docker中的`/home/workspace/user_db.cv`中,否则无法连接至LTE基站,目前内部数据如下,如有需求请手动添加.
+写入电话卡的参数,需要位于docker中的`/home/workspace/user_db.cv`中,否则无法连接至LTE基站,目前内部数据如下,如有需求请通过userupload接口上传自定义文件
 
 ```
 #                                                                                           
