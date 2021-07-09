@@ -32,7 +32,7 @@
 * docker镜像已推送至实验室服务器，可以在NERV下直接拉取
 
 ```bash
-docker pull https://registry.jiahao.li/addx/srslte:1.1
+docker pull registry.jiahao.li/addx/srslte:1.1
 ```
 
 * 容器启动命令
