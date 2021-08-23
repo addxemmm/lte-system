@@ -22,8 +22,14 @@
 ### 一. 运行环境&设备要求
 
 * 操作系统 : 物理机运行Ubuntu20.04及以上;
+
 * 软件环境 : docker;
+
 * 硬件设备 : USRP B210, LTE白卡,ACR1281U;
+
+* 架构图：
+
+  ![ltesystem](./image/ltesystem.png)
 
 ### 二. docker镜像部署
 
@@ -47,7 +53,7 @@ docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srsl
 
 ### 三. 使用说明
 
-docker环境启动之后，该套件通过API提供服务，目前提供了4个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
+docker环境启动之后，该套件通过API提供服务，目前提供了6个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
 
 ```
 ipaddress:8081/start # 启动LTE设备
@@ -296,7 +302,12 @@ worldlist.list格式请参考项目文件
 ue2,mil,001010123456780,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8000,0000000030c8,7,dynamic
 ue1,xor,001010123456789,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,9001,000000001234,7,dynamic
 ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000002b12,7,dynamic
+
 ```
+
+##### 注意事项：
+
+​	请在最后留一行空格，无责无法正确读取配置
 
 #### 写卡方式
 
