@@ -1,0 +1,48 @@
+03:58:01.392905 
+
+
+03:58:01.392925 Built in RelWithDebInfo mode using 20.10.1.
+
+03:58:01.392926 
+---  Software Radio Systems EPC log ---
+
+
+03:58:01.398671 [EPC ] [I] Using binary srsepc with arguments: /home/workspace/conf/epc_run.conf 
+03:58:01.398720 [HSS ] [I] Opened DB file: /home/workspace/conf/user_db.csv
+03:58:01.398976 [HSS ] [I] HSS Initialized. DB file /home/workspace/conf/user_db.csv, MCC: 61441, MNC: 65281
+03:58:01.416157 [S1AP] [I] S1-MME Initializing
+03:58:01.416439 [S1AP] [I] S1AP Initialized
+03:58:01.416445 [MME GTPC] [I] Initializing MME S11 interface.
+03:58:01.416456 [MME GTPC] [I] MME S11 Initialized
+03:58:01.416472 [MME GTPC] [I] MME GTP-C Initialized
+03:58:01.416479 [S1AP] [I] MME Initialized. MCC: 0xf001, MNC: 0xff01
+03:58:01.416496 [GTPU] [I] TUN file descriptor = 7
+03:58:01.418175 [GTPU] [I] Initialized SGi interface
+03:58:01.418190 [GTPU] [I] S1-U socket = 8
+03:58:01.418193 [GTPU] [I] S1-U IP = 127.0.1.100, Port = 2152 
+03:58:01.418194 [GTPU] [I] Initialized S1-U interface
+03:58:01.418196 [GTPU] [I] SPGW GTP-U Initialized.
+03:58:01.418207 [SPGW GTPC] [I] Initializing SPGW S11 interface.
+03:58:01.418408 [SPGW GTPC] [I] SPGW S11 Initialized.
+03:58:01.418420 [SPGW] [I] SP-GW Initialized.
+03:58:01.418569 [GTPU] [W] IPv6 not supported yet.
+03:58:05.434253 [GTPU] [W] IPv6 not supported yet.
+03:58:13.434255 [GTPU] [W] IPv6 not supported yet.
+03:58:15.976010 [S1AP] [I] Received S1AP msg. Size: 49
+03:58:15.977124 [S1AP] [I] Received Initiating PDU
+03:58:15.977131 [S1AP] [I] Received S1 Setup Request.
+03:58:15.977159 [S1AP] [I] Received S1 Setup Request.
+03:58:15.977174 [S1AP] [I] S1 Setup Request - eNB Name: srsenb01, eNB id: 0x0
+03:58:15.977177 [S1AP] [I] S1 Setup Request - MCC:001, MNC:01, PLMN: 61712
+03:58:15.977182 [S1AP] [I] S1 Setup Request - TAC 7, B-PLMN 0xf110
+03:58:15.977192 [S1AP] [I] Adding new eNB context. eNB ID 0
+03:58:15.977469 [S1AP] [I] Sending S1 Setup Response
+03:58:29.306256 [GTPU] [W] IPv6 not supported yet.
+03:58:59.003259 [GTPU] [W] IPv6 not supported yet.
+04:00:01.979259 [GTPU] [W] IPv6 not supported yet.
+04:02:08.954256 [GTPU] [W] IPv6 not supported yet.
+04:06:22.906258 [GTPU] [W] IPv6 not supported yet.
+04:14:59.002255 [GTPU] [W] IPv6 not supported yet.
+04:31:22.042260 [GTPU] [W] IPv6 not supported yet.
+04:57:40.217793 [S1AP] [I] Deleting eNB context. eNB Id: 0x0
+04:57:40.229370 [HSS ] [I] Opened DB file: /home/workspace/conf/user_db.csv

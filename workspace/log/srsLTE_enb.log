@@ -1,0 +1,38 @@
+03:58:04.484767 [ENB ] [I] Using binary srsenb with arguments: /home/workspace/conf/enb_run.conf 
+03:58:04.528154 [ENB ] [I] Built in RelWithDebInfo mode using 20.10.1.
+03:58:04.534514 [RF  ] [I] Configuring physical DL channel 0 with band-pass filter (0.0, 0.0)
+03:58:04.534520 [RF  ] [I] Configuring physical UL channel 0 with band-pass filter (0.0, 0.0)
+03:58:15.622621 [PHY0] [I] [    0] Component Carrier Worker 0 configured cell 50 PRB
+03:58:15.622672 [PHY0] [I] [    0] Worker 0 configured cell 50 PRB
+03:58:15.783137 [PHY1] [I] [    0] Component Carrier Worker 0 configured cell 50 PRB
+03:58:15.783206 [PHY1] [I] [    0] Worker 0 configured cell 50 PRB
+03:58:15.943685 [PHY2] [I] [    0] Component Carrier Worker 0 configured cell 50 PRB
+03:58:15.943736 [PHY2] [I] [    0] Worker 0 configured cell 50 PRB
+03:58:15.952231 [RF  ] [I] Mapping RF channel 0 (device=0, channel=0) to logical carrier 0 on f_tx=2680.0 MHz
+03:58:15.959624 [MAC ] [I] [    0] Resetting MAC
+03:58:15.975708 [RRC ] [I] CC0 SIB payload - Tx systemInformationBlockType1 (15 B)
+03:58:15.975725 [RRC ] [I] CC0 SIB payload - Tx systemInformation (33 B)
+03:58:15.975731 [RRC ] [I] Allocating 2 PRBs for PUCCH
+03:58:15.975764 [RRC ] [I] T310 200, T311 10000, N310 1 
+03:58:15.975767 [RRC ] [I] Inactivity timeout: 30000 ms
+03:58:15.975772 [S1AP] [I] Proc "MME Connection" - Starting new MME connection.
+03:58:15.975775 [S1AP] [I] Connecting to MME 127.0.1.100:36412
+03:58:15.975908 [S1AP] [I] SCTP socket established with MME
+03:58:15.975942 [S1AP] [I] Sending s1SetupRequest to MME
+             0000: 00 11 00 2d 00 00 04 00 3b 00 08 00 00 f1 10 00 
+             0010: 00 00 00 00 3c 40 0a 03 80 73 72 73 65 6e 62 30 
+03:58:15.975977 [S1AP] [I] Proc "MME Connection" - S1SetupRequest sent. Waiting for response...
+03:58:15.976435 [RF  ] [I] Mapping RF channel 0 (device=0, channel=0) to logical carrier 0 on f_rx=2560.0 MHz
+03:58:15.977699 [S1AP] [I] Received S1AP PDU
+             0000: 20 11 00 25 00 00 03 00 3d 40 0a 03 80 73 72 73 
+             0010: 6d 6d 65 30 31 00 69 00 0b 00 00 00 f1 10 00 00 
+03:58:15.977724 [S1AP] [I] Received S1SetupResponse
+03:58:15.977729 [S1AP] [I] Proc "MME Connection" - S1Setup procedure completed successfully
+03:58:16.147334 [PHY0] [I] [    0] Starting RX/TX thread nof_prb=50, sf_len=11520
+04:57:40.218007 [S1AP] [I] SCTP Association Shutdown. Association: 0
+04:57:40.218007 [STCK] [I] ENBSOCKETS: The socket fd=15 has been closed by peer
+04:57:40.218052 [S1AP] [I] Proc "MME Connection" - Starting new MME connection.
+04:57:40.218057 [S1AP] [I] Connecting to MME 127.0.1.100:36412
+04:57:40.218139 [S1AP] [I] Proc "MME Connection" - Failed to initiate SCTP socket. Attempting reconnection in 10 seconds
+04:57:40.218152 [S1AP] [I] Proc "MME Connection" - S1AP socket closed.
+04:57:40.218156 [S1AP] [E] Failed to initiate MME connection procedure.

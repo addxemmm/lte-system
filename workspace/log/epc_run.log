@@ -1,0 +1,25 @@
+
+Built in RelWithDebInfo mode using 20.10.1.
+
+
+---  Software Radio Systems EPC  ---
+
+Reading configuration file /home/workspace/conf/epc_run.conf...
+HSS Initialized.
+MME S11 Initialized
+MME GTP-C Initialized
+MME Initialized. MCC: 0xf001, MNC: 0xff01
+SPGW GTP-U Initialized.
+SPGW S11 Initialized.
+SP-GW Initialized.
+Received S1 Setup Request.
+S1 Setup Request - eNB Name: srsenb01, eNB id: 0x0
+S1 Setup Request - MCC:001, MNC:01
+S1 Setup Request - TAC 7, B-PLMN 0xf110
+S1 Setup Request - Paging DRX v128
+Sending S1 Setup Response
+Stopping ..
+Deleting eNB context. eNB Id: 0x0
+Saving S1AP PCAP file
+
+---  exiting  ---
