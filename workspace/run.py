@@ -126,6 +126,7 @@ def stop_srsLTE():
         # # Waitting for srsLTE stop.
         # os.system("sleep 3")
         subprocess.call(["bash", current_path+"/stop.sh"])
+        os.system("sleep 1.5")
         ps_command_resault = os.popen("ps -aux | grep -v 'grep' | grep srs").read()
         if(len(ps_command_resault) == 0):
             status = True
