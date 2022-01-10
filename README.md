@@ -254,7 +254,7 @@ ipaddress:8081/passwordupload # worldlist.list文件上传
   | 1          | upload success | 上传成功     |
   | 2          | no file        | 上传文件为空 |
 ##### 注意事项
-	user_db.list格式请参考项目文件
+	user_db.csv格式请参考项目文件
 
 #### 6. passwordupload
 
@@ -287,7 +287,7 @@ worldlist.list格式请参考项目文件
 
 #### docker配置文件
 
-写入电话卡的参数,需要位于docker中的`/home/workspace/user_db.cv`中,否则无法连接至LTE基站,目前内部数据如下,如有需求请通过userupload接口上传自定义文件
+写入电话卡的参数,需要位于docker中的`/home/workspace/user_db.csv`中,否则无法连接至LTE基站,目前内部数据如下,如有需求请通过userupload接口上传自定义文件
 
 ```
 #                                                                                           
