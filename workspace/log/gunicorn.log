@@ -1,791 +1,8 @@
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:09:13 2021
-[2KStopped: Wed Jul  7 10:09:13 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:09:43 2021
-[2KStopped: Wed Jul  7 10:09:43 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=, the log is in /home/workspace/log/enb_run.log
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=, the log is in /home/workspace/log/enb_run.log
-4297 4405
-4287 4401
-srsenb pid: 4297
-4405 are stopping......
-srsenb close complete......
-srsepc pid: 4287
-4401 are stopping......
- srsepc close complete......
-4424
-4420
-srsenb pid: 4424 are stopping......
-srsenb close complete......
-srsepc pid: 4420 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=4541, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=4552, the log is in /home/workspace/log/enb_run.log
-4552
-4541
-srsenb pid: 4552 are stopping......
-srsenb close complete......
-srsepc pid: 4541 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=4694, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=4705, the log is in /home/workspace/log/enb_run.log
-4705
-4694
-srsenb pid: 4705 are stopping......
-srsenb close complete......
-srsepc pid: 4694 are stopping......
- srsepc close complete......
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KGenerating bitmap tables...[2KGenerated bitmap tables...[2KHashes: 1 digests; 1 unique digests, 1 unique salts
-Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
-Rules: 1
-
-Applicable optimizers:
-* Zero-Byte
-* Early-Skip
-* Not-Iterated
-* Single-Hash
-* Single-Salt
-* Raw-Hash
-
-Minimum password length supported by kernel: 0
-Maximum password length supported by kernel: 256
-Minimim salt length supported by kernel: 0
-Maximum salt length supported by kernel: 256
-
-[33mATTENTION! Pure (unoptimized) OpenCL kernels selected.[0m
-[33mThis enables cracking passwords and salts > length 32 but for the price of drastically reduced performance.[0m
-[33mIf you want to switch to optimized OpenCL kernels, append -O to your commandline.[0m
-[33m[0m
-Watchdog: Hardware monitoring interface not found on your system.
-Watchdog: Temperature abort trigger disabled.
-
-Initializing device kernels and memory...[2KInitializing OpenCL runtime for device #1...[2K[33m* Device #1: build_opts '-cl-std=CL1.2 -I OpenCL -I /usr/share/hashcat/OpenCL -D LOCAL_MEM_TYPE=2 -D VENDOR_ID=64 -D CUDA_ARCH=0 -D AMD_ROCM=0 -D VECT_SIZE=8 -D DEVICE_TYPE=2 -D DGST_R0=0 -D DGST_R1=3 -D DGST_R2=2 -D DGST_R3=1 -D DGST_ELEM=4 -D KERN_TYPE=4800 -D _unroll'[0m
-Initialized OpenCL runtime for device #1...[2KInitialized device kernels and memory...[2KDictionary cache hit:
-* Filename..: /home/workspace/wordlist.list
-* Passwords.: 29
-* Bytes.....: 266
-* Keyspace..: 29
-
-[33mThe wordlist or mask that you are using is too small.[0m
-[33mThis means that hashcat cannot use the full parallel power of your device(s).[0m
-[33mUnless you supply more work, your cracking speed will drop.[0m
-[33mFor tips on supplying more work, see: https://hashcat.net/faq/morework[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  [33mApproaching final keyspace - workload adjusted.[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  53d7ba7b8dffbe3ffcbb4668afeba6a6:1f74eaea1f74eaea1f74eaea1f74eaea:00:test123
-                                                 
-Session..........: hashcat
-Status...........: Cracked
-Hash.Type........: iSCSI CHAP authentication, MD5(CHAP)
-Hash.Target......: 53d7ba7b8dffbe3ffcbb4668afeba6a6:1f74eaea1f74eaea1f...aea:00
-Time.Started.....: Wed Jul  7 10:56:33 2021 (0 secs)
-Time.Estimated...: Wed Jul  7 10:56:33 2021 (0 secs)
-Guess.Base.......: File (/home/workspace/wordlist.list)
-Guess.Queue......: 1/1 (100.00%)
-Speed.#1.........:      366 H/s (0.07ms) @ Accel:1024 Loops:1 Thr:1 Vec:8
-Recovered........: 1/1 (100.00%) Digests, 1/1 (100.00%) Salts
-Progress.........: 29/29 (100.00%)
-Rejected.........: 0/29 (0.00%)
-Restore.Point....: 0/29 (0.00%)
-Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:0-1
-Candidates.#1....: passwd -> apple
-
-Started: Wed Jul  7 10:56:31 2021
-[2KStopped: Wed Jul  7 10:56:35 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:59:02 2021
-[2KStopped: Wed Jul  7 10:59:02 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:59:13 2021
-[2KStopped: Wed Jul  7 10:59:13 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:59:14 2021
-[2KStopped: Wed Jul  7 10:59:14 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:59:31 2021
-[2KStopped: Wed Jul  7 10:59:31 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 10:59:32 2021
-[2KStopped: Wed Jul  7 10:59:33 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=5267, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=5278, the log is in /home/workspace/log/enb_run.log
-5278
-5267
-srsenb pid: 5278 are stopping......
-srsenb close complete......
-srsepc pid: 5267 are stopping......
- srsepc close complete......
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KGenerating bitmap tables...[2KGenerated bitmap tables...[2KHashes: 1 digests; 1 unique digests, 1 unique salts
-Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
-Rules: 1
-
-Applicable optimizers:
-* Zero-Byte
-* Early-Skip
-* Not-Iterated
-* Single-Hash
-* Single-Salt
-* Raw-Hash
-
-Minimum password length supported by kernel: 0
-Maximum password length supported by kernel: 256
-Minimim salt length supported by kernel: 0
-Maximum salt length supported by kernel: 256
-
-[33mATTENTION! Pure (unoptimized) OpenCL kernels selected.[0m
-[33mThis enables cracking passwords and salts > length 32 but for the price of drastically reduced performance.[0m
-[33mIf you want to switch to optimized OpenCL kernels, append -O to your commandline.[0m
-[33m[0m
-Watchdog: Hardware monitoring interface not found on your system.
-Watchdog: Temperature abort trigger disabled.
-
-Initializing device kernels and memory...[2KInitializing OpenCL runtime for device #1...[2K[33m* Device #1: build_opts '-cl-std=CL1.2 -I OpenCL -I /usr/share/hashcat/OpenCL -D LOCAL_MEM_TYPE=2 -D VENDOR_ID=64 -D CUDA_ARCH=0 -D AMD_ROCM=0 -D VECT_SIZE=8 -D DEVICE_TYPE=2 -D DGST_R0=0 -D DGST_R1=3 -D DGST_R2=2 -D DGST_R3=1 -D DGST_ELEM=4 -D KERN_TYPE=4800 -D _unroll'[0m
-Initialized OpenCL runtime for device #1...[2KInitialized device kernels and memory...[2KDictionary cache hit:
-* Filename..: /home/workspace/wordlist.list
-* Passwords.: 29
-* Bytes.....: 266
-* Keyspace..: 29
-
-[33mThe wordlist or mask that you are using is too small.[0m
-[33mThis means that hashcat cannot use the full parallel power of your device(s).[0m
-[33mUnless you supply more work, your cracking speed will drop.[0m
-[33mFor tips on supplying more work, see: https://hashcat.net/faq/morework[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  [33mApproaching final keyspace - workload adjusted.[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  eabee0a7e31e223bc3c9928410a8b7ae:3d0df1f13d0df1f13d0df1f13d0df1f1:00:cmwap
-                                                 
-Session..........: hashcat
-Status...........: Cracked
-Hash.Type........: iSCSI CHAP authentication, MD5(CHAP)
-Hash.Target......: eabee0a7e31e223bc3c9928410a8b7ae:3d0df1f13d0df1f13d...1f1:00
-Time.Started.....: Wed Jul  7 11:01:24 2021 (0 secs)
-Time.Estimated...: Wed Jul  7 11:01:24 2021 (0 secs)
-Guess.Base.......: File (/home/workspace/wordlist.list)
-Guess.Queue......: 1/1 (100.00%)
-Speed.#1.........:      367 H/s (0.03ms) @ Accel:1024 Loops:1 Thr:1 Vec:8
-Recovered........: 1/1 (100.00%) Digests, 1/1 (100.00%) Salts
-Progress.........: 29/29 (100.00%)
-Rejected.........: 0/29 (0.00%)
-Restore.Point....: 0/29 (0.00%)
-Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:0-1
-Candidates.#1....: passwd -> apple
-
-Started: Wed Jul  7 11:01:22 2021
-[2KStopped: Wed Jul  7 11:01:26 2021
-{"status": false, "message_id": 2, "message": "Not running."}
-{"status": true, "message_id": 1, "message": "Getting information success.", "apn": "justtest", "imsi": "001010123456780", "ip": "172.16.0.2", "username": "mi6", "password": "test123"}
-{"status": false, "message_id": 2, "message": "Not running."}
-{"status": true, "message_id": 1, "message": "Getting information success.", "apn": "justtest", "imsi": "001010123456780", "ip": "172.16.0.2", "username": "mi6", "password": "test123"}
-{"status": false, "message_id": 2, "message": "Not running."}
-{"status": true, "message_id": 1, "message": "Start successfully"}
-{"status": true, "message_id": 1, "message": "Getting information success.", "apn": "skygoapn", "imsi": "001010123456780", "ip": "172.16.0.2"}
-{"status": true, "message_id": 1, "message": "Getting information success.", "apn": "skygoapn", "imsi": "001010123456780", "ip": "172.16.0.2"}
-{"status": true, "message_id": 1, "message": "Stop successfully."}
-{"status": true, "message_id": 1, "message": "Getting information success.", "apn": "skygoapn", "imsi": "001010123456780", "ip": "172.16.0.2", "username": "mi6test", "password": "cmwap"}
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 11:41:01 2021
-[2KStopped: Wed Jul  7 11:41:01 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 11:43:23 2021
-[2KStopped: Wed Jul  7 11:43:23 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 11:43:25 2021
-[2KStopped: Wed Jul  7 11:43:25 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 11:49:04 2021
-[2KStopped: Wed Jul  7 11:49:04 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 11:49:06 2021
-[2KStopped: Wed Jul  7 11:49:06 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=200, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=211, the log is in /home/workspace/log/enb_run.log
-211
-200
-srsenb pid: 211 are stopping......
-srsenb close complete......
-srsepc pid: 200 are stopping......
- srsepc close complete......
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KGenerating bitmap tables...[2KGenerated bitmap tables...[2KHashes: 1 digests; 1 unique digests, 1 unique salts
-Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
-Rules: 1
-
-Applicable optimizers:
-* Zero-Byte
-* Early-Skip
-* Not-Iterated
-* Single-Hash
-* Single-Salt
-* Raw-Hash
-
-Minimum password length supported by kernel: 0
-Maximum password length supported by kernel: 256
-Minimim salt length supported by kernel: 0
-Maximum salt length supported by kernel: 256
-
-[33mATTENTION! Pure (unoptimized) OpenCL kernels selected.[0m
-[33mThis enables cracking passwords and salts > length 32 but for the price of drastically reduced performance.[0m
-[33mIf you want to switch to optimized OpenCL kernels, append -O to your commandline.[0m
-[33m[0m
-Watchdog: Hardware monitoring interface not found on your system.
-Watchdog: Temperature abort trigger disabled.
-
-Initializing device kernels and memory...[2KInitializing OpenCL runtime for device #1...[2K[33m* Device #1: build_opts '-cl-std=CL1.2 -I OpenCL -I /usr/share/hashcat/OpenCL -D LOCAL_MEM_TYPE=2 -D VENDOR_ID=64 -D CUDA_ARCH=0 -D AMD_ROCM=0 -D VECT_SIZE=8 -D DEVICE_TYPE=2 -D DGST_R0=0 -D DGST_R1=3 -D DGST_R2=2 -D DGST_R3=1 -D DGST_ELEM=4 -D KERN_TYPE=4800 -D _unroll'[0m
-Initialized OpenCL runtime for device #1...[2KInitialized device kernels and memory...[2KDictionary cache built:
-* Filename..: /home/workspace/wordlist.list
-* Passwords.: 29
-* Bytes.....: 267
-* Keyspace..: 29
-* Runtime...: 0 secs
-
-[33mThe wordlist or mask that you are using is too small.[0m
-[33mThis means that hashcat cannot use the full parallel power of your device(s).[0m
-[33mUnless you supply more work, your cracking speed will drop.[0m
-[33mFor tips on supplying more work, see: https://hashcat.net/faq/morework[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  [33mApproaching final keyspace - workload adjusted.[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  b8d08b5d2e54780c41782751e58a04f1:f5bf1d1df5bf1d1df5bf1d1df5bf1d1d:00:cmwap
-                                                 
-Session..........: hashcat
-Status...........: Cracked
-Hash.Type........: iSCSI CHAP authentication, MD5(CHAP)
-Hash.Target......: b8d08b5d2e54780c41782751e58a04f1:f5bf1d1df5bf1d1df5...d1d:00
-Time.Started.....: Wed Jul  7 11:50:17 2021 (1 sec)
-Time.Estimated...: Wed Jul  7 11:50:18 2021 (0 secs)
-Guess.Base.......: File (/home/workspace/wordlist.list)
-Guess.Queue......: 1/1 (100.00%)
-Speed.#1.........:      368 H/s (0.03ms) @ Accel:1024 Loops:1 Thr:1 Vec:8
-Recovered........: 1/1 (100.00%) Digests, 1/1 (100.00%) Salts
-Progress.........: 29/29 (100.00%)
-Rejected.........: 0/29 (0.00%)
-Restore.Point....: 0/29 (0.00%)
-Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:0-1
-Candidates.#1....: passwd -> apple
-
-Started: Wed Jul  7 11:50:16 2021
-[2KStopped: Wed Jul  7 11:50:19 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 12:33:15 2021
-[2KStopped: Wed Jul  7 12:33:16 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=128, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=139, the log is in /home/workspace/log/enb_run.log
-139
-128
-srsenb pid: 139 are stopping......
-srsenb close complete......
-srsepc pid: 128 are stopping......
- srsepc close complete......
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KGenerating bitmap tables...[2KGenerated bitmap tables...[2KHashes: 1 digests; 1 unique digests, 1 unique salts
-Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
-Rules: 1
-
-Applicable optimizers:
-* Zero-Byte
-* Early-Skip
-* Not-Iterated
-* Single-Hash
-* Single-Salt
-* Raw-Hash
-
-Minimum password length supported by kernel: 0
-Maximum password length supported by kernel: 256
-Minimim salt length supported by kernel: 0
-Maximum salt length supported by kernel: 256
-
-[33mATTENTION! Pure (unoptimized) OpenCL kernels selected.[0m
-[33mThis enables cracking passwords and salts > length 32 but for the price of drastically reduced performance.[0m
-[33mIf you want to switch to optimized OpenCL kernels, append -O to your commandline.[0m
-[33m[0m
-Watchdog: Hardware monitoring interface not found on your system.
-Watchdog: Temperature abort trigger disabled.
-
-Initializing device kernels and memory...[2KInitializing OpenCL runtime for device #1...[2K[33m* Device #1: build_opts '-cl-std=CL1.2 -I OpenCL -I /usr/share/hashcat/OpenCL -D LOCAL_MEM_TYPE=2 -D VENDOR_ID=64 -D CUDA_ARCH=0 -D AMD_ROCM=0 -D VECT_SIZE=8 -D DEVICE_TYPE=2 -D DGST_R0=0 -D DGST_R1=3 -D DGST_R2=2 -D DGST_R3=1 -D DGST_ELEM=4 -D KERN_TYPE=4800 -D _unroll'[0m
-Initialized OpenCL runtime for device #1...[2KInitialized device kernels and memory...[2KDictionary cache built:
-* Filename..: /home/workspace/wordlist.list
-* Passwords.: 29
-* Bytes.....: 267
-* Keyspace..: 29
-* Runtime...: 0 secs
-
-[33mThe wordlist or mask that you are using is too small.[0m
-[33mThis means that hashcat cannot use the full parallel power of your device(s).[0m
-[33mUnless you supply more work, your cracking speed will drop.[0m
-[33mFor tips on supplying more work, see: https://hashcat.net/faq/morework[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  [33mApproaching final keyspace - workload adjusted.[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  7f919e16437de4c35a862de8b6417948:7b1846467b1846467b1846467b184646:00:cmwap
-                                                 
-Session..........: hashcat
-Status...........: Cracked
-Hash.Type........: iSCSI CHAP authentication, MD5(CHAP)
-Hash.Target......: 7f919e16437de4c35a862de8b6417948:7b1846467b1846467b...646:00
-Time.Started.....: Wed Jul  7 12:34:00 2021 (1 sec)
-Time.Estimated...: Wed Jul  7 12:34:01 2021 (0 secs)
-Guess.Base.......: File (/home/workspace/wordlist.list)
-Guess.Queue......: 1/1 (100.00%)
-Speed.#1.........:      367 H/s (0.02ms) @ Accel:1024 Loops:1 Thr:1 Vec:8
-Recovered........: 1/1 (100.00%) Digests, 1/1 (100.00%) Salts
-Progress.........: 29/29 (100.00%)
-Rejected.........: 0/29 (0.00%)
-Restore.Point....: 0/29 (0.00%)
-Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:0-1
-Candidates.#1....: passwd -> apple
-
-Started: Wed Jul  7 12:33:59 2021
-[2KStopped: Wed Jul  7 12:34:02 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Wed Jul  7 12:34:07 2021
-[2KStopped: Wed Jul  7 12:34:07 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Thu Jul  8 09:07:29 2021
-[2KStopped: Thu Jul  8 09:07:29 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=, the log is in /home/workspace/log/enb_run.log
-103
-92
-srsenb pid: 103 are stopping......
-srsenb close complete......
-srsepc pid: 92 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=237, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=248, the log is in /home/workspace/log/enb_run.log
-{"status": false, "message_id": 2, "message": "Is not running, please start first.", "apn": null, "imsi": null, "ip": null}
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=, the log is in /home/workspace/log/enb_run.log
-137
-126
-srsenb pid: 137 are stopping......
-srsenb close complete......
-srsepc pid: 126 are stopping......
- srsepc close complete......
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KGenerating bitmap tables...[2KGenerated bitmap tables...[2KHashes: 1 digests; 1 unique digests, 1 unique salts
-Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
-Rules: 1
-
-Applicable optimizers:
-* Zero-Byte
-* Early-Skip
-* Not-Iterated
-* Single-Hash
-* Single-Salt
-* Raw-Hash
-
-Minimum password length supported by kernel: 0
-Maximum password length supported by kernel: 256
-Minimim salt length supported by kernel: 0
-Maximum salt length supported by kernel: 256
-
-[33mATTENTION! Pure (unoptimized) OpenCL kernels selected.[0m
-[33mThis enables cracking passwords and salts > length 32 but for the price of drastically reduced performance.[0m
-[33mIf you want to switch to optimized OpenCL kernels, append -O to your commandline.[0m
-[33m[0m
-Watchdog: Hardware monitoring interface not found on your system.
-Watchdog: Temperature abort trigger disabled.
-
-Initializing device kernels and memory...[2KInitializing OpenCL runtime for device #1...[2K[33m* Device #1: build_opts '-cl-std=CL1.2 -I OpenCL -I /usr/share/hashcat/OpenCL -D LOCAL_MEM_TYPE=2 -D VENDOR_ID=64 -D CUDA_ARCH=0 -D AMD_ROCM=0 -D VECT_SIZE=8 -D DEVICE_TYPE=2 -D DGST_R0=0 -D DGST_R1=3 -D DGST_R2=2 -D DGST_R3=1 -D DGST_ELEM=4 -D KERN_TYPE=4800 -D _unroll'[0m
-Initialized OpenCL runtime for device #1...[2KInitialized device kernels and memory...[2KDictionary cache built:
-* Filename..: /home/workspace/wordlist.list
-* Passwords.: 29
-* Bytes.....: 267
-* Keyspace..: 29
-* Runtime...: 0 secs
-
-[33mThe wordlist or mask that you are using is too small.[0m
-[33mThis means that hashcat cannot use the full parallel power of your device(s).[0m
-[33mUnless you supply more work, your cracking speed will drop.[0m
-[33mFor tips on supplying more work, see: https://hashcat.net/faq/morework[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  [33mApproaching final keyspace - workload adjusted.[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  f2b772134950cf8c4aa1ecd7fe8723a6:70026262700262627002626270026262:00:cmwap
-                                                 
-Session..........: hashcat
-Status...........: Cracked
-Hash.Type........: iSCSI CHAP authentication, MD5(CHAP)
-Hash.Target......: f2b772134950cf8c4aa1ecd7fe8723a6:700262627002626270...262:00
-Time.Started.....: Thu Jul  8 17:02:24 2021 (0 secs)
-Time.Estimated...: Thu Jul  8 17:02:24 2021 (0 secs)
-Guess.Base.......: File (/home/workspace/wordlist.list)
-Guess.Queue......: 1/1 (100.00%)
-Speed.#1.........:      364 H/s (0.03ms) @ Accel:1024 Loops:1 Thr:1 Vec:8
-Recovered........: 1/1 (100.00%) Digests, 1/1 (100.00%) Salts
-Progress.........: 29/29 (100.00%)
-Rejected.........: 0/29 (0.00%)
-Restore.Point....: 0/29 (0.00%)
-Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:0-1
-Candidates.#1....: passwd -> apple
-
-Started: Thu Jul  8 17:02:22 2021
-[2KStopped: Thu Jul  8 17:02:26 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Thu Jul  8 17:47:10 2021
-[2KStopped: Thu Jul  8 17:47:10 2021
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KINFO: All hashes found in potfile! Use --show to display them.
-
-Started: Fri Jul  9 16:27:06 2021
-[2KStopped: Fri Jul  9 16:27:06 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=130, the log is in /home/workspace/log/enb_run.log
-130
-
-srsenb pid: 130 are stopping......
-srsenb close complete......
-srsepc have been killed......
-[32m    product: B210 connect success......[0m
-Start epc, pid=246, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=255, the log is in /home/workspace/log/enb_run.log
-255
-
-srsenb pid: 255 are stopping......
-srsenb close complete......
-srsepc have been killed......
-[32m    product: B210 connect success......[0m
-Start epc, pid=371, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=380, the log is in /home/workspace/log/enb_run.log
-380
-
-srsenb pid: 380 are stopping......
-srsenb close complete......
-srsepc have been killed......
-[32m    product: B210 connect success......[0m
-Start epc, pid=496, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=505, the log is in /home/workspace/log/enb_run.log
-505
-
-srsenb pid: 505 are stopping......
-srsenb close complete......
-srsepc have been killed......
-[32m    product: B210 connect success......[0m
-Start epc, pid=645, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=654, the log is in /home/workspace/log/enb_run.log
-[32m    product: B210 connect success......[0m
-Start epc, pid=70, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=79, the log is in /home/workspace/log/enb_run.log
-79
-
-srsenb pid: 79 are stopping......
-srsenb close complete......
-srsepc have been killed......
-[32m    product: B210 connect success......[0m
-Start epc, pid=198, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=207, the log is in /home/workspace/log/enb_run.log
-207
-
-srsenb pid: 207 are stopping......
-srsenb close complete......
-srsepc have been killed......
-[32m    product: B210 connect success......[0m
-Start epc, pid=69, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=80, the log is in /home/workspace/log/enb_run.log
-80
-69
-srsenb pid: 80 are stopping......
-srsenb close complete......
-srsepc pid: 69 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=201, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=212, the log is in /home/workspace/log/enb_run.log
-212
-201
-srsenb pid: 212 are stopping......
-srsenb close complete......
-srsepc pid: 201 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=331, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=342, the log is in /home/workspace/log/enb_run.log
-342
-331
-srsenb pid: 342 are stopping......
-srsenb close complete......
-srsepc pid: 331 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=71, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=82, the log is in /home/workspace/log/enb_run.log
-[32m    product: B210 connect success......[0m
-Start epc, pid=67, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=78, the log is in /home/workspace/log/enb_run.log
-78
-67
-srsenb pid: 78 are stopping......
-srsenb close complete......
-srsepc pid: 67 are stopping......
- srsepc close complete......
-hashcat (v5.1.0) starting...
-
-OpenCL Platform #1: The pocl project
-====================================
-* Device #1: pthread-Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz, 4096/13807 MB allocatable, 8MCU
-
-Sorting hashes...[2KSorted hashes...[2KRemoving duplicate hashes...[2KRemoved duplicate hashes...[2KSorting salts...[2KSorted salts...[2KComparing hashes with potfile entries...[2KCompared hashes with potfile entries...[2KGenerating bitmap tables...[2KGenerated bitmap tables...[2KHashes: 1 digests; 1 unique digests, 1 unique salts
-Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
-Rules: 1
-
-Applicable optimizers:
-* Zero-Byte
-* Early-Skip
-* Not-Iterated
-* Single-Hash
-* Single-Salt
-* Raw-Hash
-
-Minimum password length supported by kernel: 0
-Maximum password length supported by kernel: 256
-Minimim salt length supported by kernel: 0
-Maximum salt length supported by kernel: 256
-
-[33mATTENTION! Pure (unoptimized) OpenCL kernels selected.[0m
-[33mThis enables cracking passwords and salts > length 32 but for the price of drastically reduced performance.[0m
-[33mIf you want to switch to optimized OpenCL kernels, append -O to your commandline.[0m
-[33m[0m
-Watchdog: Hardware monitoring interface not found on your system.
-Watchdog: Temperature abort trigger disabled.
-
-Initializing device kernels and memory...[2KInitializing OpenCL runtime for device #1...[2K[33m* Device #1: build_opts '-cl-std=CL1.2 -I OpenCL -I /usr/share/hashcat/OpenCL -D LOCAL_MEM_TYPE=2 -D VENDOR_ID=64 -D CUDA_ARCH=0 -D AMD_ROCM=0 -D VECT_SIZE=8 -D DEVICE_TYPE=2 -D DGST_R0=0 -D DGST_R1=3 -D DGST_R2=2 -D DGST_R3=1 -D DGST_ELEM=4 -D KERN_TYPE=4800 -D _unroll'[0m
-Initialized OpenCL runtime for device #1...[2KInitialized device kernels and memory...[2KDictionary cache built:
-* Filename..: /home/workspace/wordlist.list
-* Passwords.: 29
-* Bytes.....: 295
-* Keyspace..: 29
-* Runtime...: 0 secs
-
-[33mThe wordlist or mask that you are using is too small.[0m
-[33mThis means that hashcat cannot use the full parallel power of your device(s).[0m
-[33mUnless you supply more work, your cracking speed will drop.[0m
-[33mFor tips on supplying more work, see: https://hashcat.net/faq/morework[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  [33mApproaching final keyspace - workload adjusted.[0m
-[33m[0m
-[s]tatus [p]ause [b]ypass [c]heckpoint [q]uit =>                                                  f5093f2ae0d9b1e9fbe725acd52880d7:13e6929213e6929213e6929213e69292:00:cmwap
-                                                 
-Session..........: hashcat
-Status...........: Cracked
-Hash.Type........: iSCSI CHAP authentication, MD5(CHAP)
-Hash.Target......: f5093f2ae0d9b1e9fbe725acd52880d7:13e6929213e6929213...292:00
-Time.Started.....: Tue Jul 13 19:07:39 2021 (0 secs)
-Time.Estimated...: Tue Jul 13 19:07:39 2021 (0 secs)
-Guess.Base.......: File (/home/workspace/wordlist.list)
-Guess.Queue......: 1/1 (100.00%)
-Speed.#1.........:      358 H/s (0.05ms) @ Accel:1024 Loops:1 Thr:1 Vec:8
-Recovered........: 1/1 (100.00%) Digests, 1/1 (100.00%) Salts
-Progress.........: 29/29 (100.00%)
-Rejected.........: 0/29 (0.00%)
-Restore.Point....: 0/29 (0.00%)
-Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:0-1
-Candidates.#1....: passwd -> apple
-
-Started: Tue Jul 13 19:07:38 2021
-[2KStopped: Tue Jul 13 19:07:41 2021
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=78, the log is in /home/workspace/log/enb_run.log
-[32m    product: B210 connect success......[0m
-Start epc, pid=773, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=784, the log is in /home/workspace/log/enb_run.log
-784
-773
-srsenb pid: 784 are stopping......
-srsenb close complete......
-srsepc pid: 773 are stopping......
- srsepc close complete......
-[32m    product: B210 connect success......[0m
-Start epc, pid=, the log is in /home/workspace/log/epc_run.log
-[32mSetting frequency: DL=2680 Mhz, UL=2560 MHz......[0m
-Start enb, pid=120, the log is in /home/workspace/log/enb_run.log
-120
-109
-srsenb pid: 120 are stopping......
-srsenb close complete......
-srsepc pid: 109 are stopping......
- srsepc close complete......
+{"status": false, "message_id": 2, "message": "Error id"}
+{"status": false, "message_id": 2, "message": "Error id"}
+/home/workspace/log/srsLTE_enb_s1ap.pcap
+{"status": true, "message_id": 1, "message": "Succeed"}
+{"status": true, "message_id": 1, "message": "Succeed"}
+/home/workspace/log/srsLTE_enb_s1ap.pcap
+{"status": true, "message_id": 1, "message": "Succeed"}
+{"status": true, "message_id": 1, "message": "Succeed"}

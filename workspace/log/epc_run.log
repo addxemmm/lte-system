@@ -18,8 +18,55 @@ S1 Setup Request - MCC:001, MNC:01
 S1 Setup Request - TAC 7, B-PLMN 0xf110
 S1 Setup Request - Paging DRX v128
 Sending S1 Setup Response
+Initial UE message: LIBLTE_MME_MSG_TYPE_ATTACH_REQUEST
+Received Initial UE message -- Attach Request
+Attach request -- IMSI: 001012333333333
+Attach request -- eNB-UE S1AP Id: 1
+Attach request -- Attach type: 2
+Attach Request -- UE Network Capabilities EEA: 11110000
+Attach Request -- UE Network Capabilities EIA: 01110000
+Attach Request -- MS Network Capabilities Present: true
+PDN Connectivity Request -- EPS Bearer Identity requested: 0
+PDN Connectivity Request -- Procedure Transaction Id: 4
+PDN Connectivity Request -- ESM Information Transfer requested: true
+Downlink NAS: Sending Authentication Request
+UL NAS: Received Authentication Response
+Authentication Response -- IMSI 001012333333333
+UE Authentication Accepted.
+Generating KeNB with UL NAS COUNT: 0
+Downlink NAS: Sending NAS Security Mode Command.
+UL NAS: Received Security Mode Complete
+Security Mode Command Complete -- IMSI: 001012333333333
+Sending ESM information request
+UL NAS: Received ESM Information Response
+ESM Info: APN skygoapn
+ESM Info: 8 Protocol Configuration Options
+Getting subscription information -- QCI 7
+Sending Create Session Request.
+Creating Session Response -- IMSI: 1012333333333
+Creating Session Response -- MME control TEID: 1
+Received GTP-C PDU. Message type: GTPC_MSG_TYPE_CREATE_SESSION_REQUEST
+SPGW: Allocated Ctrl TEID 1
+SPGW: Allocated User TEID 1
+SPGW: Allocate UE IP 172.16.0.2
+Received Create Session Response
+Create Session Response -- SPGW control TEID 1
+Create Session Response -- SPGW S1-U Address: 127.0.1.100
+SPGW Allocated IP 172.16.0.2 to IMSI 001012333333333
+Adding attach accept to Initial Context Setup Request
+Sent Initial Context Setup Request. E-RAB id 5 
+Received Initial Context Setup Response
+E-RAB Context Setup. E-RAB id 5
+E-RAB Context -- eNB TEID 0x1; eNB GTP-U Address 127.0.1.1
+UL NAS: Received Attach Complete
+Unpacked Attached Complete Message. IMSI 1012333333333
+Unpacked Activate Default EPS Bearer message. EPS Bearer id 5
+Received GTP-C PDU. Message type: GTPC_MSG_TYPE_MODIFY_BEARER_REQUEST
+Sending EMM Information
 Stopping ..
 Deleting eNB context. eNB Id: 0x0
+Deleting UE EMM context. IMSI: 001012333333333
 Saving S1AP PCAP file
+Deleting SP-GW GTP-C Tunnel. IMSI: 001012333333333
 
 ---  exiting  ---

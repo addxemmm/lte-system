@@ -1,7 +1,7 @@
 import os
 import json
 import subprocess
-from flask import Flask, request
+from flask import Flask, request, send_file
 
 app = Flask(__name__)
 @app.route('/start', methods={"POST"})
@@ -16,7 +16,7 @@ def start():
     result = start_srsLTE(band, apn, mcc, mnc, network)
     return result
 
-@app.route('/stop', methods={"POST"})
+@app.route('/stop', methods=["POST"])
 def stop():
     result = stop_srsLTE()
     return result
@@ -71,11 +71,25 @@ def passwordUpload():
     print(json_result)
     return json_result
 
+@app.route('/getfile', methods=["POST"])
+def getfile():
+    conf = request.get_data()
+    json_conf = json.loads(conf)
+    fileid = json_conf.get("fileid")
+    result, file_path = get_file(fileid)
+    print(result)
+    if file_path is None:
+        return result
+    else:
+        return send_file(file_path, as_attachment=True)
+
 ########################################################
 def start_srsLTE(band, apn, mcc, mnc, network):
     ### default start failed
     status = False
-    message_id = 0 # 0 -> start failed  1 -> start success  2 -> is running    3 -> Incomplete parameters    4 -> device is not connected, please connect usrp device.
+    message_id = 0
+    # 0 -> start failed  1 -> start success  2 -> is running    3 -> Incomplete parameters    
+    # 4 -> device is not connected, please connect usrp device.    5 -> System is started, but packet capture failed.
     message = "Start Failed"
     # Determine whether the device is connect
     ps_command_resault = os.popen("ps -aux | grep -v 'grep' | grep srs").read()
@@ -93,12 +107,20 @@ def start_srsLTE(band, apn, mcc, mnc, network):
                 # # Waitting for srsLTE start 
                 # os.system("sleep 3")
                 subprocess.call(["bash", current_path+"/run.sh", band, apn, mcc, mnc,network])
-                ps_command_resault = os.popen("ps -aux| grep -v 'grep' | grep srs").read()
+                ps_command_resault = os.popen("ps -aux | grep -v 'grep' | grep srs").read()
                 # Determine whether the program is started
                 if(len(ps_command_resault) != 0):
-                    status = True
-                    message_id = 1
-                    message = "Start successfully"
+                    tcpdump_command = "nohup tcpdump -i " + network + " -w /home/workspace/log/lte_data.pcap &"
+                    os.system(tcpdump_command)
+                    tcpdump_command_result = os.popen("ps -aux | grep -v 'grep' | grep tcpdump").read()
+                    if(len(tcpdump_command_result) != 0):
+                        status = True
+                        message_id = 1
+                        message = "Start successfully"
+                    else:
+                        status = False
+                        message_id = 5
+                        message = "System is started, but packet capture failed."                 
             else:
                 message_id = 4
                 message = "device is not connected, please connect usrp device."
@@ -126,9 +148,12 @@ def stop_srsLTE():
         # # Waitting for srsLTE stop.
         # os.system("sleep 3")
         subprocess.call(["bash", current_path+"/stop.sh"])
-        os.system("sleep 1.5")
-        ps_command_resault = os.popen("ps -aux | grep -v 'grep' | grep srs").read()
-        if(len(ps_command_resault) == 0):
+        os.system("sleep 3")
+        ps_command_result = os.popen("ps -aux | grep -v 'grep' | grep srs").read() # srslte kill result
+        ps_command_result_2 = os.popen("ps -aux | grep -v 'grep' | grep tcpdump").read() # tcpdump kill result
+        print(ps_command_result)
+        print(ps_command_result_2)
+        if(len(ps_command_result) == 0 and len(ps_command_result_2) == 0):
             status = True
             message_id = 1
             message = "Stop successfully."
@@ -244,6 +269,41 @@ def getAllInfo():
     result_json = json.dumps(result)
     print(result_json)
     return result_json
+
+def get_file(fileid):
+    status = False
+    message_id = 0 # 0 -> Failed    1 -> Succeed    2 -> Error id    3 -> Can not find the file.
+    message = "Failed"
+    file_path = None
+    id_to_name = {
+        0 : "lte_data.pcap",
+        1 : "srsLTE_enb_s1ap.pcap",
+        2 : "srsLTE_enb.pcap",
+        3 : "srsLTE_epc.pcap"
+    }
+    if fileid < 0 or fileid > 3:
+        message_id = 2
+        message = "Error id"
+    else:
+        log_path = "/home/workspace/log/"
+        file_path = log_path + id_to_name.get(fileid)
+        print(file_path)
+        is_exists = os.path.exists(file_path)
+        if is_exists:
+            status = True
+            message_id = 1
+            message = "Succeed"
+        else:
+            message_id = 2
+            message = "Can not find the file"
+            file_path = None
+
+    result = {"status": status, "message_id": message_id, "message": message}
+    result_json = json.dumps(result)
+    print(result_json)
+    return result_json, file_path
+
+
 
 def usrpConnect():
     status = False # default not connect

@@ -18,16 +18,17 @@
 
   ---------
 
-  | 功能项       | 类型     | 备注         |
-  | ------------ | -------- | ------------ |
-  | LTE系统模拟  | 攻击测试 |              |
-  | 终端信息获取 | 数据操作 |              |
-  | 流量分析     | 数据操作 | 人工抓包解析 |
+  | 功能项       | 类型     | 备注                     |
+  | ------------ | -------- | ------------------------ |
+  | LTE系统模拟  | 攻击测试 |                          |
+  | 终端信息获取 | 数据操作 |                          |
+  | 流量分析     | 数据操作 | 获取数据包后可进一步分析 |
 
 ### 版本更新记录
 
 + V1.0：初代项目
 + V1.1：增加user_db.csv与wordlist.list上传接口
++ V1.2：增加通信流量自动抓取功能，增加pcap数据包下载功能
 
 ### 一. 运行环境&设备要求
 
@@ -48,13 +49,13 @@
 * docker镜像已推送至实验室服务器，可以在NERV下直接拉取
 
 ```bash
-docker pull registry.jiahao.li/addx/srslte:1.1
+docker pull registry.jiahao.li/addx/ltesystem:1.2
 ```
 
 * 容器启动命令
 
 ```bash
-docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srslte srslte:1.1
+docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=ltesystem registry.jiahao.li/addx/ltesystem:1.2
 ```
 
 宿主机USB整体映射到容器之中，已连接USRP B210这一USB设备;
@@ -66,12 +67,13 @@ docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srsl
 docker环境启动之后，该套件通过API提供服务，目前提供了6个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
 
 ```
-ipaddress:8081/start # 启动LTE设备
+ipaddress:8081/start # 启动LTE设备，并开始抓取数据流量
 ipaddress:8081/stop # 停止LTE设备
 ipaddress:8081/basicinfo # 连接终端设备后获取基础信息
 ipaddress:8081/allinfo # 连接终端后获取更多的信息
 ipaddress:8081/userupload # user_db.csv文件上传
 ipaddress:8081/passwordupload # worldlist.list文件上传 
+ipaddress:8081/getfile # 下载pcap数据包
 ```
 
 #### 1. start
@@ -117,7 +119,7 @@ ipaddress:8081/passwordupload # worldlist.list文件上传
   | 4          | device is not connected, please connect usrp device. | USRP B210未连接,请连接后重试. |
 
 ##### 注意事项
-+ 启动设备需要一定时间,响应时间需要6秒以上秒钟,请注意;
++ 启动设备需要一定时间,响应时间需要6秒以上,请注意;
 + 发送请求并收到status为true响应之后,可以使用终端设备使用自己写入的白卡进行连接,白卡的参数需要和LTE配置文件中的对应,后续会进行说明;
 + 若连接多个设备,仅第一个设备能联网,其他设备可以连接至基站,但无法联网,推荐只连接一个设备.
 
@@ -183,7 +185,7 @@ ipaddress:8081/passwordupload # worldlist.list文件上传
   | 3          | no UE connect                      | 未发现终端设备                      |
 
 ##### 注意事项
-​	此功能需要在设备运行时运行,若未运行,会有响应提示,目前只能获取第一个设备的信息
++ 此功能需要在设备运行时运行,若未运行,会有响应提示,目前只能获取第一个设备的信息
 
 #### 4. allinfo
 
@@ -212,7 +214,7 @@ ipaddress:8081/passwordupload # worldlist.list文件上传
 
 + username : 获取到的终端设备的username,未获取到为NULL
 
-+ password : 获取到的终端设备的password,未获取到为BULL
++ password : 获取到的终端设备的password,未获取到为NULL
 
 + message_id与message对应关系
 
@@ -227,7 +229,7 @@ ipaddress:8081/passwordupload # worldlist.list文件上传
 
 ##### 注意事项
 
-+ 执行该操作,会先关闭LTE设备,在读取信息,请注意.
++ 执行该操作,会先关闭LTE设备,再读取信息,请注意.
 + 同basicinfo,只能获取到第一个连接至设备的终端设备信息,推荐只连接一个终端设备.
 + 直接获取到的信息,密码为hash,需要使用hashcat和字典进行爆破,字典导入方式请参考passwordupload接口使用方法
 #### 5. userupload
@@ -282,6 +284,51 @@ ipaddress:8081/passwordupload # worldlist.list文件上传
   | 2          | no file        | 上传文件为空 |
 ##### 注意事项
 worldlist.list格式请参考项目文件
+
+#### 7. getfile
+
+##### Request Data:
+
+```json
+{"fileid":0}
+```
+
+ - fileid为下载文件名称的编号，下为fileid与filename的对应关系：
+
+   | fileid | filename             | 备注                           |
+   | ------ | -------------------- | ------------------------------ |
+   | 0      | lte_data.pcap        | LTE通信流量数据包              |
+   | 1      | srsLTE_enb_s1ap.pcap | LTE enb s1ap接口通信协议数据包 |
+   | 2      | srsLTE_enb.pcap      | LTE enb通信协议数据包          |
+   | 3      | srsLTE_epc.pcap      | LTE epc通信协议数据包          |
+
+##### Response Data
+
+若成功响应，会自动下载文件
+
+![getfile](./image/getfile.png)
+
+如果下载失败，会返回json数据，提示错误
+
+```json
+{"status": true, "message_id": 2, "message": "Error id"}
+```
+
++ status : 执行结果, 启动成功为true,其他为false
+
++ message_id : 响应结果id
+
++ message : 响应信息
+
++ message_id与message对应关系
+
+  | message_id | message                | 备注                        |
+  | ---------- | ---------------------- | --------------------------- |
+  | 0          | Failed                 | 未知启动失败,需要查阅日志.  |
+  | 2          | Error id               | 错误的id，id不在文件列表中. |
+  | 3          | Cant not find the file | log文件夹中未找到数据包文件 |
+
+
 
 ### 四. 写卡方法
 

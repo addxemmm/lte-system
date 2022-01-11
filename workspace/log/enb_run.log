@@ -11,10 +11,7 @@ Opening 1 channels in RF device=default with args=default
 [INFO] [UHD] linux; GNU C++ version 9.2.1 20200304; Boost_107100; UHD_3.15.0.0-2build5
 [INFO] [LOGGING] Fastpath logging disabled at runtime.
 [INFO] [B200] Detected Device: B210
-[INFO] [B200] Loading FPGA image: /usr/share/uhd/image/usrp_b210_fpga.bin...
 [INFO] [B200] Operating over USB 3.
-[INFO] [B200] Detecting internal GPSDO.... 
-[INFO] [GPS] Found a generic NMEA GPS device
 [INFO] [B200] Initialize CODEC control...
 [INFO] [B200] Initialize Radio control...
 [INFO] [B200] Performing register loopback test... 
@@ -29,6 +26,8 @@ Setting frequency: DL=2680.0 Mhz, UL=2560.0 MHz for cc_idx=0
 ==== eNodeB started ===
 Type <t> to view trace
 Closing stdin thread.
+RACH:  tti=9531, cc=0, preamble=4, offset=1, temp_crnti=0x46
+User 0x46 connected
 Stopping ..
 SCTP Association Shutdown. Association: 0
 connect(): Connection refused
