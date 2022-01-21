@@ -370,6 +370,32 @@ ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff1
 
 ​	写卡需要用到LTE白卡,以及写卡设备,这里使用ACR1281U作为写卡设备
 
-​	主要需要填写的为IMSI,KI,OP或者OPC,这几项需要与user_db.csv的数据对应,其他参数可以根据个人需要进行修改
+​	主要需要填写的为IMSI,KI,OP或者OPC,这几项需要与user_db.csv的数据对应,其他参数可以根据个人需要进行修改，参数说明及写卡对应关系如下：
+
+MCC：移动国家码（中国为460）；MNC：移动网络码（中国移动CDMA系统使用02）
+
+| SIM卡参数 | 备注                                                         | user_db.csv | 备注                                     |
+| --------- | ------------------------------------------------------------ | ----------- | ---------------------------------------- |
+|           |                                                              | Name        | 可任意，需唯一                           |
+|           |                                                              | Auth        | xor或者mil，推荐默认使用mil              |
+| IMSI      | 国际网络识别码                                               | IMSI        | 15位 dec，格式为MCC(三位)+MNC(两位)+补全 |
+| ACC       | 默认自动，也可修改为4位DEC；如：8000                         |             |                                          |
+| KI        | 32位HEX                                                      | KEY         | 32位 hex，与SIM卡保持一致                |
+|           |                                                              | OP_Type     | 需要与SIM参数保持一致                    |
+| OP/OPC    | 二选一，32位HEX                                              | OP/OPC      | 和SIM卡参数对应                          |
+|           |                                                              | AMF         | 与SIM卡ACC保持一直                       |
+|           |                                                              | SQN         | 12位DEC ，唯一任意值                     |
+|           |                                                              | QCI         | 7                                        |
+|           |                                                              | IP_alloc    | dynamic                                  |
+| FLMNwAcT  | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
+| FPLMN     | 以:为间隔，可添加多个MCC+MNC组合，但必须包含FLMNwAcT的MCC+MNC部分；如：00101;46001;46005 |             |                                          |
+| SPN       | 运营商名字缩写，任意，可为空；如:CMCC                        |             |                                          |
+| SMSC      | 电话号码，可为空；例如：+8613800000000                       |             |                                          |
+| AD        | 默认                                                         |             |                                          |
+| OPLMNwACT | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
+| HPLMNwAcT | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
+| EHPLMN    | MCC+MNC如：00101                                             |             |                                          |
+
+Common Parameter无需修改
 
 <img src="./image/card.png" alt="card" style="zoom:50%;" />
