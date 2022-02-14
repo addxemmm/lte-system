@@ -16,6 +16,8 @@
 
 + 能够快速获取到LTE设备的APN,IP等信息
 
++ 直接直接通过该系统写sim卡并带入系统配置文件
+
   ---------
 
   | 功能项       | 类型     | 备注                     |
@@ -29,6 +31,7 @@
 + V1.0：初代项目
 + V1.1：增加user_db.csv与wordlist.list上传接口
 + V1.2：增加通信流量自动抓取功能，增加pcap数据包下载功能
++ V1.3：增加sim卡写卡并自动添加配置功能，修改apn密码爆破接口实现方式
 
 ### 一. 运行环境&设备要求
 
@@ -49,13 +52,13 @@
 * docker镜像已推送至实验室服务器，可以在NERV下直接拉取
 
 ```bash
-docker pull registry.jiahao.li/addx/ltesystem:1.2
+docker pull registry.jiahao.li/addx/ltesystem:1.3
 ```
 
 * 容器启动命令
 
 ```bash
-docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=ltesystem registry.jiahao.li/addx/ltesystem:1.2
+docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=ltesystem registry.jiahao.li/addx/ltesystem:1.3
 ```
 
 宿主机USB整体映射到容器之中，已连接USRP B210这一USB设备;
@@ -64,16 +67,18 @@ docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=ltes
 
 ### 三. 使用说明
 
-docker环境启动之后，该套件通过API提供服务，目前提供了6个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
+docker环境启动之后，该套件通过API提供服务，目前提供了9个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
 
 ```
 ipaddress:8081/start # 启动LTE设备，并开始抓取数据流量
 ipaddress:8081/stop # 停止LTE设备
 ipaddress:8081/basicinfo # 连接终端设备后获取基础信息
-ipaddress:8081/allinfo # 连接终端后获取更多的信息
+ipaddress:8081/crackapn # 开始破解apn密码
+ipaddress:8081/getcrackresult # 获取基础信息与爆破后获取到的用户名与密码
 ipaddress:8081/userupload # user_db.csv文件上传
 ipaddress:8081/passwordupload # worldlist.list文件上传 
 ipaddress:8081/getfile # 下载pcap数据包
+ipaddress:8081/writesim # 写sim卡
 ```
 
 #### 1. start
@@ -187,7 +192,40 @@ ipaddress:8081/getfile # 下载pcap数据包
 ##### 注意事项
 + 此功能需要在设备运行时运行,若未运行,会有响应提示,目前只能获取第一个设备的信息
 
-#### 4. allinfo
+#### 4. crackapn
+
+  ##### Request
+
+  该请求无需参数
+
+  ##### Response
+
+  ```
+  {"status": true, "message_id": 1, "message": "Start crack success."}
+  ```
+
+  + status : 执行结果, 成功启动为true,其他为false
+
+  + message_id : 响应结果id
+
+  + message : 响应信息
+
+  + message_id与message对应关系
+
+    | message_id | message                                                      | 备注                                                         |
+    | ---------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+    | 0          | Failed.                                                      | 未知原因错误,需要手动查找日志                                |
+    | 1          | Start crack success.                                         | 启动爆破密码成功，爆破正在进行中                             |
+    | 2          | Hashcat is running.                                          | 已有一个爆破进程正在进行中                                   |
+    | 3          | Can not get UE's data, please start first and connect UE, or just connect UE. Then try again. | 未连接设备或连接的设备不支持读取信息（如iphone）             |
+    | 4          | Can not get username and password.                           | 无法获取到username与password信息，通常出现在连接不支持的设备时出现或终端设备未配置username与password |
+    | 5          | Stop program failed, please try to stop manually.            | 爆破前需要停止系统，停止失败时出现该错误，可以尝试手动调用stop api |
+
+  ##### 注意事项
+
+  + 此功能需要在设备运行时运行,若未运行,则会加载上一次环境启动时的数据，获取上一个环境连接的设备的信息
+
+#### 5. getcrackresult
 
 #####  Request
 
@@ -218,21 +256,21 @@ ipaddress:8081/getfile # 下载pcap数据包
 
 + message_id与message对应关系
 
-  | message_id | message                                                      | 备注                                                    |
-  | ---------- | ------------------------------------------------------------ | ------------------------------------------------------- |
-  | 0          | Failed                                                       | 未知原因错误,需要手动查找日志                           |
-  | 1          | Getting information success                                  | 获取信息成功                                            |
-  | 2          | Can not get UE's data, please start first and connect UE, or just connect UE. Then try again. | 停止运行时,没有终端设备连接,无法获取到信息              |
-  | 3          | Can not get username and password                            | 获取到了基础信息,但无法得到username和password           |
-  | 4          | Can not get password from the dict                           | 能够获取到所有信息,但无法使用hash擦头从字典中爆破出密码 |
-  | 5          | Stop program failed, please try to stop manually.            | 关闭设备失败,无法进入获取信息流程,需要手动查阅日志.     |
+  | message_id | message                                                      | 备注                                                         |
+  | ---------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+  | 0          | Failed.                                                      | 未知原因错误,需要手动查找日志                                |
+  | 1          | Getting information success.                                 | 获取信息成功                                                 |
+  | 2          | Cracking apn is still running, please try again later.       | 爆破过程正在运行中，请等待爆破结束后再尝试                   |
+  | 3          | Can not get password from the dict.                          | 无法从字典中爆破出密码                                       |
+  | 4          | Can not get username and password.                           | 无法获取到username与password信息，通常出现在连接不支持的设备时出现或终端设备未配置username与password |
+  | 5          | Can not get UE's data, please start first and connect UE, or just connect UE, then try again. | 未连接设备或连接的设备不支持读取信息（如iphone）             |
+  | 6          | Stop program failed, please try to stop manually.            | 爆破前需要停止系统，停止失败时出现该错误，可以尝试手动调用stop api |
 
 ##### 注意事项
 
-+ 执行该操作,会先关闭LTE设备,再读取信息,请注意.
++ 此api应在启动系统连接终端设备并访问crackapn接口运行后再运行，否则获取的结果为上一次启动系统的数据
 + 同basicinfo,只能获取到第一个连接至设备的终端设备信息,推荐只连接一个终端设备.
-+ 直接获取到的信息,密码为hash,需要使用hashcat和字典进行爆破,字典导入方式请参考passwordupload接口使用方法
-#### 5. userupload
+#### 6. userupload
 
 #####  Request	![userupload](./image/userupload.png)
 
@@ -258,7 +296,7 @@ ipaddress:8081/getfile # 下载pcap数据包
 ##### 注意事项
 	user_db.csv格式请参考项目文件
 
-#### 6. passwordupload
+#### 7. passwordupload
 
 #####  Request
 
@@ -285,7 +323,7 @@ ipaddress:8081/getfile # 下载pcap数据包
 ##### 注意事项
 worldlist.list格式请参考项目文件
 
-#### 7. getfile
+#### 8. getfile
 
 ##### Request Data:
 
@@ -328,9 +366,46 @@ worldlist.list格式请参考项目文件
   | 2          | Error id               | 错误的id，id不在文件列表中. |
   | 3          | Cant not find the file | log文件夹中未找到数据包文件 |
 
+#### 9. writesim
 
+##### Request Data:
 
-### 四. 写卡方法
+```json
+{"imsi":001010123456789}
+```
+
+ - imsi : 想要写入sim卡的数据
+
+##### Response Data
+
+```json
+{"status": false, "message_id": 2, "message": "Device is not connected, please connect acr1281 first."}
+```
+
++ status : 执行结果, 启动成功为true,其他为false
+
++ message_id : 响应结果id
+
++ message : 响应信息
+
++ message_id与message对应关系
+
+  | message_id | message                                                   | 备注                                          |
+  | ---------- | --------------------------------------------------------- | --------------------------------------------- |
+  | 0          | Failed.                                                   | 未知启动失败,需要查阅日志.                    |
+  | 1          | Succeed.                                                  | 写卡成功.                                     |
+  | 2          | Device is not connected, please connect acr1281 first.    | 写卡设备未连接.                               |
+  | 3          | Writting card successfully, but write user_db.csv failed. | 写卡成功，但将数据写入系统配置时失败，请重试. |
+  | 4          | The card already exists and can be used directly.         | 改sim卡已存在，无需重新写卡，直接使用即可.    |
+  | 5          | SIM card is not inserted.                                 | SIM卡未插入写卡设备.                          |
+
+##### 注意事项
+
++ 启动设备需要一定时间,响应时间需要6秒以上,请注意;
++ 发送请求并收到status为true响应之后,可以使用终端设备使用自己写入的白卡进行连接,白卡的参数需要和LTE配置文件中的对应,后续会进行说明;
++ 若连接多个设备,仅第一个设备能联网,其他设备可以连接至基站,但无法联网,推荐只连接一个设备.
+
+### 四. 写卡方法（此过程仅适用于测试时直接连接ACR1281进行写卡）
 
 #### docker配置文件
 
@@ -387,14 +462,14 @@ MCC：移动国家码（中国为460）；MNC：移动网络码（中国移动CD
 |           |                                                              | SQN         | 12位DEC ，唯一任意值                     |
 |           |                                                              | QCI         | 7                                        |
 |           |                                                              | IP_alloc    | dynamic                                  |
-| FLMNwAcT  | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
-| FPLMN     | 以:为间隔，可添加多个MCC+MNC组合，但必须包含FLMNwAcT的MCC+MNC部分；如：00101;46001;46005 |             |                                          |
+| PLMNwAcT  | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
+| FPLMN     | Forbidden PLMN，以:为间隔，可添加多个MCC+MNC组合;；如：00101;46001;46005 |             |                                          |
 | SPN       | 运营商名字缩写，任意，可为空；如:CMCC                        |             |                                          |
 | SMSC      | 电话号码，可为空；例如：+8613800000000                       |             |                                          |
 | AD        | 默认                                                         |             |                                          |
-| OPLMNwACT | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
+| OPLMNwACT | 漫游相关，MCC+MNC:ACC；如：00101:0200                        |             |                                          |
 | HPLMNwAcT | MCC+MNC:ACC；如：00101:0200                                  |             |                                          |
-| EHPLMN    | MCC+MNC如：00101                                             |             |                                          |
+| EHPLMN    | MCC+MNC，可多组；如：00101;46001;46002                       |             |                                          |
 
 Common Parameter无需修改
 
