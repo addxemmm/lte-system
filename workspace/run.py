@@ -276,7 +276,7 @@ def startCrackAPN():
     message_id = 0 
     message = "Failed"
     ps_hashcat = os.popen("ps aux | grep -v 'grep' | grep hashcat").read()
-    if(len(ps_hashcat) >= 0):
+    if(len(ps_hashcat) == 0):
         current_path = os.getcwd()
         wordlist_path = current_path + '/wordlist.list'
         info_status, apn, imsi, ip, username, hash_pass = getAllInfo()
@@ -400,13 +400,11 @@ def doWriteUsim(imsi):
     # 5 -> SIM card is not inserted.
     message_id = 0 
     message = "Failed"
+    # Restart pcscd service to make sure device can be used.
+    os.popen("service pcscd restart").read()
     card_connect_result = cardConnect()
     if(card_connect_result == 1):
         print("ACR1281 and card connect success.")
-        # Check pcscd service,if pcscd service is not start, restart it.
-        pcscd_result = os.popen("ps aux | grep -v 'grep' | grep pcscd").read()
-        if(len(pcscd_result) <= 0):
-            os.popen("service pcscd restart 2>&1").read()
         current_path = os.getcwd()
         # Start write sim card
         write_command = "python3 " + current_path + "/pysim/pySim-prog.py -p 0  -x "+ imsi[0:3] + " -y " + imsi[3:5] + " -i " + imsi + " -s 89860123456789012345 -o 63bfa50ee6523365ff14c1f45f88737d  -k 00112233445566778899aabbccddeeff -n LTESystem -A 3030303030303030 --acc FFFF -t testsim"

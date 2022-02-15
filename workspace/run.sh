@@ -172,7 +172,7 @@ sleep 3 #sleep 3.waitting for the srsepc start...
 iptables -t nat -A POSTROUTING -s 172.16.0.1/24 -o $network -j MASQUERADE
 
 # start enb
-srsenb $enb_conf > $enb_run_log 2>&1 &
+/home/skygo/workspace/hjc/ltesystem/srsenb $enb_conf > $enb_run_log 2>&1 &
 srsenb_pid=$(ps -aux | grep -v 'grep' | grep srsenb | awk '{print $2}')
 # echo $srsenb_pid
 echo -e "\033[32mSetting frequency: DL=$DL Mhz, UL=$UL MHz......\033[0m"
