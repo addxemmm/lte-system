@@ -6,7 +6,7 @@ tcpdump_pid=$(ps -aux | grep -v 'grep'  | grep tcpdump | awk '{print $2}')
 echo $srsenb_pid
 echo $srsepc_pid
 echo $tcpdump_pid
-if [ ! -n "$tcpdump_pid" ]
+if [ ! -n "$tcpdump_pid" ] 
 then
     echo "tcpdump has been killed......"
 else

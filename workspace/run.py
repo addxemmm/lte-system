@@ -1,8 +1,6 @@
-from crypt import methods
 import os
 import json
 import subprocess
-from unittest import result
 from flask import Flask, request, send_file
 
 app = Flask(__name__)
@@ -97,7 +95,6 @@ def writesim():
     imsi = json_conf.get("imsi")
     print(imsi)
     result = doWriteUsim(imsi)
-    print(result)
     return result
 
 
@@ -128,7 +125,7 @@ def start_srsLTE(band, apn, mcc, mnc, network):
                 ps_command_resault = os.popen("ps -aux | grep -v 'grep' | grep srs").read()
                 # Determine whether the program is started
                 if(len(ps_command_resault) != 0):
-                    tcpdump_command = "nohup tcpdump -i " + network + " -w /home/workspace/log/lte_data.pcap &"
+                    tcpdump_command = "nohup tcpdump -i srs_spgw_sgi -w /home/workspace/log/lte_data.pcap &"
                     os.system(tcpdump_command)
                     tcpdump_command_result = os.popen("ps -aux | grep -v 'grep' | grep tcpdump").read()
                     if(len(tcpdump_command_result) != 0):
@@ -165,7 +162,8 @@ def stop_srsLTE():
         # os.system(stop_command)
         # # Waitting for srsLTE stop.
         # os.system("sleep 3")
-        subprocess.call(["bash", current_path+"/stop.sh"])
+        # subprocess.call(["bash", current_path+"/stop.sh"])
+        stop()
         os.system("sleep 3")
         ps_command_result = os.popen("ps -aux | grep -v 'grep' | grep srs").read() # srslte kill result
         ps_command_result_2 = os.popen("ps -aux | grep -v 'grep' | grep tcpdump").read() # tcpdump kill result
@@ -179,6 +177,34 @@ def stop_srsLTE():
     result_json = json.dumps(result)
     print(result_json)
     return result_json
+
+def stop():
+    srsepc_pid = os.popen("ps -aux | grep -v 'grep'  | grep srsepc | awk '{print $2}'").read()
+    srsenb_pid = os.popen("ps -aux | grep -v 'grep'  | grep srsenb | awk '{print $2}'").read()
+    tcpdump_pid = os.popen("ps -aux | grep -v 'grep'  | grep tcpdump | awk '{print $2}'").read()
+    print(srsenb_pid)
+    print(srsepc_pid)
+    print(tcpdump_pid)
+    if(len(tcpdump_pid) == 0):
+        print("tcpdump has been killed......")
+    else:
+        print("tcpdump pid: " + tcpdump_pid + " are stopping......")
+        os.popen("kill " + tcpdump_pid)
+        print("tcpdump close cpmplete......")
+        
+    if(len(srsenb_pid) == 0):
+        print("srsenb has been killed......")
+    else:
+        print("srsenb pid: " + srsenb_pid + " are stopping......")
+        os.popen("kill " + srsenb_pid)
+        print("srsenb close cpmplete......")
+
+    if(len(srsepc_pid) == 0):
+        print("srsepc has been killed......")
+    else:
+        print("srsepc pid: " + srsepc_pid + " are stopping......")
+        os.popen("kill " + srsepc_pid)
+        print("srsepc close cpmplete......")
 
 def getBasicInfo():
     status = False
@@ -198,13 +224,23 @@ def getBasicInfo():
         apn_info = os.popen("cat " + epc_log_path + " | grep 'ESM Info: APN'").read()
         imsi_info = os.popen("cat " + epc_log_path + " | grep 'Found User'").read()
         ip_info = os.popen("cat " + epc_log_path + " | grep 'get_new_ue_ipv4 pool ip addr'").read()
-        if(len(apn_info) > 0 and len(imsi_info) > 0 and len(ip_info) > 0):
+        #if(len(apn_info) > 0 and len(imsi_info) > 0 and len(ip_info) > 0):
+        if(len(apn_info) > 0 or len(imsi_info) > 0 or len(ip_info) > 0):
             status = True
             message_id = 1
             message = "Getting information success."
-            apn = apn_info.split()[-1]
-            imsi = imsi_info.split()[-1]
-            ip = ip_info.split()[-1]
+            if(len(apn_info) > 0):
+                apn = apn_info.split()[-1]
+            else:
+                apn = None
+            if(len(imsi_info) > 0):
+                imsi = imsi_info.split()[-1]
+            else:
+                imsi = None
+            if(len(ip_info) > 0):
+                ip = ip_info.split()[-1]
+            else:
+                ip = None
         else:
             message_id = 3
             message = "no UE connected"
@@ -233,16 +269,33 @@ def getAllInfo():
     apn_info = os.popen("cat " + epc_log_path + " | grep 'ESM Info: APN'").read()
     imsi_info = os.popen("cat " + epc_log_path + " | grep 'Found User'").read()
     ip_info = os.popen("cat " + epc_log_path + " | grep 'get_new_ue_ipv4 pool ip addr'").read()
-    # apn,imsi & ip can't be empty
-    if(len(apn_info) > 0 and len(imsi_info) > 0 and len(ip_info) > 0):
+    # apn,imsi or ip can't all be empty
+    if(len(apn_info) > 0 or len(imsi_info) > 0 or len(ip_info) > 0):
         # stop srsLTE
         stop_result = stop_srsLTE()
         json_stop_result = json.loads(stop_result)
         # The peogram must be stop before get all information.
         if(json_stop_result.get("status") or json_stop_result.get("message_id") == 2):   
-            apn = apn_info.split()[-1] # get apn
-            imsi = imsi_info.split()[-1] # get imsi
-            ip = ip_info.split()[-1] #get ip
+            # apn = apn_info.split()[-1]
+            # imsi = imsi_info.split()[-1]
+            # ip = ip_info.split()[-1]
+            if(len(apn_info) > 0):
+                apn = apn_info.split()[-1] # get apn
+            else:
+                apn = None
+                apn_tshark_command = "tshark -o \"uat:user_dlts:\\\"User 3 (DLT=150)\\\",\\\"s1ap\\\",\\\"0\\\",\\\"\\\",\\\"0\\\",\\\"\\\"\" -r " + s1ap_path + " -Y \"chap\" -V 2>&1 | grep -A 3 \"Access Point Name\" "
+                apn_tshark_result = os.popen(apn_tshark_command).read()
+                if(len(apn_tshark_result) > 0):
+                    apn_info = apn_tshark_result.split()
+                    apn = apn_info[9] 
+            if(len(imsi_info) > 0):
+                imsi = imsi_info.split()[-1] # get imsi
+            else:
+                imsi = None
+            if(len(ip_info) > 0):
+                ip = ip_info.split()[-1] #get ip
+            else:
+                ip = None
             # use tshark to parse srsLTE_enb_s1ap.pcap, to get username,password
             tshark_command = "tshark -o \"uat:user_dlts:\\\"User 3 (DLT=150)\\\",\\\"s1ap\\\",\\\"0\\\",\\\"\\\",\\\"0\\\",\\\"\\\"\" -r " + s1ap_path + " -Y \"chap\" -V 2>&1 | grep -A 7 \"PPP Challenge Handshake\" "
             tshark_result = os.popen(tshark_command).read()
@@ -419,6 +472,7 @@ def doWriteUsim(imsi):
                 addUser_result = addUser(imsi)
                 print(addUser_result)
                 if(addUser_result == 1):
+                    status = True
                     message_id = 1
                     message = "Succeed."
                 elif(addUser_result == 2):
