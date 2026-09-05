@@ -11,6 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git pkg-config \
     libfftw3-dev libmbedtls-dev libboost-program-options-dev \
+    libboost-system-dev libboost-thread-dev libboost-test-dev \
     libconfig++-dev libsctp-dev \
     libuhd-dev uhd-host libzmq3-dev \
     libpcsclite-dev \
