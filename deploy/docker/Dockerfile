@@ -44,7 +44,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-program-options1.74.0 libconfig++9v5 libfftw3-single3 \
-    libmbedtls7 libsctp1 libuhd4.1.0 uhd-host \
+    libmbedtls14 libsctp1 libuhd4.1.0 uhd-host \
     libzmq5 iproute2 iptables iputils-ping dnsutils curl \
     tcpdump tshark hashcat pcscd pcsc-tools libccid \
     python3 python3-pip python3-pyscard python3-serial python3-yaml \
