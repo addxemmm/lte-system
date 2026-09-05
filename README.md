@@ -1,5 +1,16 @@
 # lte-system（Go + srsRAN_4G）
 
+![CI](https://github.com/addxemmm/lte-system/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Go](https://img.shields.io/badge/go-1.22-blue)
+![srsRAN](https://img.shields.io/badge/srsRAN_4G-release_23_11-orange)
+
+> **English**: stateless LTE lab-cell toolkit — a single Go binary exposing an
+> HTTP API that orchestrates `srsepc`/`srsenb` (srsRAN_4G), `tcpdump`, `tshark`,
+> `hashcat` and ACR1281U SIM programming inside one container. No database,
+> no frontend; API only. Docs are primarily in Chinese (`docs/`); start with
+> `docs/QUICKSTART.md` (browser translate works fine).
+
 无状态、无数据库的 LTE 自建基站工具：一个 Go 二进制暴露 HTTP API，编排容器内的 `srsepc` / `srsenb`（srsRAN_4G）、`tcpdump`、`tshark`、`hashcat` 与 ACR1281U 写卡。前端只调 API。
 
 > 分工：**本地（Windows）只做代码编辑与 git 管理；构建、运行、射频验证一律在 Ubuntu 服务器（192.168.100.199）上执行。**
@@ -72,3 +83,10 @@ Remove-Item Env:\GOOS; Remove-Item Env:\GOARCH
 - `docs/SDR.md` — B210（兼容板 FPGA 切换）与 bladeRF
 - `docs/MIGRATION.md` — 旧 Python → Go 对照
 - `AGENTS.md` — 本地开发规范（subagent / handoff / folk）
+
+## 参与贡献与许可
+
+- 想一起改？先看 `CONTRIBUTING.md`（测试要求、API 兼容铁律、PR 模板）
+- 安全问题走 `SECURITY.md` 私密通道；**API 无鉴权，仅限可信局域网**
+- 本仓库代码 MIT（`LICENSE`）；镜像内含 AGPL-3.0 的 srsRAN 等第三方组件，见 `NOTICE.md`
+- 版本历史见 `CHANGELOG.md`

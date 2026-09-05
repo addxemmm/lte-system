@@ -1,0 +1,9 @@
+# Text handling: keep LF everywhere (shell scripts break on CRLF in Docker),
+# keep firmware blobs byte-exact.
+* text=auto eol=lf
+*.bin binary
+*.pcap binary
+*.pdf binary
+*.zip binary
+*.png binary
+*.vsdx binary
