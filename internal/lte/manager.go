@@ -205,12 +205,18 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	txGain, rxGain, nPRB := m.cfg.DefaultTxGain, m.cfg.DefaultRxGain, m.cfg.DefaultNRB
 	if p.TxGain != nil {
 		txGain = *p.TxGain
+	} else {
+		p.TxGain = &txGain
 	}
 	if p.RxGain != nil {
 		rxGain = *p.RxGain
+	} else {
+		p.RxGain = &rxGain
 	}
 	if p.NPRB != nil {
 		nPRB = *p.NPRB
+	} else {
+		p.NPRB = &nPRB
 	}
 	// Resolve display network names (request overrides server defaults).
 	if p.FullNetName == "" {
