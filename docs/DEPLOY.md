@@ -76,7 +76,7 @@ sudo docker exec ltesystem md5sum /usr/share/uhd/images/usrp_b210_fpga*.bin
 `entrypoint.sh` 幂等复制（已存在不覆盖）：
 
 - `/app/configs/user_db.csv.example` -> `/data/conf/user_db.csv`
-- `/app/configs/sib.conf,rr.conf,drb.conf` -> `/data/conf/`
+- `/app/configs/sib.conf,rr.conf,rb.conf` -> `/data/conf/`
 - `/app/configs/wordlist.list.example` -> `/data/wordlist.list`
 
 ```bash

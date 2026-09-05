@@ -263,7 +263,7 @@ type enbTmplData struct {
 	DLEARFCN                   int
 	TxGain, RxGain, NPRB       int
 	DeviceName, DeviceArgs     string
-	SibConf, RrConf, DrbConf   string
+	SibConf, RrConf, RbConf     string
 	ENBPcap, S1APPcap, ENBLog  string
 }
 
@@ -308,7 +308,7 @@ n_prb = {{.NPRB}}
 [enb_files]
 sib_config = {{.SibConf}}
 rr_config = {{.RrConf}}
-drb_config = {{.DrbConf}}
+rb_config = {{.RbConf}}
 
 [rf]
 dl_earfcn = {{.DLEARFCN}}
@@ -380,8 +380,8 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 			_ = os.WriteFile(userDB, []byte("# Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc\n"), 0o644)
 		}
 	}
-	// Copy static sib/rr/drb if missing (from bundled configs dir).
-	for _, name := range []string{"sib.conf", "rr.conf", "drb.conf"} {
+	// Copy static sib/rr/rb if missing (from bundled configs dir).
+	for _, name := range []string{"sib.conf", "rr.conf", "rb.conf"} {
 		dst := filepath.Join(m.cfg.ConfDir, name)
 		if _, err := os.Stat(dst); os.IsNotExist(err) {
 			for _, cand := range []string{filepath.Join("configs", name), filepath.Join("/app/configs", name)} {
@@ -404,7 +404,7 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 		DeviceName: devName, DeviceArgs: devArgs,
 		SibConf: filepath.Join(m.cfg.ConfDir, "sib.conf"),
 		RrConf:  filepath.Join(m.cfg.ConfDir, "rr.conf"),
-		DrbConf: filepath.Join(m.cfg.ConfDir, "drb.conf"),
+		RbConf:   filepath.Join(m.cfg.ConfDir, "rb.conf"),
 		ENBPcap: m.cfg.LogPath(m.cfg.PcapENB),
 		S1APPcap: m.cfg.LogPath(m.cfg.PcapS1AP),
 		ENBLog:  m.cfg.LogPath(m.cfg.ENBLogName),

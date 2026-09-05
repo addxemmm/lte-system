@@ -13,7 +13,7 @@ mkdir -p /data/conf /data/log
 if [ ! -f /data/conf/user_db.csv ] && [ -f /app/configs/user_db.csv.example ]; then
   cp /app/configs/user_db.csv.example /data/conf/user_db.csv
 fi
-for f in sib.conf rr.conf drb.conf; do
+for f in sib.conf rr.conf rb.conf; do
   if [ ! -f "/data/conf/$f" ] && [ -f "/app/configs/$f" ]; then
     cp "/app/configs/$f" "/data/conf/$f"
   fi

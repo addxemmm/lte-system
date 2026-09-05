@@ -26,7 +26,7 @@ internal/crack        tshark CHAP + hashcat
 internal/parser       EPC 日志解析
 internal/sysop        无 shell 注入的进程管理
 internal/config       env+yaml 配置
-configs/              app.yaml.example、user_db.csv.example、sib/rr/drb、sim_profiles.yaml
+configs/              app.yaml.example、user_db.csv.example、sib/rr/rb、sim_profiles.yaml
 deploy/docker/        Dockerfile、docker-compose.yml、entrypoint.sh、select-uhd-fpga.sh
 firmware/uhd|bladerf  B210 FPGA（stock/compat）与 bladeRF 说明
 docs/                 QUICKSTART / API / DEPLOY / SIM / SDR / MIGRATION + images/samples/legacy
