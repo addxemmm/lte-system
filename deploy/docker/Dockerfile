@@ -50,7 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tcpdump tshark hashcat pcscd pcsc-tools libccid \
     python3 python3-pip python3-pyscard python3-serial python3-yaml \
     usbutils kmod net-tools \
-    ca-certificates \
+    ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
 
 # srsRAN binaries + configs from builder
