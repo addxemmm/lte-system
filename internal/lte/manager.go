@@ -3,6 +3,7 @@ package lte
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -289,7 +290,100 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	m.lastBand = band
 	m.bandKnown = known
 	_ = ctx
+	_ = m.SaveProfile(p) // best-effort: next /start {} reuses it
 	return known, nil
+}
+
+// ProfilePath is /data/last_start.json: the last successful launch config.
+// It survives container recreates via the /data volume (stateless service,
+// stateful files).
+func (m *Manager) ProfilePath() string { return filepath.Join(m.cfg.DataDir, "last_start.json") }
+
+// SaveProfile persists resolved start params (atomic tmp+rename).
+func (m *Manager) SaveProfile(p StartParams) error {
+	b, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := m.ProfilePath() + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, m.ProfilePath())
+}
+
+// LoadProfile reads the persisted launch config. ok=false when absent,
+// corrupt, or missing the five required fields.
+func (m *Manager) LoadProfile() (p StartParams, ok bool) {
+	b, err := os.ReadFile(m.ProfilePath())
+	if err != nil {
+		return StartParams{}, false
+	}
+	var v StartParams
+	if json.Unmarshal(b, &v) != nil {
+		return StartParams{}, false
+	}
+	if strings.TrimSpace(v.Band) == "" || strings.TrimSpace(v.APN) == "" ||
+		strings.TrimSpace(v.MCC) == "" || strings.TrimSpace(v.MNC) == "" ||
+		strings.TrimSpace(v.Network) == "" {
+		return StartParams{}, false
+	}
+	return v, true
+}
+
+// OverlayProfile fills every empty field of p from the saved profile.
+// Returns false when no usable profile exists.
+func (m *Manager) OverlayProfile(p *StartParams) bool {
+	saved, ok := m.LoadProfile()
+	if !ok {
+		return false
+	}
+	if p.Band == "" {
+		p.Band = saved.Band
+	}
+	if p.APN == "" {
+		p.APN = saved.APN
+	}
+	if p.MCC == "" {
+		p.MCC = saved.MCC
+	}
+	if p.MNC == "" {
+		p.MNC = saved.MNC
+	}
+	if p.Network == "" {
+		p.Network = saved.Network
+	}
+	if p.SDR == "" {
+		p.SDR = saved.SDR
+	}
+	if p.DeviceArgs == "" {
+		p.DeviceArgs = saved.DeviceArgs
+	}
+	if p.TxGain == nil {
+		p.TxGain = saved.TxGain
+	}
+	if p.RxGain == nil {
+		p.RxGain = saved.RxGain
+	}
+	if p.NPRB == nil {
+		p.NPRB = saved.NPRB
+	}
+	if p.FullNetName == "" {
+		p.FullNetName = saved.FullNetName
+	}
+	if p.ShortNetName == "" {
+		p.ShortNetName = saved.ShortNetName
+	}
+	if p.DNS == "" {
+		p.DNS = saved.DNS
+	}
+	return true
+}
+
+// IsEmptyStart reports whether the request carries no launch fields at all
+// (i.e. "reuse my saved profile").
+func IsEmptyStart(p StartParams) bool {
+	return p.Band == "" && p.APN == "" && p.MCC == "" && p.MNC == "" && p.Network == ""
 }
 
 // Stop kills tcpdump + srsenb + srsepc and removes the NAT rule we added.

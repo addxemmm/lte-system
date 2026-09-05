@@ -9,7 +9,7 @@
 ## 功能
 
 - 9 个兼容旧 Flask 版的接口：`start / stop / basicinfo / crackapn / getcrackresult / userupload / passwordupload / getfile / writesim`（`message_id` 语义不变，见 `docs/API.md`）
-- 新增 `GET /healthz`、`GET /status`
+- 新增 `GET /healthz`、`GET /status`、`GET /profile`；`/start` 空 body 复用上次配置（持久化见 `docs/RULES.md`）
 - 灵活写卡（有写卡器时）：`imsi` 必填，`ki/op/opc/auth/amf/acc/adm/spn/sqn/qci/card/mcc/mnc/iccid` 全可选（见 `docs/SIM.md`）；无写卡器时该接口不可用，不影响入网
 - SDR：USRP B210（正版 + BlackSDR 兼容板 FPGA 可切换）与 bladeRF（见 `docs/SDR.md`）
 - srsRAN_4G `release_23_11`，Ubuntu 22.04 镜像
@@ -18,7 +18,7 @@
 
 ```text
 cmd/server            Go 入口
-internal/api          9 接口 + healthz/status
+internal/api          9 接口 + healthz/status/profile
 internal/lte          srsRAN 启停 + conf 模板渲染 + band 表
 internal/sdr          UHD/bladeRF/ACR1281 探测
 internal/sim          灵活写卡 + user_db.csv
@@ -64,6 +64,7 @@ Remove-Item Env:\GOOS; Remove-Item Env:\GOARCH
 ## 文档
 
 - `docs/QUICKSTART.md` — 无写卡器 + 已写卡，直接入网（先看这个）
+- `docs/RULES.md` — 使用规则：无状态定义、配置持久化、操作流、多终端、升级回滚、射频纪律
 - `docs/API.md` — 接口与 `message_id` 全表 + curl
 - `docs/DEPLOY.md` — 服务器部署/升级/备份/排障
 - `docs/SIM.md` — 灵活写卡与卡型

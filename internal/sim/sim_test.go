@@ -84,3 +84,22 @@ func TestAddUser(t *testing.T) {
 		t.Fatalf("bad csv:\n%s", b)
 	}
 }
+
+func TestSummarize(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "user_db.csv")
+	seed := "# comment\nue3,mil,001012333333333,KEY,opc,OPC,8001,000000001234,7,dynamic\nbadline\n"
+	if err := os.WriteFile(p, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ues, err := Summarize(p)
+	if err != nil || len(ues) != 1 {
+		t.Fatalf("want 1 entry: %v %+v", err, ues)
+	}
+	if ues[0].IMSI != "001012333333333" || ues[0].Name != "ue3" || ues[0].Auth != "mil" {
+		t.Fatalf("wrong entry: %+v", ues[0])
+	}
+	if ues, err := Summarize(filepath.Join(dir, "missing.csv")); err != nil || len(ues) != 0 {
+		t.Fatalf("missing file should give empty list: %v %+v", err, ues)
+	}
+}

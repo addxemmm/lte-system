@@ -1,6 +1,8 @@
 # LTE-System API（Go `:8081`）
 
-约定：9 个旧接口全部 `POST JSON`，统一响应 `{"status":bool,"message_id":int,"message":str,...}`，语义沿用旧 README。新增 `GET /healthz`、`GET /status` 无 `message_id`。
+约定：9 个旧接口全部 `POST JSON`，统一响应 `{"status":bool,"message_id":int,"message":str,...}`，语义沿用旧 README。新增 `GET /healthz`、`GET /status`、`GET /profile` 无 `message_id`。
+
+> 配置持久化：每次 `/start` 成功后参数存入 `/data/last_start.json`（随卷保留）。之后 `/start` 传空 `{}` 即复用上次配置；只传个别字段则其余继承上次。详见 `docs/RULES.md`。
 
 ## 1. /start 启动抓包
 
@@ -71,11 +73,13 @@ curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' 
 
 新增全可选：`ki/op/opc/op_type/auth/amf/acc/adm/spn/name/sqn/qci/card/mcc/mnc/iccid`，详见 `SIM.md`。
 
-## 5. 新增状态接口 / 错误速查
+## 5. 新增状态接口 / 存档接口 / 错误速查
 
 ```bash
 curl http://127.0.0.1:8081/healthz; curl http://127.0.0.1:8081/status
-# {"ok":true,"running":true,"sdr":{...}} | {"running":true,"epc":true,"enb":true,"band":"40","apn":"addxLTE"}
+# {"ok":true,"running":true,"sdr":{...}} | {"running":true,"epc":true,"enb":true,"band":"7","apn":"addxLTE","net_name":"addxLTE"}
+curl http://127.0.0.1:8081/profile
+# {"has_profile":true,"profile":{...},"ues":[{"name":"ue3","auth":"mil","imsi":"001012333333333"}]}
 ```
 
 速查：`0`均为需查日志的通用失败；`2`多为“状态冲突”（已运行/未运行/id错/无文件/无读卡器）；`3`多为“缺数据”（缺参/无UE/无文件/csv失败）。

@@ -132,6 +132,7 @@ func TestValidIPv4(t *testing.T) {
 }
 
 func TestForwardRules(t *testing.T) {
+
 	rules := forwardRules()
 	if len(rules) != 3 {
 		t.Fatalf("want 3 rules, got %d", len(rules))
@@ -144,5 +145,44 @@ func TestForwardRules(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("rules missing %q:\n%s", want, joined)
 		}
+	}
+}
+
+func TestProfile_SaveLoadOverlay(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ConfDir = filepath.Join(cfg.DataDir, "conf")
+	cfg.LogDir = filepath.Join(cfg.DataDir, "log")
+	if err := cfg.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	m := New(cfg)
+	if _, ok := m.LoadProfile(); ok {
+		t.Fatal("no profile expected")
+	}
+	full := StartParams{Band: "7", APN: "addxLTE", MCC: "001", MNC: "01", Network: "ens33",
+		FullNetName: "addxLTE", ShortNetName: "addxLTE", DNS: "192.168.100.1"}
+	if err := m.SaveProfile(full); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := m.LoadProfile()
+	if !ok || got.APN != "addxLTE" || got.DNS != "192.168.100.1" {
+		t.Fatalf("load failed: %v %+v", ok, got)
+	}
+	// Overlay: partial request inherits the rest.
+	part := StartParams{Band: "40"}
+	if !m.OverlayProfile(&part) {
+		t.Fatal("overlay failed")
+	}
+	if part.APN != "addxLTE" || part.Band != "40" || part.MCC != "001" {
+		t.Fatalf("bad overlay: %+v", part)
+	}
+	if !IsEmptyStart(StartParams{}) || IsEmptyStart(full) {
+		t.Fatal("IsEmptyStart wrong")
+	}
+	// Corrupt file => no profile, no crash.
+	_ = os.WriteFile(m.ProfilePath(), []byte("{nope"), 0o644)
+	if _, ok := m.LoadProfile(); ok {
+		t.Fatal("corrupt profile should be rejected")
 	}
 }

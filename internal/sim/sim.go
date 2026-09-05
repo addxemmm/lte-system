@@ -320,3 +320,38 @@ func nextUEName(content string) string {
 	}
 	return fmt.Sprintf("ue%d", max+1)
 }
+
+// UEEntry is one HSS row summary for /profile (no secrets: key material omitted).
+type UEEntry struct {
+	Name string `json:"name"`
+	Auth string `json:"auth"`
+	IMSI string `json:"imsi"`
+}
+
+// Summarize parses user_db.csv into UE entries. Missing file => empty list, nil error.
+func Summarize(userDBPath string) ([]UEEntry, error) {
+	b, err := os.ReadFile(userDBPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []UEEntry{}, nil
+		}
+		return nil, err
+	}
+	out := []UEEntry{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		cols := strings.Split(line, ",")
+		if len(cols) < 3 {
+			continue
+		}
+		out = append(out, UEEntry{
+			Name: strings.TrimSpace(cols[0]),
+			Auth: strings.TrimSpace(cols[1]),
+			IMSI: strings.TrimSpace(cols[2]),
+		})
+	}
+	return out, nil
+}

@@ -67,7 +67,9 @@ curl -X POST http://127.0.0.1:8081/stop -H 'Content-Type: application/json' -d '
 
 | 现象 | 查哪里 |
 |---|---|
-| `/basicinfo` 返回 `3 no UE connected` | 手机没附着：检查频段/APN/搜网是否选对；`tail /data/log/srsLTE_enb.log` 看小区是否起来 |
+| `/basicinfo` 返回 `3 no UE connected` | 终端没附着：检查频段/APN/搜网是否选对；`tail /data/log/srsLTE_enb.log` 看小区是否起来 |
+| 手机搜不到 `00101` | 先确认当时 TX 是否稳定（`grep -c "timed out" /data/log/enb_run.log` 应接近 0）；手动搜网等足 3–5 分钟找数字网号；换 band 3（1800MHz，手机支持最广）再试；iPhone 对测试卡挑剔，优先用安卓/CPE 验证 |
 | 日志 `UE Authentication Rejected` | `user_db.csv` 的 Key/OPc 与卡内不一致，核对 ue3 行 |
 | 反复 attach 失败 | `SQN` 过期：把 ue3 行 `SQN` 改大一点（如 `000000001235`），重启容器再试 |
+| 能附着但不能上网 | 按顺序查：①终端 ping 网关 `172.16.0.1` ②ping `8.8.8.8` 看延迟/丢包（上行 SNR 差会导致 TCP 瘫痪，先看 `PUSCH snr`）③`nslookup` 查 DNS（上行过滤公网 DNS 时 `/start` 加 `"dns"` 参数）④仍不行看 `RULES.md` 转发链自查 |
 | `/start` 返回 `4` | USRP 没识别：`sudo docker exec ltesystem uhd_find_devices`，见 `SDR.md` |

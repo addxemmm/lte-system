@@ -147,3 +147,31 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("healthz %d", rec.Code)
 	}
 }
+
+func TestProfileEndpoint(t *testing.T) {
+	_, cfg := testServer(t)
+	// Seed a profile + user_db through a manager sharing the DataDir.
+	m := lte.New(cfg)
+	if err := m.SaveProfile(lte.StartParams{Band: "7", APN: "addxLTE", MCC: "001", MNC: "01", Network: "ens33"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.UserDBPath(), []byte("ue3,mil,001012333333333,k,opc,o,8001,000000001234,7,dynamic\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Rebuild server so its manager sees the same DataDir files.
+	s2 := New(cfg, m)
+	req := httptest.NewRequest(http.MethodGet, "/profile", nil)
+	rec := httptest.NewRecorder()
+	s2.Handler().ServeHTTP(rec, req)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["has_profile"] != true {
+		t.Fatalf("want profile: %v", body)
+	}
+	ues, _ := body["ues"].([]any)
+	if len(ues) != 1 {
+		t.Fatalf("want 1 ue: %v", body)
+	}
+}

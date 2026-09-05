@@ -1,6 +1,6 @@
 // Package api exposes the stateless tool HTTP API.
 // It preserves the 9 legacy Flask routes + message_id semantics verbatim,
-// and adds GET /healthz and GET /status for ops.
+// and adds GET /healthz, GET /status and GET /profile for ops.
 package api
 
 import (
@@ -44,6 +44,7 @@ func New(cfg config.Config, mgr *lte.Manager) *Server {
 	s.mux.HandleFunc("/writesim", s.handleWriteSIM)
 	s.mux.HandleFunc("/healthz", s.handleHealthz)
 	s.mux.HandleFunc("/status", s.handleStatus)
+	s.mux.HandleFunc("/profile", s.handleProfile)
 	return s
 }
 
@@ -78,6 +79,13 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
 		writeJSON(w, resp(false, 3, "Incomplete parameters"))
 		return
+	}
+	// Empty body {} reuses the saved profile (persisted on every /start).
+	if lte.IsEmptyStart(p) {
+		if !s.mgr.OverlayProfile(&p) {
+			writeJSON(w, resp(false, 3, "Incomplete parameters"))
+			return
+		}
 	}
 	if err := p.Validate(); err != nil && err.Error() == "incomplete parameters" {
 		writeJSON(w, resp(false, 3, "Incomplete parameters"))
@@ -411,4 +419,23 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st := s.mgr.IsRunning()
 	writeJSON(w, st)
+}
+
+// ---- GET /profile: saved launch config + HSS rows (no key material) ----
+
+func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, resp(false, 0, "Failed"))
+		return
+	}
+	p, ok := s.mgr.LoadProfile()
+	ues, _ := sim.Summarize(s.cfg.UserDBPath())
+	if ues == nil {
+		ues = []sim.UEEntry{}
+	}
+	out := map[string]any{"has_profile": ok, "ues": ues}
+	if ok {
+		out["profile"] = p
+	}
+	writeJSON(w, out)
 }
