@@ -24,6 +24,8 @@ service pcscd start || true
 
 # 4. Show radio state (never fails the boot).
 uhd_find_devices 2>&1 | head -n 20 || true
-bladeRF-cli -e info 2>&1 | head -n 20 || true
+if command -v bladeRF-cli >/dev/null 2>&1; then
+  bladeRF-cli -e info 2>&1 | head -n 20 || true
+fi
 
 exec /usr/local/bin/lte-system
