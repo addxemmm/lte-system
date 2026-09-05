@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 # lte-system (srsRAN_4G + Go tool API)
 # Base: Ubuntu 22.04 (gcc-11 works with srsRAN_4G; 24.04 needs gcc-11 downgrade).
+# Pin the srsRAN version here; image version lives in VERSION at repo root.
 ARG SRSRAN_VERSION=release_23_11
-ARG UHD_VERSION=4.1.0.5-1
 
 # ---------- stage 1: build srsRAN_4G ----------
 FROM ubuntu:22.04 AS srs-builder
@@ -69,9 +69,12 @@ RUN chmod +x /usr/local/bin/select-uhd-fpga
 # pysim (full upstream; legacy trimmed cards.py lives in legacy-python-workspace/)
 RUN git clone --depth 1 https://github.com/osmocom/pysim.git /opt/pysim
 
-# Go server + bundled configs
+# Go server + bundled configs.
+# app.yaml is materialized from the example so LTE_CONFIG always exists
+# (server also runs on pure defaults if the file is absent).
 COPY --from=go-builder /out/lte-system /usr/local/bin/lte-system
 COPY configs/ /app/configs/
+RUN cp /app/configs/app.yaml.example /app/configs/app.yaml
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh \
  && mkdir -p /data/conf /data/log

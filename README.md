@@ -67,6 +67,7 @@ Remove-Item Env:\GOOS; Remove-Item Env:\GOARCH
 - `docs/RULES.md` — 使用规则：无状态定义、配置持久化、操作流、多终端、升级回滚、射频纪律
 - `docs/API.md` — 接口与 `message_id` 全表 + curl
 - `docs/DEPLOY.md` — 服务器部署/升级/备份/排障
+- `deploy/docker/README.md` — Docker 专讲：镜像三段构建、compose 逐项解释、版本迭代、构建排障
 - `docs/SIM.md` — 灵活写卡与卡型
 - `docs/SDR.md` — B210（兼容板 FPGA 切换）与 bladeRF
 - `docs/MIGRATION.md` — 旧 Python → Go 对照
