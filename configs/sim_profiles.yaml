@@ -1,0 +1,29 @@
+# SIM card profiles: ATR -> pysim type + capabilities.
+# Used by docs + future auto-detect. The Go server currently passes `card`
+# through to pySim-prog.py -t; this file documents which types to use.
+profiles:
+  - type: testsim
+    description: "Legacy white card used by this project (360-compatible batch)"
+    atr:
+      - "3B9F96801F878031E073FE211B674A4C753034054BA9"
+      - "3B9F96801F878031E073FE211B674A4C7531330251B2"
+      - "3B9F96801F878031E073FE211B674A4C5275310451D5"
+      - "3B9F95801FC38031E073FE2113576111957125560109"
+    iccid_writable: false
+    ki_writable: false   # legacy testsim.program() ignores -k/-o; auth keys are factory preset
+    note: "Verify with pySim-read.py after writing; Ki/OPc must match user_db.csv factory values unless you use SJS1/SJA2 cards."
+
+  - type: sysmoUSIM-SJS1
+    description: "sysmocom sysmoUSIM-SJS1 (Ki/OPc programmable)"
+    atr:
+      - "3B9F96801FC78031A073BE21136743200718000001A5"
+    files: { ki: "00FF", opc: "00F7" }
+    iccid_writable: true
+
+  - type: sysmoISIM-SJA2
+    description: "sysmocom sysmoISIM-SJA2 (Ki/OPc programmable, ICCID factory-locked)"
+    atr:
+      - "3B9F96801F878031E073FE211B674A4C753034054BA9"
+      - "3B9F96801F878031E073FE211B674A4C7531330251B2"
+    iccid_writable: false
+    no_iccid_rewrite: true

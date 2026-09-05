@@ -1,0 +1,56 @@
+pysim (master) » pcsc_scan                                                                                      ~/workspace/pysim  
+Using reader plug'n play mechanism
+Scanning present readers...
+0: VMware Virtual USB CCID 00 00
+ 
+Mon Aug 28 18:19:33 2023
+ Reader 0: VMware Virtual USB CCID 00 00
+  Event number: 2
+  Card state: Card inserted, 
+  ATR: 3B 9F 95 80 1F C3 80 31 E0 73 FE 21 13 57 61 11 95 71 25 56 02 0A
+
+ATR: 3B 9F 95 80 1F C3 80 31 E0 73 FE 21 13 57 61 11 95 71 25 56 02 0A
++ TS = 3B --> Direct Convention
++ T0 = 9F, Y(1): 1001, K: 15 (historical bytes)
+  TA(1) = 95 --> Fi=512, Di=16, 32 cycles/ETU
+    125000 bits/s at 4 MHz, fMax for Fi = 5 MHz => 156250 bits/s
+  TD(1) = 80 --> Y(i+1) = 1000, Protocol T = 0 
+-----
+  TD(2) = 1F --> Y(i+1) = 0001, Protocol T = 15 - Global interface bytes following 
+-----
+  TA(3) = C3 --> Clock stop: no preference - Class accepted by the card: (3G) A 5V B 3V 
++ Historical bytes: 80 31 E0 73 FE 21 13 57 61 11 95 71 25 56 02
+  Category indicator byte: 80 (compact TLV data object)
+    Tag: 3, len: 1 (card service data byte)
+      Card service data byte: E0
+        - Application selection: by full DF name
+        - Application selection: by partial DF name
+        - BER-TLV data objects available in EF.DIR
+        - EF.DIR and EF.ATR access services: by GET RECORD(s) command
+        - Card with MF
+    Tag: 7, len: 3 (card capabilities)
+      Selection methods: FE
+        - DF selection by full DF name
+        - DF selection by partial DF name
+        - DF selection by path
+        - DF selection by file identifier
+        - Implicit DF selection
+        - Short EF identifier supported
+        - Record number supported
+      Data coding byte: 21
+        - Behaviour of write functions: proprietary
+        - Value 'FF' for the first byte of BER-TLV tag fields: invalid
+        - Data unit in quartets: 2
+      Command chaining, length fields and logical channels: 13
+        - Logical channel number assignment: by the card
+        - Maximum number of logical channels: 4
+    Tag: 5, len: 7 (card issuer's data)
+      Card issuer data: 61 11 95 71 25 56 02
++ TCK = 0A (correct checksum)
+
+Possibly identified card (using /home/addx/.cache/smartcard_list.txt):
+	NONE
+
+Your card is not present in the database.
+Please submit your unknown card at:
+https://smartcard-atr.apdu.fr/parse?ATR=3B9F95801FC38031E073FE211357611195712556020A

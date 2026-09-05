@@ -1,0 +1,39 @@
+listen_addr: ":8081"
+data_dir: "/data"
+conf_dir: ""
+log_dir: ""
+
+srsepc_bin: "srsepc"
+srsenb_bin: "srsenb"
+tcpdump_bin: "tcpdump"
+tshark_bin: "tshark"
+hashcat_bin: "hashcat"
+pysim_dir: "/opt/pysim"
+
+default_sdr: "auto"
+default_device_args: "auto"
+default_tx_gain: 80
+default_rx_gain: 40
+default_n_prb: 50
+
+sim_defaults:
+  ki: "00112233445566778899aabbccddeeff"
+  opc: "63bfa50ee6523365ff14c1f45f88737d"
+  op: ""
+  op_type: "opc"
+  auth: "mil"
+  amf: "8000"
+  acc: "FFFF"
+  adm: "3030303030303030"
+  spn: "LTESystem"
+  iccid: "89860123456789012345"
+  card: "testsim"
+  qci: 7
+
+pcap_lte_data: "lte_data.pcap"
+pcap_enb: "srsLTE_enb.pcap"
+pcap_s1ap: "srsLTE_enb_s1ap.pcap"
+pcap_epc: "srsLTE_epc.pcap"
+epc_log_name: "srsLTE_epc.log"
+enb_log_name: "srsLTE_enb.log"
+max_upload_bytes: 8388608

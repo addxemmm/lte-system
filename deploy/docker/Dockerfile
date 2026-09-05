@@ -1,0 +1,84 @@
+# syntax=docker/dockerfile:1
+# lte-system (srsRAN_4G + Go tool API)
+# Base: Ubuntu 22.04 (gcc-11 works with srsRAN_4G; 24.04 needs gcc-11 downgrade).
+ARG SRSRAN_VERSION=release_23_11
+ARG UHD_VERSION=4.1.0.5-1
+
+# ---------- stage 1: build srsRAN_4G ----------
+FROM ubuntu:22.04 AS srs-builder
+ARG SRSRAN_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git pkg-config \
+    libfftw3-dev libmbedtls-dev libboost-program-options-dev \
+    libconfig++-dev libsctp-dev \
+    libuhd-dev uhd-host libzmq3-dev \
+    libpcsclite-dev \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+# Optional bladeRF (uncomment if you need bladeRF RF support baked in):
+# RUN apt-get update && apt-get install -y software-properties-common \
+#  && add-apt-repository -y ppa:nuandllc/bladerf \
+#  && apt-get update && apt-get install -y bladerf libbladerf-dev \
+#  && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN git clone --depth 1 --branch ${SRSRAN_VERSION} https://github.com/srsran/srsRAN_4G.git srsRAN_4G
+WORKDIR /src/srsRAN_4G/build
+RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
+ && make -j$(nproc) \
+ && make install \
+ && ldconfig
+# Verify RF drivers got compiled in (fail early if UHD missing)
+RUN grep -E "UHD|BLADERF|SOAPY|ZEROMQ" CMakeCache.txt || true
+
+# ---------- stage 2: build Go server ----------
+FROM golang:1.22-bookworm AS go-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download || true
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
+
+# ---------- stage 3: runtime ----------
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libboost-program-options1.74.0 libconfig++9v5 libfftw3-single3 \
+    libmbedtls7 libsctp1 libuhd4.1.0 uhd-host \
+    libzmq5 iproute2 iptables iputils-ping dnsutils curl \
+    tcpdump tshark hashcat pcscd pcsc-tools libccid \
+    python3 python3-pip python3-pyscard python3-serial python3-yaml \
+    usbutils kmod net-tools \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# srsRAN binaries + configs from builder
+COPY --from=srs-builder /usr/local/bin/srsenb /usr/local/bin/srsepc /usr/local/bin/
+COPY --from=srs-builder /usr/local/lib/ /usr/local/lib/
+COPY --from=srs-builder /usr/local/share/srsran/ /usr/local/share/srsran/
+RUN ldconfig
+
+# UHD FPGA images (stock) + compat firmware overlay
+RUN /usr/lib/uhd/utils/uhd_images_downloader.py || true
+COPY firmware/uhd/usrp_b210_fpga.blacksdr_compat.bin /usr/share/uhd/images/usrp_b210_fpga.blacksdr_compat.bin
+COPY firmware/uhd/usrp_b210_fpga.stock.bin /usr/share/uhd/images/usrp_b210_fpga.stock.bin
+COPY deploy/docker/select-uhd-fpga.sh /usr/local/bin/select-uhd-fpga
+RUN chmod +x /usr/local/bin/select-uhd-fpga
+
+# pysim (full upstream; legacy trimmed cards.py lives in legacy-python-workspace/)
+RUN git clone --depth 1 https://github.com/osmocom/pysim.git /opt/pysim
+
+# Go server + bundled configs
+COPY --from=go-builder /out/lte-system /usr/local/bin/lte-system
+COPY configs/ /app/configs/
+COPY deploy/docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+ && mkdir -p /data/conf /data/log
+
+ENV LTE_CONFIG=/app/configs/app.yaml \
+    LTE_DATA_DIR=/data \
+    LTE_PYSIM_DIR=/opt/pysim \
+    UHD_IMAGES_DIR=/usr/share/uhd/images
+
+EXPOSE 8081
+ENTRYPOINT ["/entrypoint.sh"]

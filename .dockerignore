@@ -1,0 +1,5 @@
+.git
+bin/
+var/
+firmware/**/*.zip
+legacy-*/log/

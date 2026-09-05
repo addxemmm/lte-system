@@ -1,0 +1,25 @@
+# ---> Go
+bin/
+*.exe
+
+# ---> Data / runtime (never commit live state)
+/data/
+var/log/*.log
+var/log/*.pcap
+*.pcap
+!configs/*.example
+
+# ---> Firmware binaries are intentionally tracked (small .bin), but ignore vendor zips
+firmware/**/*.zip
+*.zip
+
+# ---> Legacy dumps
+legacy-python-workspace/log/
+legacy-new-sim-card-test/data1/
+legacy-new-sim-card-test/data2/
+
+# ---> OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
