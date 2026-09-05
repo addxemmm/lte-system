@@ -33,6 +33,8 @@ type StartParams struct {
 	// Empty = server default (legacy display "srsRAN").
 	FullNetName  string `json:"full_net_name"`
 	ShortNetName string `json:"short_net_name"`
+	// DNS server handed to UEs via PCO. Empty = server default.
+	DNS string `json:"dns"`
 }
 
 // Validate checks legacy "incomplete parameters" + new field formats.
@@ -60,6 +62,9 @@ func (p StartParams) Validate() error {
 	if err := validateNetName(p.ShortNetName); err != nil {
 		return fmt.Errorf("short_net_name: %w", err)
 	}
+	if p.DNS != "" && !validIPv4(p.DNS) {
+		return fmt.Errorf("dns must be an IPv4 address")
+	}
 	return nil
 }
 
@@ -83,6 +88,35 @@ func validateNetName(s string) error {
 func isDigits(s string) bool {
 	for _, r := range s {
 		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// validIPv4 is a strict dotted-quad check (no leading-zero octets > 255).
+func validIPv4(s string) bool {
+	parts := strings.Split(s, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" || len(p) > 3 {
+			return false
+		}
+		for _, r := range p {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+		if len(p) > 1 && p[0] == '0' {
+			return false
+		}
+		n := 0
+		for _, r := range p {
+			n = n*10 + int(r-'0')
+		}
+		if n > 255 {
 			return false
 		}
 	}
@@ -184,6 +218,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	if p.ShortNetName == "" {
 		p.ShortNetName = m.cfg.DefaultShortNetName
 	}
+	if p.DNS == "" {
+		p.DNS = m.cfg.DefaultDNS
+	}
 	devName, devArgs := sdr.SelectArgs(p.SDR, p.DeviceArgs, det, m.cfg)
 
 	if err := m.renderAll(p, band, devName, devArgs, txGain, rxGain, nPRB); err != nil {
@@ -219,6 +256,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run()
 	_ = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
 		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run()
+	// 2b. UE-subnet forwarding on Docker-managed hosts (FORWARD defaults
+	// to DROP) + TCP MSS clamp for the GTP path.
+	ensureForwarding()
 
 	// 3. srsenb
 	enbLogF, err := os.Create(enbRunLog)
@@ -263,6 +303,7 @@ func (m *Manager) Stop() bool {
 		_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
 			"-s", "172.16.0.1/24", "-o", m.lastStart.Network, "-j", "MASQUERADE").Run()
 	}
+	cleanupForwarding()
 	time.Sleep(time.Second)
 	still := sysop.Running("srsepc") || sysop.Running("srsenb") || sysop.Running("tcpdump")
 	return was && !still || (was && m.epcCmd == nil && m.enbCmd == nil && !still)
@@ -296,11 +337,72 @@ func reap(cmd *exec.Cmd) {
 	}
 }
 
+// ueSubnet is the SPGW UE pool. NAT keeps the legacy 172.16.0.1/24 spelling;
+// new rules use the canonical /24 form (same network).
+const (
+	ueSubnetLegacy = "172.16.0.1/24"
+	ueSubnet       = "172.16.0.0/24"
+)
+
+// iptRule is one iptables rule (filter table when table == "").
+type iptRule struct {
+	table string
+	chain string
+	args  []string
+}
+
+// forwardRules returns the UE-subnet rules every /start must ensure:
+// DOCKER-USER ACCEPTs (Docker >= 24 defaults FORWARD to DROP, which silently
+// kills UE traffic even with MASQUERADE in place) + TCP MSS clamp for TCP
+// over the GTP path.
+func forwardRules() []iptRule {
+	return []iptRule{
+		{"", "DOCKER-USER", []string{"-s", ueSubnet, "-j", "ACCEPT"}},
+		{"", "DOCKER-USER", []string{"-d", ueSubnet, "-j", "ACCEPT"}},
+		{"mangle", "FORWARD", []string{"-s", ueSubnet, "-p", "tcp",
+			"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}},
+	}
+}
+
+func (r iptRule) baseArgs() []string {
+	a := []string{}
+	if r.table != "" {
+		a = append(a, "-t", r.table)
+	}
+	return append(a, r.chain)
+}
+
+func (r iptRule) run(op string) error {
+	argv := append([]string{}, op)
+	argv = append(argv, r.baseArgs()...)
+	argv = append(argv, r.args...)
+	return exec.Command("iptables", argv...).Run()
+}
+
+// ensureForwarding adds missing rules (idempotent via -C check).
+func ensureForwarding() {
+	for _, r := range forwardRules() {
+		check := append([]string{"-C"}, r.baseArgs()...)
+		check = append(check, r.args...)
+		if exec.Command("iptables", check...).Run() != nil {
+			_ = r.run("-A")
+		}
+	}
+}
+
+// cleanupForwarding removes our rules best-effort (-D ignores missing).
+func cleanupForwarding() {
+	for _, r := range forwardRules() {
+		_ = r.run("-D")
+	}
+}
+
 // ---- config rendering (ports of run.sh echo blocks) ----
 
 type epcTmplData struct {
 	MCC, MNC, APN                    string
 	FullNetName, ShortNetName        string
+	DNSAddr                          string
 	UserDB, EPCPcap, EPCLog           string
 }
 
@@ -323,7 +425,7 @@ mme_bind_addr = 127.0.1.100
 apn = {{.APN}}
 full_net_name = {{.FullNetName}}
 short_net_name = {{.ShortNetName}}
-dns_addr = 8.8.8.8
+dns_addr = {{.DNSAddr}}
 paging_timer = 2
 
 [hss]
@@ -574,6 +676,7 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 	epcData := epcTmplData{
 		MCC: p.MCC, MNC: p.MNC, APN: p.APN,
 		FullNetName: p.FullNetName, ShortNetName: p.ShortNetName,
+		DNSAddr: p.DNS,
 		UserDB: userDB,
 		EPCPcap: m.cfg.LogPath(m.cfg.PcapEPC),
 		EPCLog:  m.cfg.LogPath(m.cfg.EPCLogName),

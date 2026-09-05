@@ -43,6 +43,9 @@ type Config struct {
 	DefaultTxGain     int     `yaml:"default_tx_gain"`
 	DefaultRxGain     int     `yaml:"default_rx_gain"`
 	DefaultNRB        int     `yaml:"default_n_prb"` // 25 = VM-USB safe 5MHz; 50/100 on bare metal
+	// DNS server handed to UEs via PCO. Default 8.8.8.8; if the uplink
+	// filters public DNS, point at the LAN resolver (e.g. the gateway).
+	DefaultDNS string `yaml:"default_dns"`
 	// Operator display name (NITZ) when /start omits full/short_net_name.
 	DefaultFullNetName  string `yaml:"default_full_net_name"`
 	DefaultShortNetName string `yaml:"default_short_net_name"`
@@ -95,6 +98,7 @@ func Default() Config {
 		DefaultTxGain:     80,
 		DefaultRxGain:     40,
 		DefaultNRB:        25,
+		DefaultDNS:        "8.8.8.8",
 		DefaultFullNetName:  "srsRAN",
 		DefaultShortNetName: "srsRAN",
 		Sim: SimDefaults{

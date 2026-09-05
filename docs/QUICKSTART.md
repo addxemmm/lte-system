@@ -27,6 +27,7 @@ curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
 - `band` 按当地空闲频段和终端支持选（`1/3/5/7/8/34/39/40/41`）。本机（虚拟机 USB）实测推荐 `7`（FDD，射频最稳定）；TDD（`39/40/41`）eNB 能起来但上行有上游推导问题，手机先能用 7 就用 7
 - `network` 是服务器 uplink 网卡名（本机实测为 `ens33`，`ip route get 8.8.8.8` 看 `dev` 后面的名字），不是旧文档里的 `wlo1`
 - `apn` 必须和终端 APN 设置一致（现网 `addxLTE`）
+- 终端 DNS 经 PCO 下发，默认 `8.8.8.8`；若上行网络过滤公网 DNS（IP 通、域名不通），`/start` 加 `"dns":"<网关或内网DNS>"`（本机用 `"dns":"192.168.100.1"`）
 - 自定义终端显示的运营商名：加 `"full_net_name":"addxLTE","short_net_name":"addxLTE"`（默认 `srsRAN`，不传也行）
 
 ## 3. 手机入网设置

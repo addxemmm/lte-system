@@ -19,13 +19,13 @@ curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d 
 |4|device is not connected...|未检测到 USRP|
 |0|Start Failed...|其他失败，看日志|
 
-新增可选：`sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name`，不传沿用服务端默认：
+新增可选：`sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name/dns`，不传沿用服务端默认：
 
 ```bash
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{"band":"41","apn":"addxLTE","mcc":"460","mnc":"00","network":"eth0","sdr":"uhd","tx_gain":80,"rx_gain":40,"n_prb":25,"full_net_name":"addxLTE","short_net_name":"addxLTE"}'
 ```
 
-`full_net_name`/`short_net_name` 是手机上显示的运营商名（NITZ 下发，1–32 字符，默认 `srsRAN`）；`/status` 会回显本次生效的 `net_name`。
+`full_net_name`/`short_net_name` 是手机上显示的运营商名（NITZ 下发，1–32 字符，默认 `srsRAN`）；`dns` 是经 PCO 下发给终端的 DNS（默认 `8.8.8.8`，上行过滤公网 DNS 时填网关/内网 DNS）；`/status` 会回显本次生效的 `net_name`。
 
 ## 2. /stop /basicinfo /crackapn /getcrackresult
 

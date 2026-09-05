@@ -97,7 +97,7 @@ func TestRenderAll_NetName(t *testing.T) {
 	m := New(cfg)
 	band, _ := Lookup("7")
 	p := StartParams{Band: "7", APN: "skygoapn", MCC: "001", MNC: "01", Network: "eth0",
-		FullNetName: "SKYGO Lab", ShortNetName: "SKYGO"}
+		FullNetName: "SKYGO Lab", ShortNetName: "SKYGO", DNS: "192.168.100.1"}
 	if err := m.renderAll(p, band, "auto", "auto", 80, 40, 25); err != nil {
 		t.Fatal(err)
 	}
@@ -108,5 +108,41 @@ func TestRenderAll_NetName(t *testing.T) {
 	s := string(b)
 	if !strings.Contains(s, "full_net_name = SKYGO Lab") || !strings.Contains(s, "short_net_name = SKYGO") {
 		t.Fatalf("epc_run.conf missing net names:\n%s", s)
+	}
+	if !strings.Contains(s, "dns_addr = 192.168.100.1") {
+		t.Fatalf("epc_run.conf missing dns:\n%s", s)
+	}
+}
+
+func TestValidIPv4(t *testing.T) {
+	for _, ok := range []string{"8.8.8.8", "192.168.100.1", "1.2.3.4"} {
+		if !validIPv4(ok) {
+			t.Fatalf("%s should be valid", ok)
+		}
+	}
+	for _, bad := range []string{"", "999.1.1.1", "1.2.3", "a.b.c.d", "01.2.3.4", "1.2.3.4.5"} {
+		if validIPv4(bad) {
+			t.Fatalf("%s should be invalid", bad)
+		}
+	}
+	p := StartParams{Band: "7", APN: "a", MCC: "001", MNC: "01", Network: "eth0", DNS: "not-an-ip"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("bad dns should be rejected")
+	}
+}
+
+func TestForwardRules(t *testing.T) {
+	rules := forwardRules()
+	if len(rules) != 3 {
+		t.Fatalf("want 3 rules, got %d", len(rules))
+	}
+	joined := ""
+	for _, r := range rules {
+		joined += r.chain + " " + strings.Join(r.args, " ") + "\n"
+	}
+	for _, want := range []string{"DOCKER-USER", "172.16.0.0/24", "TCPMSS"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("rules missing %q:\n%s", want, joined)
+		}
 	}
 }

@@ -19,6 +19,8 @@
 | srsLTE `rr.conf`（`meas_report_desc` 旧格式，无 `ul_earfcn`） | 上游 `rr.conf.example` 格式 + 每次按频段渲染 | 旧测量报告格式新版不认；TDD 下 UL 推导失败，必须显式 `ul_earfcn`（FDD=DL+18000，TDD=DL） |
 | `ps \| grep` counted 僵尸进程 | `ps -eo pid,stat,comm` 排除 `Z` 状态 + kill 后 `Wait()` 回收 | 崩溃残留的 `<defunct>` 不再误判为运行中 |
 | 固定运营商显示名 `srsRAN` | `/start` 新增 `full_net_name`/`short_net_name`（NITZ 下发） | 默认仍是 `srsRAN`，传参即改，`/status` 回显 |
+| DNS 写死 `8.8.8.8` | `/start` 新增 `dns` + `default_dns` 配置 | 上行过滤公网 DNS 时可改网关/内网 DNS |
+| 只加 MASQUERADE 就上网 | 每次 `/start` 额外确保 `DOCKER-USER` 放行 + TCP MSS 钳制，`/stop` 清理 | Docker 新版默认 FORWARD DROP 会静默丢掉 UE 流量；GTP 路径需要 MSS clamp |
 
 `getfile` 缺文件时旧代码误回 `message_id 2`，新代码按文档返回 `3`（唯一有意的行为修正）。
 
