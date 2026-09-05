@@ -177,9 +177,6 @@ func TestProfile_SaveLoadOverlay(t *testing.T) {
 	if part.APN != "addxLTE" || part.Band != "40" || part.MCC != "001" {
 		t.Fatalf("bad overlay: %+v", part)
 	}
-	if !IsEmptyStart(StartParams{}) || IsEmptyStart(full) {
-		t.Fatal("IsEmptyStart wrong")
-	}
 	// Corrupt file => no profile, no crash.
 	_ = os.WriteFile(m.ProfilePath(), []byte("{nope"), 0o644)
 	if _, ok := m.LoadProfile(); ok {

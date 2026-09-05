@@ -386,12 +386,6 @@ func (m *Manager) OverlayProfile(p *StartParams) bool {
 	return true
 }
 
-// IsEmptyStart reports whether the request carries no launch fields at all
-// (i.e. "reuse my saved profile").
-func IsEmptyStart(p StartParams) bool {
-	return p.Band == "" && p.APN == "" && p.MCC == "" && p.MNC == "" && p.Network == ""
-}
-
 // Stop kills tcpdump + srsenb + srsepc and removes the NAT rule we added.
 func (m *Manager) Stop() bool {
 	m.mu.Lock()

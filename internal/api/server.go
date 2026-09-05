@@ -80,13 +80,11 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, resp(false, 3, "Incomplete parameters"))
 		return
 	}
-	// Empty body {} reuses the saved profile (persisted on every /start).
-	if lte.IsEmptyStart(p) {
-		if !s.mgr.OverlayProfile(&p) {
-			writeJSON(w, resp(false, 3, "Incomplete parameters"))
-			return
-		}
-	}
+	// Profile inheritance: every empty field falls back to the saved
+	// profile (persisted on each successful /start). Fully-empty body {}
+	// therefore reuses the whole profile; partial bodies override per-field.
+	// No usable profile + missing required fields => Incomplete parameters.
+	s.mgr.OverlayProfile(&p)
 	if err := p.Validate(); err != nil && err.Error() == "incomplete parameters" {
 		writeJSON(w, resp(false, 3, "Incomplete parameters"))
 		return
