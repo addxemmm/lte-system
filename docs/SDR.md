@@ -29,6 +29,11 @@ sudo docker exec ltesystem uhd_find_devices
 
 正常应含 `B210`/`B200`、serial、USB `3.0`；若为空/只有 `No UHD Devices Found` 则检查 `lsusb`、换线/换口/加 Hub 外接电源；若报 FPGA 不匹配则切 `stock/compat` 后 `docker restart ltesystem`。
 
+## 天线（重要，实测血泪）
+
+- 必须用 **700–2700MHz 宽频 4G 天线**（之前验证过的船形桨板天线）。普通 **2.4GHz WiFi 棒状天线在 B7（2.68G）失配、B3（1.84G）几乎无辐射**，现象是：CPE 能连但延迟几秒、手机搜不到网——和基站配置无关，别在软件上浪费时间。
+- 两根都接 TX/RX 和 RX2 口并拧紧；手机测试时离天线 1–3 米（贴太近会饱和，太远更搜不到）。
+
 ## 2. bladeRF
 
 支持 x40 / xA4 / 2.0 micro，对应 `device_name=bladerf`：
