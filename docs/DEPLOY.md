@@ -32,15 +32,18 @@ curl -s http://127.0.0.1:8081/healthz; echo
 ### 方式 B：docker run
 
 ```bash
-sudo docker build -f deploy/docker/Dockerfile -t lte-system:latest .
+sudo docker build -f deploy/docker/Dockerfile -t ltesystem-dep:2.0 .
+sudo docker tag ltesystem-dep:2.0 docker.skygo/addx/ltesystem-dep:2.0
 sudo docker rm -f ltesystem || true
 sudo docker run -d --name ltesystem --restart unless-stopped \
   --network host --privileged \
   -v /dev/bus/usb:/dev/bus/usb -v lte-data:/data \
   -e LTE_CONFIG=/app/configs/app.yaml -e UHD_FPGA=compat \
   -e UHD_IMAGES_DIR=/usr/share/uhd/images \
-  lte-system:latest
+  ltesystem-dep:2.0
 ```
+
+当前版本见根目录 `VERSION`（`2.0`，从旧 `ltesystem-dep:1.0` 迭代而来）。
 
 ### 本地只构建 Linux 二进制（不运行）
 
