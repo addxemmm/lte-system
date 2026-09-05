@@ -66,10 +66,19 @@ func Detect() Info {
 	return in
 }
 
+// B210AutoArgs are proven USB-stable UHD args for B210 on a VM host
+// (kills the "Tx while waiting for EOB, timed out" storm at 5-10MHz).
+const B210AutoArgs = "recv_frame_size=9232,send_frame_size=9232,num_recv_frames=64,num_send_frames=64"
+
 // SelectArgs resolves device_name/device_args for enb.conf [rf].
 // sdrWanted comes from /start "sdr" field: "uhd" | "bladerf" | "zmq" | "auto" | "".
+//
+// Rules: explicit non-"auto" args always win. Otherwise a detected B210 on a
+// UHD/auto driver gets B210AutoArgs (VM-USB safe); bladeRF/ZMQ keep "auto"
+// (B210 USB tuning must never leak into other drivers).
 func SelectArgs(sdrWanted string, customArgs string, det Info, defaults config.Config) (deviceName, deviceArgs string) {
-	if customArgs != "" && customArgs != "auto" {
+	explicit := customArgs != "" && customArgs != "auto"
+	if explicit {
 		deviceArgs = customArgs
 	} else {
 		deviceArgs = defaults.DefaultDeviceArgs
@@ -79,6 +88,9 @@ func SelectArgs(sdrWanted string, customArgs string, det Info, defaults config.C
 	}
 	switch sdrWanted {
 	case "uhd":
+		if !explicit && deviceArgs == "auto" && det.UHD_B210 {
+			deviceArgs = B210AutoArgs
+		}
 		return "uhd", deviceArgs
 	case "bladerf":
 		return "bladerf", deviceArgs
@@ -94,6 +106,9 @@ func SelectArgs(sdrWanted string, customArgs string, det Info, defaults config.C
 		}
 		if defaults.DefaultSDR == config.SDRZMQ {
 			return "zmq", deviceArgs
+		}
+		if !explicit && deviceArgs == "auto" && det.UHD_B210 {
+			deviceArgs = B210AutoArgs
 		}
 		return "auto", deviceArgs
 	}

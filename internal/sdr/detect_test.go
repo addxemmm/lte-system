@@ -36,3 +36,31 @@ func TestSelectArgs_CustomArgs(t *testing.T) {
 		t.Fatalf("custom args lost: %s", a)
 	}
 }
+
+func TestSelectArgs_B210AutoTuning(t *testing.T) {
+	c := config.Default()
+	// Detected B210 + default args -> proven VM-USB-stable tuning.
+	_, a := SelectArgs("auto", "auto", Info{UHD_B210: true}, c)
+	if a != B210AutoArgs {
+		t.Fatalf("want B210 auto args, got %q", a)
+	}
+	_, a = SelectArgs("uhd", "auto", Info{UHD_B210: true}, c)
+	if a != B210AutoArgs {
+		t.Fatalf("want B210 auto args, got %q", a)
+	}
+	// Explicit args always win over auto tuning.
+	_, a = SelectArgs("uhd", "num_recv_frames=64", Info{UHD_B210: true}, c)
+	if a != "num_recv_frames=64" {
+		t.Fatalf("explicit args must win, got %q", a)
+	}
+	// No B210 detected -> untouched "auto".
+	_, a = SelectArgs("auto", "auto", Info{}, c)
+	if a != "auto" {
+		t.Fatalf("want auto, got %q", a)
+	}
+	// bladeRF must never receive B210 USB tuning.
+	_, a = SelectArgs("bladerf", "auto", Info{UHD_B210: true, BladeRF: true}, c)
+	if a != "auto" {
+		t.Fatalf("bladerf must keep auto args, got %q", a)
+	}
+}

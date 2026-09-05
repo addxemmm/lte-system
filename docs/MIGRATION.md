@@ -17,7 +17,8 @@
 | srsLTE（停更） | srsRAN_4G `release_23_11` | 二进制名不变（`srsenb`/`srsepc`），日志关键字不变 |
 | srsLTE `drb.conf`/`drb_config` | srsRAN_4G `rb.conf`/`rb_config` | 上游改名，旧 key 直接导致 eNB 退出 |
 | srsLTE `rr.conf`（`meas_report_desc` 旧格式，无 `ul_earfcn`） | 上游 `rr.conf.example` 格式 + 每次按频段渲染 | 旧测量报告格式新版不认；TDD 下 UL 推导失败，必须显式 `ul_earfcn`（FDD=DL+18000，TDD=DL） |
-| `ps \| grep`  counted 僵尸进程 | `ps -eo pid,stat,comm` 排除 `Z` 状态 | 崩溃残留的 `<defunct>` 不再误判为运行中 |
+| `ps \| grep` counted 僵尸进程 | `ps -eo pid,stat,comm` 排除 `Z` 状态 + kill 后 `Wait()` 回收 | 崩溃残留的 `<defunct>` 不再误判为运行中 |
+| 固定运营商显示名 `srsRAN` | `/start` 新增 `full_net_name`/`short_net_name`（NITZ 下发） | 默认仍是 `srsRAN`，传参即改，`/status` 回显 |
 
 `getfile` 缺文件时旧代码误回 `message_id 2`，新代码按文档返回 `3`（唯一有意的行为修正）。
 

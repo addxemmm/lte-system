@@ -20,18 +20,19 @@ sudo docker exec ltesystem grep -v '^#' /data/conf/user_db.csv
 
 ```bash
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"40","apn":"skygoapn","mcc":"001","mnc":"01","network":"eth0"}'
+  -d '{"band":"7","apn":"addxLTE","mcc":"001","mnc":"01","network":"eth0","full_net_name":"addxLTE","short_net_name":"addxLTE"}'
 # {"status":true,"message_id":1,"message":"Start successfully"}
 ```
 
-- `band` 按当地空闲频段选（`1/3/5/7/8/34/39/40/41`），先用 `40` 試
-- `network` 是服务器 uplink 网卡名（`ip route get 8.8.8.8` 看 `dev` 后面的名字），不是旧文档里的 `wlo1`
-- `apn` 必须和手机 APN 设置一致（`skygoapn`）
+- `band` 按当地空闲频段和终端支持选（`1/3/5/7/8/34/39/40/41`）。本机（虚拟机 USB）实测推荐 `7`（FDD，射频最稳定）；TDD（`39/40/41`）eNB 能起来但上行有上游推导问题，手机先能用 7 就用 7
+- `network` 是服务器 uplink 网卡名（本机实测为 `ens33`，`ip route get 8.8.8.8` 看 `dev` 后面的名字），不是旧文档里的 `wlo1`
+- `apn` 必须和终端 APN 设置一致（现网 `addxLTE`）
+- 自定义终端显示的运营商名：加 `"full_net_name":"addxLTE","short_net_name":"addxLTE"`（默认 `srsRAN`，不传也行）
 
 ## 3. 手机入网设置
 
-1. 白卡插入手机，手动搜网，选中 MCC `001` MNC `01` 的网络
-2. APN 新建：名称任意，APN 栏填 `skygoapn`，保存并选中
+1. 白卡插入终端，手动搜网，选中 MCC `001` MNC `01` 的网络（会显示运营商名 `addxLTE`）
+2. APN 新建：名称任意，APN 栏填 `addxLTE`，保存并选中
 3. 打开数据，等待附着（一般 10–60 秒）
 
 ## 4. 确认入网成功
@@ -40,7 +41,7 @@ curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
 curl -X POST http://127.0.0.1:8081/basicinfo -H 'Content-Type: application/json' -d '{}'
 # 成功示例：
 # {"status":true,"message_id":1,"message":"Getting information success.",
-#  "apn":"skygoapn","imsi":"001012333333333","ip":"172.16.0.2"}
+#  "apn":"addxLTE","imsi":"001012333333333","ip":"172.16.0.2"}
 ```
 
 对照金样本 `docs/samples/epc-ue-attached.log`：你的实时日志

@@ -48,7 +48,7 @@ BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
 
 ```bash
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"40","apn":"skygoapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto"}'
+  -d '{"band":"7","apn":"addxLTE","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","full_net_name":"addxLTE","short_net_name":"addxLTE"}'
 ```
 
 完整入网流程见 `docs/QUICKSTART.md`。

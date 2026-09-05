@@ -7,7 +7,7 @@
 `band` 仅限 `1/3/5/7/8/34/39/40/41`，越界按默认处理。
 
 ```bash
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{"band":"40","apn":"skygoapn","mcc":"001","mnc":"01","network":"eth0"}'
+curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{"band":"40","apn":"addxLTE","mcc":"001","mnc":"01","network":"eth0"}'
 # 成功: {"status":true,"message_id":1,"message":"Start successfully"}
 ```
 
@@ -19,11 +19,13 @@ curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d 
 |4|device is not connected...|未检测到 USRP|
 |0|Start Failed...|其他失败，看日志|
 
-新增可选：`sdr/device_args/tx_gain/rx_gain/n_prb`，不传沿用服务端默认：
+新增可选：`sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name`，不传沿用服务端默认：
 
 ```bash
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{"band":"41","apn":"skygoapn","mcc":"460","mnc":"00","network":"eth0","sdr":"uhd","tx_gain":80,"rx_gain":40,"n_prb":50}'
+curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{"band":"41","apn":"addxLTE","mcc":"460","mnc":"00","network":"eth0","sdr":"uhd","tx_gain":80,"rx_gain":40,"n_prb":25,"full_net_name":"addxLTE","short_net_name":"addxLTE"}'
 ```
+
+`full_net_name`/`short_net_name` 是手机上显示的运营商名（NITZ 下发，1–32 字符，默认 `srsRAN`）；`/status` 会回显本次生效的 `net_name`。
 
 ## 2. /stop /basicinfo /crackapn /getcrackresult
 
@@ -31,7 +33,7 @@ curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d 
 curl -X POST http://127.0.0.1:8081/stop -d '{}'
 # {"status":true,"message_id":1,"message":"Stop successfully."} | 2 Not running. | 0 Stop failed.
 curl -X POST http://127.0.0.1:8081/basicinfo -d '{}'
-# {"status":true,"message_id":1,"message":"Getting information success.","apn":"skygoapn","imsi":"001012333333333","ip":"172.16.0.2"}
+# {"status":true,"message_id":1,"message":"Getting information success.","apn":"addxLTE","imsi":"001012333333333","ip":"172.16.0.2"}
 curl -X POST http://127.0.0.1:8081/crackapn -d '{}'
 curl -X POST http://127.0.0.1:8081/getcrackresult -d '{}'
 # 成功追加 {"apn":..,"imsi":..,"ip":..,"username":"mi6test","password":"cmwap"}
@@ -73,7 +75,7 @@ curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' 
 
 ```bash
 curl http://127.0.0.1:8081/healthz; curl http://127.0.0.1:8081/status
-# {"ok":true,"running":true,"sdr":{...}} | {"running":true,"epc":true,"enb":true,"band":"40","apn":"skygoapn"}
+# {"ok":true,"running":true,"sdr":{...}} | {"running":true,"epc":true,"enb":true,"band":"40","apn":"addxLTE"}
 ```
 
 速查：`0`均为需查日志的通用失败；`2`多为“状态冲突”（已运行/未运行/id错/无文件/无读卡器）；`3`多为“缺数据”（缺参/无UE/无文件/csv失败）。

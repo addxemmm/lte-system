@@ -44,12 +44,15 @@ sudo docker exec ltesystem bladeRF-cli -e info
 ```bash
 curl -s -X POST http://192.168.100.199:8081/start \
   -H 'Content-Type: application/json' \
-  -d '{"band":"41","apn":"skygoapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","device_args":"auto","tx_gain":80,"rx_gain":40}' ; echo
+  -d '{"band":"41","apn":"addxLTE","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","device_args":"auto","tx_gain":80,"rx_gain":40}' ; echo
 ```
 
 - `sdr`：`uhd`（B210）| `bladerf`（`device_name=bladerf`）| `zmq`（仿真）| `auto`（有 bladeRF 且无 B210 则选 bladeRF，否则按 `configs/app.yaml.example` 的 `default_sdr`）。
-- `device_args`：透传到 `enb.conf [rf] device_args`，`auto` 即用 `default_device_args`。
+- `device_args`：透传到 `enb.conf [rf] device_args`。`auto` + 检测到 B210 时服务端自动注入 VM-USB 稳定参数（`recv/send_frame_size=9232`，`num_recv/send_frames=64`）；显式传参永远优先；bladeRF/ZMQ 不受影响。
 - `tx_gain/rx_gain`：覆盖 `default_tx_gain: 80` / `default_rx_gain: 40`，B210 建议从默认值起调，勿直接拉满。
+- `n_prb`：默认 `25`（5MHz）。虚拟机 USB 吞吐有限，10MHz（`50`）易出现 `Tx while waiting for EOB, timed out` 导致信号断续、手机搜不到网；裸金属可提到 `50`/`100`。
+
+> 虚拟机 USB 排查：`sudo docker exec ltesystem grep -c "timed out" /data/log/enb_run.log` —— 1 分钟内持续增长说明 USB 跟不上，先降 `n_prb` 到 `25`（默认已是），再检查宿主机负载与 USB3 直通。
 
 > `network` 是服务器 uplink 网卡名（如 `eth0`/`enpXsY`），不是 `wlo1`（旧文档的笔记本 Wi-Fi 名）。用 `ip route get 8.8.8.8` 确认。
 
@@ -72,4 +75,5 @@ srsRAN 会创建 `srs_spgw_sgi` 网卡并需要宿主 uplink 接口名，bridge 
 | `bladeRF-cli: No devices` | 未挂 USB / rbf 缺失；检查映射，`firmware/bladerf` 放入对应 `hosted*.rbf` |
 | `pcsc_scan: No readers` | `privileged`/USB 映射缺失；`service pcscd start`，`lsusb \| grep ACR128` |
 | `8081 connection refused` | 容器未起/端口占用；`docker ps`，`docker logs --tail 200 ltesystem` |
+| 手机搜不到网 | 先看 TX 稳定性（上条）；再确认频段手机支持、天线在 TX/RX 口、距离 1 米内、手动搜网多等几分钟 |
 | 无信号/增益异常 | `tx_gain/rx_gain` 过高/低；先用 80/40，天线接 TX/RX 口 |

@@ -42,7 +42,10 @@ type Config struct {
 	DefaultDeviceArgs string  `yaml:"default_device_args"`
 	DefaultTxGain     int     `yaml:"default_tx_gain"`
 	DefaultRxGain     int     `yaml:"default_rx_gain"`
-	DefaultNRB        int     `yaml:"default_n_prb"`
+	DefaultNRB        int     `yaml:"default_n_prb"` // 25 = VM-USB safe 5MHz; 50/100 on bare metal
+	// Operator display name (NITZ) when /start omits full/short_net_name.
+	DefaultFullNetName  string `yaml:"default_full_net_name"`
+	DefaultShortNetName string `yaml:"default_short_net_name"`
 
 	// Defaults for /writesim (flexible card programming)
 	Sim SimDefaults `yaml:"sim_defaults"`
@@ -91,7 +94,9 @@ func Default() Config {
 		DefaultDeviceArgs: "auto",
 		DefaultTxGain:     80,
 		DefaultRxGain:     40,
-		DefaultNRB:        50,
+		DefaultNRB:        25,
+		DefaultFullNetName:  "srsRAN",
+		DefaultShortNetName: "srsRAN",
 		Sim: SimDefaults{
 			Ki:     "00112233445566778899aabbccddeeff",
 			OPc:    "63bfa50ee6523365ff14c1f45f88737d",

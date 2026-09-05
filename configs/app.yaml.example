@@ -11,10 +11,16 @@ hashcat_bin: "hashcat"
 pysim_dir: "/opt/pysim"
 
 default_sdr: "auto"
+# "auto" device_args + detected B210 => server injects VM-USB-stable UHD args
+# (recv/send_frame_size=9232, num frames 64). Explicit args always win.
 default_device_args: "auto"
 default_tx_gain: 80
 default_rx_gain: 40
-default_n_prb: 50
+# 25 = 5MHz, VM-USB safe (proven on addsdr). Use 50/100 on bare metal.
+default_n_prb: 25
+# Operator name shown on the UE (NITZ). Legacy display was "srsRAN".
+default_full_net_name: "srsRAN"
+default_short_net_name: "srsRAN"
 
 sim_defaults:
   ki: "00112233445566778899aabbccddeeff"

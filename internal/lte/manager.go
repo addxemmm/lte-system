@@ -29,6 +29,10 @@ type StartParams struct {
 	TxGain     *int   `json:"tx_gain"`
 	RxGain     *int   `json:"rx_gain"`
 	NPRB       *int   `json:"n_prb"`
+	// Operator name shown on the UE (NITZ via EMM Information).
+	// Empty = server default (legacy display "srsRAN").
+	FullNetName  string `json:"full_net_name"`
+	ShortNetName string `json:"short_net_name"`
 }
 
 // Validate checks legacy "incomplete parameters" + new field formats.
@@ -49,6 +53,29 @@ func (p StartParams) Validate() error {
 	}
 	if strings.ContainsAny(p.Network, " \t\n\r\"';&|<>$`\\") {
 		return fmt.Errorf("network contains illegal characters")
+	}
+	if err := validateNetName(p.FullNetName); err != nil {
+		return fmt.Errorf("full_net_name: %w", err)
+	}
+	if err := validateNetName(p.ShortNetName); err != nil {
+		return fmt.Errorf("short_net_name: %w", err)
+	}
+	return nil
+}
+
+// validateNetName allows empty (use server default) or 1-32 printable
+// ASCII chars safe for libconfig (no quotes/semicolons/shell metachars).
+func validateNetName(s string) error {
+	if s == "" {
+		return nil
+	}
+	if len(s) > 32 {
+		return fmt.Errorf("must be 1-32 chars")
+	}
+	for _, r := range s {
+		if r < 0x20 || r > 0x7e || strings.ContainsRune("\"';#$`\\", r) {
+			return fmt.Errorf("illegal character %q", r)
+		}
 	}
 	return nil
 }
@@ -89,6 +116,7 @@ type Status struct {
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	Band      string     `json:"band,omitempty"`
 	APN       string     `json:"apn,omitempty"`
+	NetName   string     `json:"net_name,omitempty"`
 }
 
 // IsRunning reports live state (managed procs OR external same-name procs).
@@ -104,6 +132,7 @@ func (m *Manager) IsRunning() Status {
 		st.StartedAt = &t
 		st.Band = m.lastStart.Band
 		st.APN = m.lastStart.APN
+		st.NetName = m.lastStart.FullNetName
 	}
 	return st
 }
@@ -147,6 +176,13 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	}
 	if p.NPRB != nil {
 		nPRB = *p.NPRB
+	}
+	// Resolve display network names (request overrides server defaults).
+	if p.FullNetName == "" {
+		p.FullNetName = m.cfg.DefaultFullNetName
+	}
+	if p.ShortNetName == "" {
+		p.ShortNetName = m.cfg.DefaultShortNetName
 	}
 	devName, devArgs := sdr.SelectArgs(p.SDR, p.DeviceArgs, det, m.cfg)
 
@@ -233,14 +269,11 @@ func (m *Manager) Stop() bool {
 }
 
 func (m *Manager) killLocked() {
-	if m.pcapCmd != nil && m.pcapCmd.Process != nil {
-		_ = m.pcapCmd.Process.Kill()
-	}
-	if m.enbCmd != nil && m.enbCmd.Process != nil {
-		_ = m.enbCmd.Process.Kill()
-	}
-	if m.epcCmd != nil && m.epcCmd.Process != nil {
-		_ = m.epcCmd.Process.Kill()
+	for _, cmd := range []*exec.Cmd{m.pcapCmd, m.enbCmd, m.epcCmd} {
+		if cmd != nil && cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			reap(cmd)
+		}
 	}
 	m.pcapCmd = nil
 	m.enbCmd = nil
@@ -251,11 +284,24 @@ func (m *Manager) killLocked() {
 	m.startedAt = time.Time{}
 }
 
+// reap waits for a killed child so it doesn't linger as <defunct>.
+// (Unreaped zombies made PIDs lie until the zombie-aware check was added;
+// belt and suspenders.)
+func reap(cmd *exec.Cmd) {
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
+}
+
 // ---- config rendering (ports of run.sh echo blocks) ----
 
 type epcTmplData struct {
-	MCC, MNC, APN              string
-	UserDB, EPCPcap, EPCLog     string
+	MCC, MNC, APN                    string
+	FullNetName, ShortNetName        string
+	UserDB, EPCPcap, EPCLog           string
 }
 
 type enbTmplData struct {
@@ -275,6 +321,8 @@ mcc = {{.MCC}}
 mnc = {{.MNC}}
 mme_bind_addr = 127.0.1.100
 apn = {{.APN}}
+full_net_name = {{.FullNetName}}
+short_net_name = {{.ShortNetName}}
 dns_addr = 8.8.8.8
 paging_timer = 2
 
@@ -525,6 +573,7 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 	}
 	epcData := epcTmplData{
 		MCC: p.MCC, MNC: p.MNC, APN: p.APN,
+		FullNetName: p.FullNetName, ShortNetName: p.ShortNetName,
 		UserDB: userDB,
 		EPCPcap: m.cfg.LogPath(m.cfg.PcapEPC),
 		EPCLog:  m.cfg.LogPath(m.cfg.EPCLogName),
