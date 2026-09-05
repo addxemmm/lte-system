@@ -8,15 +8,12 @@ if command -v select-uhd-fpga >/dev/null 2>&1; then
   select-uhd-fpga "${UHD_FPGA:-auto}" || true
 fi
 
-# 2. Seed /data on first run (idempotent).
+# 2. Seed /data on first run (idempotent for user data).
+# Static radio configs always follow the image so redeploys propagate fixes;
+# user_db.csv / wordlist.list are only copied when missing (never overwritten).
 mkdir -p /data/conf /data/log
-if [ ! -f /data/conf/user_db.csv ] && [ -f /app/configs/user_db.csv.example ]; then
-  cp /app/configs/user_db.csv.example /data/conf/user_db.csv
-fi
 for f in sib.conf rr.conf rb.conf; do
-  if [ ! -f "/data/conf/$f" ] && [ -f "/app/configs/$f" ]; then
-    cp "/app/configs/$f" "/data/conf/$f"
-  fi
+  cp -f "/app/configs/$f" "/data/conf/$f"
 done
 if [ ! -f /data/wordlist.list ] && [ -f /app/configs/wordlist.list.example ]; then
   cp /app/configs/wordlist.list.example /data/wordlist.list
