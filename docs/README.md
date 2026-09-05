@@ -4,7 +4,7 @@
 |---|---|
 | `QUICKSTART.md` | **先看这个**：无写卡器 + 已写卡 ue3，从部署到手机入网全流程 |
 | `RULES.md` | 使用规则：无状态/持久化/操作流/升级回滚 |
-| `API.md` | 9 个工具接口 + `healthz`/`status`，请求/响应/`message_id` 全表 |
+| `API.md` | 接口完整参考手册（逐字对应实现，含全部字段/`message_id`/示例/流程） |
 | `DEPLOY.md` | 服务器部署、升级、备份、排障 |
 | `SIM.md` | 写卡（有写卡器时）与 `user_db.csv` 行格式 |
 | `SDR.md` | B210（正版/兼容板 FPGA 切换）与 bladeRF |
