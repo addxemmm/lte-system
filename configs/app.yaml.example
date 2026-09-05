@@ -22,7 +22,7 @@ sim_defaults:
   op: ""
   op_type: "opc"
   auth: "mil"
-  amf: "8000"
+  amf: "8001"
   acc: "FFFF"
   adm: "3030303030303030"
   spn: "LTESystem"

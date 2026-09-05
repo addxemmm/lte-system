@@ -31,7 +31,7 @@ curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d 
 curl -X POST http://127.0.0.1:8081/stop -d '{}'
 # {"status":true,"message_id":1,"message":"Stop successfully."} | 2 Not running. | 0 Stop failed.
 curl -X POST http://127.0.0.1:8081/basicinfo -d '{}'
-# {"status":true,"message_id":1,"message":"Getting information success.","apn":"skygoapn","imsi":"001010123456780","ip":"172.16.0.2"}
+# {"status":true,"message_id":1,"message":"Getting information success.","apn":"skygoapn","imsi":"001012333333333","ip":"172.16.0.2"}
 curl -X POST http://127.0.0.1:8081/crackapn -d '{}'
 curl -X POST http://127.0.0.1:8081/getcrackresult -d '{}'
 # 成功追加 {"apn":..,"imsi":..,"ip":..,"username":"mi6test","password":"cmwap"}
@@ -58,7 +58,9 @@ fileid 映射：
 |2|`srsLTE_enb.pcap`|eNB 空口|
 |3|`srsLTE_epc.pcap`|EPC|
 
-## 4. /writesim 写卡
+## 4. /writesim 写卡（有写卡器时才用）
+
+> 当前无写卡器：该接口固定返回 `message_id 2`，直接跳过，用 `QUICKSTART.md` 流程入网即可。
 
 ```bash
 curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' -d '{"imsi":"001010123456780"}'

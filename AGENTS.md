@@ -26,6 +26,8 @@
 - 读文件用 Read，查内容用 Grep/Glob，改文件用 Edit（先 Read），跑命令用 Bash（`workdir` 指到仓库根，不 `cd`）。
 - 每个 Edit 保持最小 diff；改 API 必须同步改 `docs/API.md` + 对应 `*_test.go`。
 - 保密：`wordlist.list`、真实 Ki/OPc、服务器密码不进 git（只提交 `.example`）；`firmware/uhd/*.bin` 例外允许跟踪。
+- 仓库瘦身：运行产物（`*.log`/`*.pcap`/`bin/`/`__pycache__`/crash/生成的 `*_run.conf`）永不入库；代表性样本只收 `docs/samples/`；厂商大包不入库。
+- 当前主卡：ue3 / IMSI `001012333333333`（MCC `001` MNC `01`），无写卡器时跳过 `/writesim`，走 `docs/QUICKSTART.md`。
 
 ## 5. 提交与发布
 

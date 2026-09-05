@@ -33,7 +33,7 @@ type WriteRequest struct {
 	OPc   string `json:"opc"`   // 32 hex, default server opc
 	OPType string `json:"op_type"` // "op" or "opc", default server value
 	Auth  string `json:"auth"`  // "mil" | "xor", default "mil"
-	AMF   string `json:"amf"`   // 4 hex, default "8000"
+	AMF   string `json:"amf"`   // 4 hex, default "8001" (matches proven ue3 row)
 	ACC   string `json:"acc"`   // 4 hex Access Control Class, default "FFFF"
 	ADM   string `json:"adm"`   // hex string, default "3030303030303030"
 	SPN   string `json:"spn"`   // operator name, default "LTESystem"

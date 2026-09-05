@@ -67,7 +67,7 @@ type SimDefaults struct {
 	OP    string `yaml:"op"`    // optional alternative to opc (mutually exclusive)
 	OPType string `yaml:"op_type"` // "opc" or "op", default "opc"
 	Auth  string `yaml:"auth"`  // "mil" or "xor", default "mil"
-	AMF   string `yaml:"amf"`   // 4 hex, default "8000"
+	AMF   string `yaml:"amf"`   // 4 hex, default "8001" (matches proven ue3 row)
 	ACC   string `yaml:"acc"`   // 4 hex, default "FFFF"
 	ADM   string `yaml:"adm"`   // hex ascii, default "3030303030303030"
 	SPN   string `yaml:"spn"`   // default "LTESystem"
@@ -96,8 +96,8 @@ func Default() Config {
 			Ki:     "00112233445566778899aabbccddeeff",
 			OPc:    "63bfa50ee6523365ff14c1f45f88737d",
 			OPType: "opc",
-			Auth:   "mil",
-			AMF:    "8000",
+		Auth:   "mil",
+		AMF:    "8001",
 			ACC:    "FFFF",
 			ADM:    "3030303030303030",
 			SPN:    "LTESystem",

@@ -1,0 +1,71 @@
+# QUICKSTART — 无写卡器 + 已写卡，直接入网
+
+前提：服务器已部署（见 `DEPLOY.md`），手头白卡已写好，主配置行：
+
+```csv
+ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
+```
+
+该卡 IMSI `001012333333333` → MCC `001`、MNC `01`。**全程不需要 `/writesim`**（无读卡器时它固定返回 `message_id 2`，属正常现象）。
+
+## 1. 确认种子配置已就位（服务器上）
+
+```bash
+sudo docker exec ltesystem grep -v '^#' /data/conf/user_db.csv
+# 应看到 ue3,001012333333333,... 这一行；看不到就重建容器让 entrypoint 重新 seeding：
+# sudo docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+## 2. 启动基站
+
+```bash
+curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
+  -d '{"band":"40","apn":"skygoapn","mcc":"001","mnc":"01","network":"eth0"}'
+# {"status":true,"message_id":1,"message":"Start successfully"}
+```
+
+- `band` 按当地空闲频段选（`1/3/5/7/8/34/39/40/41`），先用 `40` 試
+- `network` 是服务器 uplink 网卡名（`ip route get 8.8.8.8` 看 `dev` 后面的名字），不是旧文档里的 `wlo1`
+- `apn` 必须和手机 APN 设置一致（`skygoapn`）
+
+## 3. 手机入网设置
+
+1. 白卡插入手机，手动搜网，选中 MCC `001` MNC `01` 的网络
+2. APN 新建：名称任意，APN 栏填 `skygoapn`，保存并选中
+3. 打开数据，等待附着（一般 10–60 秒）
+
+## 4. 确认入网成功
+
+```bash
+curl -X POST http://127.0.0.1:8081/basicinfo -H 'Content-Type: application/json' -d '{}'
+# 成功示例：
+# {"status":true,"message_id":1,"message":"Getting information success.",
+#  "apn":"skygoapn","imsi":"001012333333333","ip":"172.16.0.2"}
+```
+
+对照金样本 `docs/samples/epc-ue-attached.log`：你的实时日志
+`sudo docker exec ltesystem tail /data/log/srsLTE_epc.log` 应出现同样的
+`ESM Info: APN` → `Found User 001012333333333` → `pool ip addr` 三连。
+
+## 5. 抓包下载
+
+```bash
+curl -X POST http://127.0.0.1:8081/getfile -H 'Content-Type: application/json' \
+  -d '{"fileid":0}' -o lte_data.pcap
+# fileid: 0 业务流量 / 1 S1AP / 2 eNB / 3 EPC
+```
+
+## 6. 结束
+
+```bash
+curl -X POST http://127.0.0.1:8081/stop -H 'Content-Type: application/json' -d '{}'
+```
+
+## 失败速查
+
+| 现象 | 查哪里 |
+|---|---|
+| `/basicinfo` 返回 `3 no UE connected` | 手机没附着：检查频段/APN/搜网是否选对；`tail /data/log/srsLTE_enb.log` 看小区是否起来 |
+| 日志 `UE Authentication Rejected` | `user_db.csv` 的 Key/OPc 与卡内不一致，核对 ue3 行 |
+| 反复 attach 失败 | `SQN` 过期：把 ue3 行 `SQN` 改大一点（如 `000000001235`），重启容器再试 |
+| `/start` 返回 `4` | USRP 没识别：`sudo docker exec ltesystem uhd_find_devices`，见 `SDR.md` |

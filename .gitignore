@@ -13,10 +13,11 @@ var/log/*.pcap
 firmware/**/*.zip
 *.zip
 
-# ---> Legacy dumps
+# ---> Legacy dumps (already removed from index; keep them out)
 legacy-python-workspace/log/
-legacy-new-sim-card-test/data1/
-legacy-new-sim-card-test/data2/
+legacy-python-workspace/__pycache__/
+*.backtrace.crash
+legacy-python-workspace/conf/*_run.conf
 
 # ---> OS / editor
 .DS_Store

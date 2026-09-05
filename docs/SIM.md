@@ -1,5 +1,17 @@
 # SIM 写卡说明
 
+## 0. 当前状态：无写卡器 + 已写卡（先看这节）
+
+主卡已写好，无需写卡器，全程跳过 `/writesim`：
+
+```csv
+ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
+```
+
+- 该行已是 `configs/user_db.csv.example` 首行，容器首次启动自动 seeding 到 `/data/conf/user_db.csv`
+- 无读卡器时调 `/writesim` 固定返回 `message_id 2`（读卡器未连），**属正常现象，不是故障**
+- 直接按 `docs/QUICKSTART.md` 启动基站、手机入网即可；下面章节是有写卡器后才用的
+
 ## 1. 旧硬编码问题
 
 旧实现写死 `Ki=00112233445566778899aabbccddeeff`、`OPc=63bfa50ee6523365ff14c1f45f88737d`、`ADM=3030303030303030`、`ICCID=89860123456789012345`、`card=testsim`，请求体仅收 `{"imsi":..}`。换卡/换网/换鉴权参数即需改代码，且部分卡 ICCID 出厂锁定，重写必败。
