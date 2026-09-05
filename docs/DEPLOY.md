@@ -73,7 +73,7 @@ sudo docker exec ltesystem md5sum /usr/share/uhd/images/usrp_b210_fpga*.bin
 
 ## 4. 首次启动 seeding
 
-`entrypoint.sh`  seeding 规则：`sib/rr/rb.conf` 每次启动跟随镜像覆盖（保证修复能生效），`user_db.csv`/`wordlist.list` 仅缺失时复制（永不覆盖你的用户数据）：
+`entrypoint.sh` seeding 规则：`sib/rb.conf` 每次启动跟随镜像覆盖（保证修复能生效），`rr.conf` 由每次 `/start` 按频段渲染，`user_db.csv`/`wordlist.list` 仅缺失时复制（永不覆盖你的用户数据）：
 
 - `/app/configs/user_db.csv.example` -> `/data/conf/user_db.csv`
 - `/app/configs/sib.conf,rr.conf,rb.conf` -> `/data/conf/`

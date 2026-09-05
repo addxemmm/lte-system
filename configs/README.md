@@ -26,5 +26,6 @@ ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff1
 
 - `configs/user_db.csv.example` — 带注释的种子文件，首行即主卡 ue3
 - `configs/app.yaml.example` 的 `sim_defaults` — `/writesim` 缺省值，与主卡参数对齐
-- `sib.conf` / `rr.conf` / `rb.conf` — srsRAN_4G 小区静态配置（`rb.conf` 即原 srsLTE 的 `drb.conf`，上游改名；`qci 7/9` 承载与旧版一致）
+- `sib.conf` / `rb.conf` — srsRAN_4G 小区静态配置（`rb.conf` 即原 srsLTE 的 `drb.conf`，上游改名；`qci 7/9` 承载与旧版一致），跟随镜像
+- `rr.conf` — 参考渲染文件； live 版本由 `internal/lte` 在每次 `/start` 时按频段渲染（含显式 `ul_earfcn`，见下）
 - `configs/sim_profiles.yaml` — 卡型说明

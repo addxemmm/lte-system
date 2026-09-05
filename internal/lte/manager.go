@@ -362,6 +362,136 @@ enable = false
 [expert]
 `))
 
+// rrTmplData carries the per-band cell earfcns into rr.conf.
+// ul_earfcn is always explicit: srsRAN_4G's internal UL derivation fails for
+// TDD bands, and explicit values also pin FDD correctly (verified live).
+type rrTmplData struct {
+	DLEARFCN int
+	ULEARFCN int
+}
+
+// rrTmpl mirrors configs/rr.conf (upstream srsRAN_4G rr.conf.example).
+// configs/rr.conf is the checked-in reference render (band 7 values).
+var rrTmpl = template.Must(template.New("rr").Parse(`mac_cnfg =
+{
+  phr_cnfg =
+  {
+    dl_pathloss_change = "dB3"; // Valid: 1, 3, 6 or INFINITY
+    periodic_phr_timer = 50;
+    prohibit_phr_timer = 0;
+  };
+  ulsch_cnfg =
+  {
+    max_harq_tx = 4;
+    periodic_bsr_timer = 20; // in ms
+    retx_bsr_timer = 320;   // in ms
+  };
+
+  time_alignment_timer = -1; // -1 is infinity
+};
+
+phy_cnfg =
+{
+  phich_cnfg =
+  {
+    duration  = "Normal";
+    resources = "1/6";
+  };
+
+  pusch_cnfg_ded =
+  {
+    beta_offset_ack_idx = 6;
+    beta_offset_ri_idx  = 6;
+    beta_offset_cqi_idx = 6;
+  };
+
+  // PUCCH-SR resources are scheduled on time-frequeny domain first, then multiplexed in the same resource.
+  sched_request_cnfg =
+  {
+    dsr_trans_max = 64;
+    period = 20;          // in ms
+    //subframe = [1, 11]; // Optional vector of subframe indices allowed for SR transmissions (default uses all)
+    nof_prb = 1;          // number of PRBs on each extreme used for SR (total prb is twice this number)
+  };
+  cqi_report_cnfg =
+  {
+    mode = "periodic";
+    simultaneousAckCQI = true;
+    period = 40;                   // in ms
+    //subframe = [0, 10, 20, 30];  // Optional vector of subframe indices every period where CQI resources will be allocated (default uses all)
+    m_ri = 8; // RI period in CQI period
+    //subband_k = 1; // If enabled and > 0, configures sub-band CQI reporting and defines K (see 36.213 7.2.2). If disabled, configures wideband CQI
+  };
+};
+
+cell_list =
+(
+  {
+    // rf_port = 0;
+    cell_id = 0x01;
+    tac = 0x0007;
+    pci = 1;
+    // root_seq_idx = 204;
+    dl_earfcn = {{.DLEARFCN}};
+    ul_earfcn = {{.ULEARFCN}};
+    ho_active = false;
+    //meas_gap_period = 0; // 0 (inactive), 40 or 80
+    //meas_gap_offset_subframe = [6, 12, 18, 24, 30];
+    // target_pusch_sinr = -1;
+    // target_pucch_sinr = -1;
+    // enable_phr_handling = false;
+    // min_phr_thres = 0;
+    // allowed_meas_bw = 6;
+    // t304 = 2000; // in msec. possible values: 50, 100, 150, 200, 500, 1000, 2000
+    // tx_gain = 20.0; // in dB. This gain is set by scaling the source signal.
+
+    // CA cells
+    scell_list = (
+      // {cell_id = 0x02; cross_carrier_scheduling = false; scheduling_cell_id = 0x02; ul_allowed = true}
+    )
+
+    // Cells available for handover
+    meas_cell_list =
+    (
+      {
+        eci = 0x19C02;
+        dl_earfcn = 2850;
+        pci = 2;
+        //direct_forward_path_available = false;
+        //allowed_meas_bw = 6;
+        //cell_individual_offset = 0;
+      }
+    );
+
+    // Select measurement report configuration (all reports are combined with all measurement objects)
+    meas_report_desc =
+    (
+        {
+          eventA = 3
+          a3_offset = 6;
+          hysteresis = 0;
+          time_to_trigger = 480;
+          trigger_quant = "RSRP";
+          max_report_cells = 1;
+          report_interv = 120;
+          report_amount = 1;
+        }
+    );
+    meas_quant_desc = {
+        // averaging filter coefficient
+        rsrq_config = 4;
+        rsrp_config = 4;
+     };
+  }
+  // Add here more cells
+);
+
+nr_cell_list =
+(
+  // no NR cells
+);
+`))
+
 func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs string, tx, rx, nprb int) error {
 	userDB := m.cfg.UserDBPath()
 	// Ensure a user_db.csv exists (copy example on first run).
@@ -380,8 +510,9 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 			_ = os.WriteFile(userDB, []byte("# Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc\n"), 0o644)
 		}
 	}
-	// Copy static sib/rr/rb if missing (from bundled configs dir).
-	for _, name := range []string{"sib.conf", "rr.conf", "rb.conf"} {
+	// Copy static sib/rb if missing (from bundled configs dir).
+	// rr.conf is rendered below on every start (cell earfcns depend on band).
+	for _, name := range []string{"sib.conf", "rb.conf"} {
 		dst := filepath.Join(m.cfg.ConfDir, name)
 		if _, err := os.Stat(dst); os.IsNotExist(err) {
 			for _, cand := range []string{filepath.Join("configs", name), filepath.Join("/app/configs", name)} {
@@ -412,7 +543,11 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 	if err := writeTmpl(filepath.Join(m.cfg.ConfDir, "epc_run.conf"), epcTmpl, epcData); err != nil {
 		return err
 	}
-	return writeTmpl(filepath.Join(m.cfg.ConfDir, "enb_run.conf"), enbTmpl, enbData)
+	if err := writeTmpl(filepath.Join(m.cfg.ConfDir, "enb_run.conf"), enbTmpl, enbData); err != nil {
+		return err
+	}
+	return writeTmpl(filepath.Join(m.cfg.ConfDir, "rr.conf"), rrTmpl,
+		rrTmplData{DLEARFCN: band.DLEARFCN, ULEARFCN: band.ULEARFCN})
 }
 
 func writeTmpl(path string, t *template.Template, data any) error {

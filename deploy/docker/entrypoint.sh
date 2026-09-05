@@ -12,7 +12,7 @@ fi
 # Static radio configs always follow the image so redeploys propagate fixes;
 # user_db.csv / wordlist.list are only copied when missing (never overwritten).
 mkdir -p /data/conf /data/log
-for f in sib.conf rr.conf rb.conf; do
+for f in sib.conf rb.conf; do
   cp -f "/app/configs/$f" "/data/conf/$f"
 done
 if [ ! -f /data/wordlist.list ] && [ -f /app/configs/wordlist.list.example ]; then

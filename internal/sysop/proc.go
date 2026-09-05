@@ -15,38 +15,26 @@ func Running(name string) bool {
 	return len(PIDs(name)) > 0
 }
 
-// PIDs returns PIDs for an exact process name via `pgrep -x`, falling back to ps scan.
+// PIDs returns PIDs for an exact process name via `ps -eo pid,stat,comm`.
+// Zombie (Z) entries are excluded: a crashed srsenb that hasn't been reaped
+// must not count as "running", otherwise /start refuses and /stop misreports.
 func PIDs(name string) []int {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, "pgrep", "-x", name).Output(); err == nil {
-		return parsePIDList(string(out))
-	}
-	// Fallback: ps -eo pid,comm and exact-match comm.
-	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid,comm").Output()
+	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid,stat,comm").Output()
 	if err != nil {
 		return nil
 	}
 	var res []int
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
-		if len(f) != 2 {
+		if len(f) != 3 {
 			continue
 		}
-		if f[1] == name {
+		if f[2] == name && !strings.Contains(f[1], "Z") {
 			if pid, err := strconv.Atoi(f[0]); err == nil {
 				res = append(res, pid)
 			}
-		}
-	}
-	return res
-}
-
-func parsePIDList(s string) []int {
-	var res []int
-	for _, f := range strings.Fields(s) {
-		if pid, err := strconv.Atoi(strings.TrimSpace(f)); err == nil {
-			res = append(res, pid)
 		}
 	}
 	return res
