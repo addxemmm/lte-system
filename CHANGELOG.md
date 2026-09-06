@@ -1,5 +1,15 @@
 # 更新日志 Changelog
 
+## 2026-09-06 审查加固 / Audit hardening
+
+- 修复子进程竞态、误杀、资源泄漏和启动取消回滚。 / Fix child-process races, foreign-process termination, resource leaks and startup cancellation.
+- 串行化 SIM/订户写入，拒绝认证冲突，修复 CSV 边界。 / Serialize SIM/subscriber writes, reject credential conflicts and fix CSV boundaries.
+- 严格 JSON、原子并发上传、统一 413、完整请求审计。 / Strict JSON, atomic uploads, consistent 413 responses and complete request audits.
+- 独立部署快照、私有数据排除、回环默认值、可回滚镜像及受保护数据卷。 / Fresh deployment snapshots, private-data exclusions, loopback defaults, rollback images and preserved volumes.
+- Windows/Linux race、mock 和服务器隔离 HTTP 验证通过；真实 RF/写卡未执行。 / Windows/Linux race, mock and isolated server HTTP validation passed; physical RF/SIM operations were not exercised.
+- 详见 [审查与发布记录 / audit and release report](docs/AUDIT_2026-09-06.md)。
+
+
 本项目的所有重要变更都记录在这里。版本规则：
 All notable changes to this project are documented here. Versioning:
 `VERSION` file + `ltesystem-dep:<VERSION>` image tag.

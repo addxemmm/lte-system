@@ -32,5 +32,20 @@ When files are missing, `getfile` in v1.x wrongly returned `message_id 2`; v2.x 
 
 Legacy asset locations: git tag `archive/v1-python` (full v1.x implementation + original multi-user seeds; [`configs/user_db.csv.example`](../configs/user_db.csv.example) keeps that multi-user seed), [`docs/legacy/`](legacy) (early Chinese doc archive), [`docs/samples/`](samples) (successful attach log samples + test SIM ATR).
 
+## 2026-09 审查加固 / Audit hardening
+
+- 子进程只有一个 Wait 调用者，通过 done channel 发布退出状态；信号退出也属于停止。
+  Each child has one Wait owner; a done channel publishes completion, including signal exits.
+- Status/Stop 只报告和终止本 Manager 创建的子进程；同名外部进程只阻止新启动，不接管或误杀。
+  Status/Stop only report and stop children created by this Manager. Foreign same-name processes block startup but are never adopted or killed.
+- Start 初始化等待遵守取消并回滚；父日志描述符及时关闭。仅清理由本轮确实新增的 NAT/转发规则，idle Stop 无主机规则副作用。
+  Startup waits honor cancellation and roll back; parent log descriptors are closed. Only rules actually added by this run are removed; idle Stop does not change host rules.
+- SIM 写入、订户 CSV 追加、API 卡库替换和首次 seed 共用进程内互斥；认证配置冲突在硬件操作前报错。此锁不协调外部 EPC 写回，修改卡库前应停止小区。
+  SIM programming, subscriber append, API database replacement and first seed share a process-local mutex. Authentication conflicts fail before hardware access. External EPC writes are not coordinated: stop the cell before database changes.
+- JSON 必须是单个对象；上传采用唯一临时文件原子替换；v1 超限统一 413，401/panic 也有请求 ID 与审计。
+  JSON must be one object; uploads atomically replace files from unique temporary paths; v1 over-limit requests return 413, and 401/panic responses are correlated and audited.
+- 部署使用排除私有数据的独立快照；Compose 默认回环监听且可传令牌。发布保持实际数据卷并保存旧镜像，详见 [DEPLOY](DEPLOY.md)。
+  Deployment uses fresh snapshots excluding private state. Compose defaults to loopback and passes tokens. Releases retain the actual data volume and old image; see [DEPLOY](DEPLOY.md).
+
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
