@@ -44,8 +44,8 @@ Legacy asset locations: git tag `archive/v1-python` (full v1.x implementation + 
   SIM programming, subscriber append, API database replacement and first seed share a process-local mutex. Authentication conflicts fail before hardware access. External EPC writes are not coordinated: stop the cell before database changes.
 - JSON 必须是单个对象；上传采用唯一临时文件原子替换；v1 超限统一 413，401/panic 也有请求 ID 与审计。
   JSON must be one object; uploads atomically replace files from unique temporary paths; v1 over-limit requests return 413, and 401/panic responses are correlated and audited.
-- 部署使用排除私有数据的独立快照；Compose 默认回环监听且可传令牌。发布保持实际数据卷并保存旧镜像，详见 [DEPLOY](DEPLOY.md)。
-  Deployment uses fresh snapshots excluding private state. Compose defaults to loopback and passes tokens. Releases retain the actual data volume and old image; see [DEPLOY](DEPLOY.md).
+- 部署使用排除私有数据的独立快照；按用户部署需求，Compose 默认全网卡 `0.0.0.0:8081` 监听且可传令牌。发布保持实际数据卷并保存旧镜像，详见 [DEPLOY](DEPLOY.md)。
+  Deployment uses fresh snapshots excluding private state. Per the deployment requirement, Compose defaults to all-interface `0.0.0.0:8081` binding and passes tokens. Releases retain the actual data volume and old image; see [DEPLOY](DEPLOY.md).
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)

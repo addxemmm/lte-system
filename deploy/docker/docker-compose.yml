@@ -20,8 +20,8 @@ services:
       - lte-data:/data
     environment:
       LTE_CONFIG: /app/configs/app.yaml
-      # Default to SSH/local access. For LAN access set BOTH a token and listen address.
-      LTE_LISTEN: ${LTE_LISTEN:-127.0.0.1:8081}
+      # Listen on all IPv4 interfaces for LAN clients; an optional token is forwarded below.
+      LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}
       LTE_API_TOKEN: ${LTE_API_TOKEN:-}
       # UHD_FPGA: stock | compat | auto
       # Use "compat" for the BlackSDR/clone B210 whose FPGA differs from Ettus stock.

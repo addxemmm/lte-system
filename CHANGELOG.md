@@ -1,5 +1,9 @@
 # 更新日志 Changelog
 
+## 2026-09-06 局域网访问修正 / LAN access correction
+
+- 按用户要求将 Compose 默认监听恢复为 `0.0.0.0:8081`，可直接通过服务器 IP 访问；保留现有鉴权配置及 `LTE_LISTEN` 覆盖能力。 / Restore the requested `0.0.0.0:8081` Compose default for direct server-IP access; preserve existing authentication and the `LTE_LISTEN` override.
+
 ## 2026-09-06 审查加固 / Audit hardening
 
 - 修复子进程竞态、误杀、资源泄漏和启动取消回滚。 / Fix child-process races, foreign-process termination, resource leaks and startup cancellation.

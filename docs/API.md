@@ -5,7 +5,7 @@
 > 机器可读契约：[`api/openapi.yaml`](api/openapi.yaml)（OpenAPI 3.0）。
 > Machine-readable contract: [`api/openapi.yaml`](api/openapi.yaml) (OpenAPI 3.0).
 
-- 基地址 Base URL：Docker 默认仅绑定 `http://127.0.0.1:8081`；需要局域网访问时显式设置 `LTE_LISTEN`，并同时设置强随机 `LTE_API_TOKEN` / Docker binds only to `http://127.0.0.1:8081` by default; LAN access requires an explicit `LTE_LISTEN` plus a strong random `LTE_API_TOKEN`
+- 基地址 Base URL：Docker 默认监听 `0.0.0.0:8081`；客户端访问 `http://HOST:8081`（HOST 为服务器 IP），不是 `0.0.0.0`。建议设置强随机 `LTE_API_TOKEN` / Docker listens on `0.0.0.0:8081` by default; clients use `http://HOST:8081` with the server IP, not `0.0.0.0`. A strong random `LTE_API_TOKEN` is recommended
 - 统一包络 Envelope：`{"code": int, "message": str, "data": obj|null, "request_id": str}`，`code 0` = 成功 / Unified envelope: same schema, `code 0` means success
 - 错误码 Error code：`code = HTTP状态码*100+序号`（如 `40401` → HTTP 404），对照表见 §8 错误码 / Formula: `code = HTTP status * 100 + index` (e.g. `40401` means HTTP 404); see §8 Error Codes for the table
 - 每个响应 Response 带 `X-Request-ID` 头；服务端按 `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` 记审计日志，401 与已恢复 panic 也记录且使用同一 request ID / Every response carries an `X-Request-ID` header; the server audits `rid=<id> <METHOD> <PATH> -> <status> (<duration>)`, including 401 responses and recovered panics under the same request ID

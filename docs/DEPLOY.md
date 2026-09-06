@@ -29,16 +29,16 @@ Neither script recreates containers, starts radio or stops an existing cell. Use
 
 ## 2. API 监听与令牌 / API listener and token
 
-Compose 默认监听 `127.0.0.1:8081`，只允许服务器本地或 SSH 隧道访问；这是相对于旧版全网卡监听的有意变更。
-Compose now defaults to `127.0.0.1:8081`, reachable locally or through SSH tunneling. This intentionally changes the previous all-interface default.
+Compose 默认监听 `0.0.0.0:8081`，支持直接通过服务器 IP 访问。客户端使用 `http://HOST:8081`，`0.0.0.0` 是监听地址而非客户端目标。
+Compose defaults to `0.0.0.0:8081` for direct access using the server IP. Clients use `http://HOST:8081`; `0.0.0.0` is a bind address, not the client destination.
 
 ```bash
-# Run on your client; then use http://127.0.0.1:8081 locally.
+# Optional SSH access; set LTE_LISTEN=127.0.0.1:8081 if loopback-only access is desired.
 ssh -L 8081:127.0.0.1:8081 addx@TARGET
 ```
 
-需要局域网 API 时，在服务器私有 `.env` 内设置以下值，并使用 `--env-file /absolute/path/.env`；不要提交真实令牌。
-For LAN API access, put these values in a private server `.env` and use `--env-file /absolute/path/.env`; never commit real tokens.
+需要自定义监听、启用令牌或固定镜像时，在服务器私有 `.env` 内设置以下值，并使用 `--env-file /absolute/path/.env`；不要提交真实令牌。
+To customize the listener, enable a token or pin the image, put these values in a private server `.env` and use `--env-file /absolute/path/.env`; never commit real tokens.
 
 ```dotenv
 LTE_LISTEN=0.0.0.0:8081
@@ -46,11 +46,11 @@ LTE_API_TOKEN=TOKEN
 LTE_IMAGE=ltesystem-dep:RELEASE
 ```
 
-`TOKEN` 必须替换为随机强令牌；所有 API 请求均携带 `Authorization: Bearer TOKEN`。host 网络不受 Docker 端口映射限制；使用主机防火墙限制管理网来源，跨不可信网络使用 TLS 代理或 SSH。
-Replace `TOKEN` with a strong random token. Every API request needs `Authorization: Bearer TOKEN`. Host networking bypasses Docker port mappings; restrict management sources with the host firewall and use TLS or SSH across untrusted networks.
+`TOKEN` 启用时必须替换为随机强令牌；启用后所有 API 请求均携带 `Authorization: Bearer TOKEN`。host 网络不受 Docker 端口映射限制；使用主机防火墙限制管理网来源，跨不可信网络使用 TLS 代理或 SSH。
+When enabling authentication, replace `TOKEN` with a strong random token. Every API request then needs `Authorization: Bearer TOKEN`. Host networking bypasses Docker port mappings; restrict management sources with the host firewall and use TLS or SSH across untrusted networks.
 
-默认 Compose 未设置令牌时仍支持回环访问；不要将空令牌和全网卡监听组合使用。普通 `docker run` 不读取 Compose 的回环默认值，必须显式设置 `LTE_LISTEN`。
-An empty token is supported for default loopback access. Do not combine an empty token with an all-interface listener. Plain `docker run` does not inherit Compose defaults: explicitly set `LTE_LISTEN`.
+此监听变更保留已有鉴权配置，不自动增加令牌。空令牌表示 API 未启用鉴权；建议设置令牌并限制管理网来源。普通 `docker run` 需显式设置 `LTE_LISTEN` 以确保预期监听。
+This listener change preserves existing authentication and does not automatically add a token. An empty token means authentication is disabled; a token and management-network restrictions are recommended. Set `LTE_LISTEN` explicitly with plain `docker run` to ensure the intended binding.
 
 ## 3. 识别现有卷并备份 / Identify and back up the existing volume
 

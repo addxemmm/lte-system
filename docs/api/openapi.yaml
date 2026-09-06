@@ -10,13 +10,14 @@ info:
     Legacy ad-hoc routes (`/start`, `/stop`, …) remain frozen for
     compatibility; new integrations must use `/api/v1`.
     See docs/API.md for the full reference and migration table.
-    Docker binds the API to 127.0.0.1:8081 by default. LAN exposure requires
-    an explicit LTE_LISTEN and a strong random LTE_API_TOKEN.
+    Docker 默认监听 0.0.0.0:8081，客户端使用服务器 IP；建议设置 LTE_API_TOKEN。
+    Docker listens on 0.0.0.0:8081 by default; clients use the server IP.
+    A strong random LTE_API_TOKEN is recommended; LTE_LISTEN remains configurable.
     JSON request bodies contain exactly one object (not null/array/trailing data).
     Authentication failures and recovered panics are included in request-ID audit logs.
 servers:
   - url: http://127.0.0.1:8081
-    description: Docker 默认回环绑定 / default Docker loopback binding
+    description: 服务器本地调用示例 / server-local request example
 security:
   - bearerAuth: []
 components:

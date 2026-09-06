@@ -13,6 +13,15 @@ source = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(source)
 
 
+class ComposeListenerTests(unittest.TestCase):
+    def test_lan_listener_default_keeps_token_and_data_volume(self):
+        compose = (SCRIPTS.parent / "deploy/docker/docker-compose.yml").read_text(encoding="utf-8")
+        self.assertIn("LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}", compose)
+        self.assertIn("LTE_API_TOKEN: ${LTE_API_TOKEN:-}", compose)
+        self.assertIn("network_mode: host", compose)
+        self.assertIn("- lte-data:/data", compose)
+
+
 class SourcePackageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

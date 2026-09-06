@@ -1,7 +1,7 @@
 # Docker 指南 Docker Guide（Dockerfile · Compose · 镜像版本 / Dockerfile · Compose · Image Versions）
 
-当前部署脚本仅同步/构建，不替换容器；回环监听、实际卷备份和唯一标签回滚见 [部署指南](../../docs/DEPLOY.md)。
-Current deploy scripts sync/build only; see the [deploy guide](../../docs/DEPLOY.md) for loopback binding, actual-volume backups and unique-tag rollback.
+当前部署脚本仅同步/构建，不替换容器；全网卡监听、实际卷备份和唯一标签回滚见 [部署指南](../../docs/DEPLOY.md)。
+Current deploy scripts sync/build only; see the [deploy guide](../../docs/DEPLOY.md) for all-interface binding, actual-volume backups and unique-tag rollback.
 
 运行位置：**SDR 服务器**（开发机只改代码，不跑 docker）。日常部署看 [`docs/DEPLOY.md`](../../docs/DEPLOY.md)，这里讲镜像本身是怎么构成、怎么迭代的。
 Runs on: **the SDR server** (dev machines only edit code, never run docker). For daily deploy see [`docs/DEPLOY.md`](../../docs/DEPLOY.md); this doc covers how the image itself is built and iterated.
@@ -47,8 +47,8 @@ volumes:
   - /dev/bus/usb:/dev/bus/usb   # USRP + 读卡器直通
   - lte-data:/data              # 配置/卡库/日志/抓包持久化（重建不丢）
 environment:
-  LTE_LISTEN: ${LTE_LISTEN:-127.0.0.1:8081}  # 默认回环 / loopback by default
-  LTE_API_TOKEN: ${LTE_API_TOKEN:-}         # LAN access requires a strong token
+  LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}  # 默认全网卡 / all IPv4 interfaces by default
+  LTE_API_TOKEN: ${LTE_API_TOKEN:-}         # A strong token is recommended for LAN access
   UHD_FPGA: compat              # 本机兼容板；正版 B210 改 stock
 restart: "no"                   # 手动启停，不开机自启 / manual start-stop, no auto-start
 logging: { max-size: 50m, max-file: 5 }  # 防 docker 日志撑爆盘
