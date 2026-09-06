@@ -15,7 +15,7 @@ Push-Location $root
 try {
   tar --exclude=.git --exclude=bin --exclude=var -czf $tgz . | Out-Null
   scp -o BatchMode=yes $tgz "${HostAlias}:~/lte-system.tgz"
-  ssh -o BatchMode=yes $HostAlias "mkdir -p ~/lte-system && tar -xzf ~/lte-system.tgz -C ~/lte-system && echo SYNCED"
+  ssh -o BatchMode=yes $HostAlias "mkdir -p ~/lte-system && chmod -R u+rwx ~/lte-system && tar -xzf ~/lte-system.tgz -C ~/lte-system && echo SYNCED"
   if ($Build) {
     ssh -o BatchMode=yes $HostAlias "cd ~/lte-system && docker compose -f deploy/docker/docker-compose.yml build 2>&1 | tail -1"
   }
