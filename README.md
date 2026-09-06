@@ -45,8 +45,7 @@ configs/              app.yaml.example、user_db.csv.example、sib/rr/rb、sim_p
 deploy/docker/        Dockerfile、docker-compose.yml、entrypoint.sh、select-uhd-fpga.sh
 firmware/uhd|bladerf  B210 FPGA（stock/compat）与 bladeRF 说明
 docs/                 QUICKSTART / API / DEPLOY / SIM / SDR / MIGRATION + images/samples/legacy
-scripts/              smoke.sh、deploy_to_ubuntu.sh
-legacy-python-workspace/  旧 Python 实现（只读存档）
+scripts/              smoke.sh、deploy 脚本 / smoke.sh and deploy scripts
 ```
 
 ## 快速开始（服务器端） Quick Start (Server Side)

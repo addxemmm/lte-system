@@ -1,8 +1,8 @@
 # 架构说明：v1.x（Python）→ v2.x（Go + srsRAN_4G） Architecture: v1.x (Python) to v2.x (Go + srsRAN_4G)
 
-v1.x 实现见 `legacy-python-workspace/`（只读存档：HTTP 服务 + `run.sh`/`stop.sh` 脚本 + 守护配置），下表是两代实现的对照：
+v1.x 实现已移出工作树，见 git 标签 `archive/v1-python`（HTTP 服务 + `run.sh`/`stop.sh` 脚本 + 守护配置），下表是两代实现的对照：
 
-v1.x implementation lives under `legacy-python-workspace/` (read-only archive: HTTP service + `run.sh`/`stop.sh` scripts + daemon config). The table below compares the two generations:
+v1.x implementation was removed from the working tree; see git tag `archive/v1-python` (HTTP service + `run.sh`/`stop.sh` scripts + daemon config). The table below compares the two generations:
 
 | v1.x | v2.x（本仓库） v2.x (This Repository) | 说明 Description |
 |---|---|---|
@@ -28,9 +28,9 @@ v1.x implementation lives under `legacy-python-workspace/` (read-only archive: H
 
 When files are missing, `getfile` in v1.x wrongly returned `message_id 2`; v2.x returns `3` as documented (the only intentional behavior fix).
 
-旧资产对应位置：`legacy-python-workspace/`（v1.x 实现全文 + 原始多用户种子，线上种子已精简为 [`configs/user_db.csv.example`](../configs/user_db.csv.example) 的单示例卡）、[`docs/legacy/`](legacy)（早期中文文档存档）、[`docs/samples/`](samples)（成功入网日志样本 + 白卡 ATR）。
+旧资产对应位置：git 标签 `archive/v1-python`（v1.x 实现全文 + 原始多用户种子，线上种子已精简为 [`configs/user_db.csv.example`](../configs/user_db.csv.example) 的单示例卡）、[`docs/legacy/`](legacy)（早期中文文档存档）、[`docs/samples/`](samples)（成功入网日志样本 + 白卡 ATR）。
 
-Legacy asset locations: `legacy-python-workspace/` (full v1.x implementation + original multi-user seeds; the live seed has been trimmed to the single example card in [`configs/user_db.csv.example`](../configs/user_db.csv.example)), [`docs/legacy/`](legacy) (early Chinese doc archive), [`docs/samples/`](samples) (successful attach log samples + test SIM ATR).
+Legacy asset locations: git tag `archive/v1-python` (full v1.x implementation + original multi-user seeds; the live seed has been trimmed to the single example card in [`configs/user_db.csv.example`](../configs/user_db.csv.example)), [`docs/legacy/`](legacy) (early Chinese doc archive), [`docs/samples/`](samples) (successful attach log samples + test SIM ATR).
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)

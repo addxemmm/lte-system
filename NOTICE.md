@@ -16,6 +16,6 @@ The Docker image built from [`deploy/docker/Dockerfile`](deploy/docker/Dockerfil
 | Go 工具链 + 标准库 / Go toolchain + stdlib | BSD-3-Clause | https://go.dev |
 | gopkg.in/yaml.v3 | MIT/Apache-2.0 | https://gopkg.in/yaml.v3 |
 | Ubuntu 22.04 基础 + apt 包 / Ubuntu 22.04 base + apt packages | various (mostly GPL/LGPL/Apache/MIT, see `/usr/share/doc/*/copyright` in the image) | https://ubuntu.com |
-
-`legacy-python-workspace/pysim/cards.py` 是 pysim 项目的精简拷贝（GPL-2.0，© Sylvain Munaut / Harald Welte and contributors）。
-`legacy-python-workspace/pysim/cards.py` is a trimmed copy from the pysim project (GPL-2.0, © Sylvain Munaut / Harald Welte and contributors).
+`pysim/cards.py` from the pysim project (GPL-2.0) was referenced by v1.x;
+the v1.x tree is preserved under git tag `archive/v1-python`.
+The running image clones upstream pysim at build time (see `Dockerfile`).

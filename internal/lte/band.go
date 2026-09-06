@@ -11,7 +11,7 @@ type BandInfo struct {
 	ULMHz    float64 // 0 means TDD / no uplink freq display
 }
 
-// Table preserves legacy-python-workspace/run.sh case mapping, plus UL EARFCN.
+// Table preserves the v1.x run.sh case mapping, plus UL EARFCN.
 // UL derivation inside srsRAN_4G fails for TDD bands, so we always pass
 // ul_earfcn explicitly (verified against 3GPP TS 36.101 earfcn tables).
 var Table = map[string]BandInfo{

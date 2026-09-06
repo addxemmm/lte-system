@@ -19,4 +19,4 @@ Full rebuild on the Ubuntu SDR host, validated end-to-end (CPE attach, auth, IP,
 ## [1.x] - 2023 (legacy, EOL)
 
 v1.x Python + srsLTE，手工容器，`legacy-python-workspace/` 存档saved profile。见 [`docs/legacy/`](docs/legacy)。不再维护；无安全修复。
-v1.x Python + srsLTE, manual container, `legacy-python-workspace/` archive. See [`docs/legacy/`](docs/legacy). Not maintained; no security fixes.
+v1.x Python + srsLTE, manual container (tree removed, see git tag `archive/v1-python`). See [`docs/legacy/`](docs/legacy). Not maintained; no security fixes.

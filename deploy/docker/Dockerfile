@@ -68,7 +68,7 @@ COPY firmware/uhd/ettus-B210-stock/usrp_b210_fpga.bin /usr/share/uhd/images/usrp
 COPY deploy/docker/select-uhd-fpga.sh /usr/local/bin/select-uhd-fpga
 RUN chmod +x /usr/local/bin/select-uhd-fpga
 
-# pysim (full upstream; legacy trimmed cards.py lives in legacy-python-workspace/)
+# pysim (full upstream clone at build time)
 RUN git clone --depth 1 https://github.com/osmocom/pysim.git /opt/pysim
 
 # Go server + bundled configs.

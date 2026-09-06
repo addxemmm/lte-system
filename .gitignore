@@ -13,11 +13,8 @@ var/log/*.pcap
 firmware/**/*.zip
 *.zip
 
-# ---> Legacy dumps (already removed from index; keep them out)
-legacy-python-workspace/log/
-legacy-python-workspace/__pycache__/
+# ---> Runtime junk (never commit live state)
 *.backtrace.crash
-legacy-python-workspace/conf/*_run.conf
 
 # ---> OS / editor
 .DS_Store
