@@ -28,9 +28,9 @@ v1.x implementation was removed from the working tree; see git tag `archive/v1-p
 
 When files are missing, `getfile` in v1.x wrongly returned `message_id 2`; v2.x returns `3` as documented (the only intentional behavior fix).
 
-旧资产对应位置：git 标签 `archive/v1-python`（v1.x 实现全文 + 原始多用户种子，线上种子已精简为 [`configs/user_db.csv.example`](../configs/user_db.csv.example) 的单示例卡）、[`docs/legacy/`](legacy)（早期中文文档存档）、[`docs/samples/`](samples)（成功入网日志样本 + 白卡 ATR）。
+旧资产对应位置：git 标签 `archive/v1-python`（v1.x 实现全文 + 原始多用户种子，[`configs/user_db.csv.example`](../configs/user_db.csv.example) 即沿用该多种子）、[`docs/legacy/`](legacy)（早期中文文档存档）、[`docs/samples/`](samples)（成功入网日志样本 + 白卡 ATR）。
 
-Legacy asset locations: git tag `archive/v1-python` (full v1.x implementation + original multi-user seeds; the live seed has been trimmed to the single example card in [`configs/user_db.csv.example`](../configs/user_db.csv.example)), [`docs/legacy/`](legacy) (early Chinese doc archive), [`docs/samples/`](samples) (successful attach log samples + test SIM ATR).
+Legacy asset locations: git tag `archive/v1-python` (full v1.x implementation + original multi-user seeds; [`configs/user_db.csv.example`](../configs/user_db.csv.example) keeps that multi-user seed), [`docs/legacy/`](legacy) (early Chinese doc archive), [`docs/samples/`](samples) (successful attach log samples + test SIM ATR).
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)

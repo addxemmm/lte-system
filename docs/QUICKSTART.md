@@ -19,7 +19,7 @@ The IMSI of this card `001010123456789` maps to MCC `001` and MNC `01`. **No `/w
 
 ```bash
 sudo docker exec ltesystem grep -v '^#' /data/conf/user_db.csv
-# 应看到 ue0,001010123456789,... 这一行；文件在首次 /start 时自动 seeding，
+# 应看到 ue0/ue1/ue3 等多行测试用户；文件在首次 /start 时自动 seeding，
 # 若缺失则检查 lte-data 卷是否被删（docker volume ls / inspect）
 ```
 
