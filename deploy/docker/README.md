@@ -45,7 +45,7 @@ volumes:
   - lte-data:/data              # 配置/卡库/日志/抓包持久化（重建不丢）
 environment:
   UHD_FPGA: compat              # 本机兼容板；正版 B210 改 stock
-restart: unless-stopped
+restart: "no"                   # 手动启停，不开机自启 / manual start-stop, no auto-start
 logging: { max-size: 50m, max-file: 5 }  # 防 docker 日志撑爆盘
 ```
 

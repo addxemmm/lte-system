@@ -40,7 +40,7 @@ curl -s http://127.0.0.1:8081/healthz; echo
 sudo docker build -f deploy/docker/Dockerfile -t ltesystem-dep:2.0 .
 sudo docker tag ltesystem-dep:2.0 docker.skygo/addx/ltesystem-dep:2.0
 sudo docker rm -f ltesystem || true
-sudo docker run -d --name ltesystem --restart unless-stopped \
+sudo docker run -d --name ltesystem --restart no \
   --network host --privileged \
   -v /dev/bus/usb:/dev/bus/usb -v lte-data:/data \
   -e LTE_CONFIG=/app/configs/app.yaml -e UHD_FPGA=compat \

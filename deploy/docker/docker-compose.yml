@@ -10,7 +10,9 @@ services:
     container_name: ltesystem
     network_mode: host
     privileged: true
-    restart: unless-stopped
+    # 手动启停：不开机自启、不自动重启。需要随开机自启时再改回 unless-stopped。
+    # Manual start/stop: no auto-start on boot, no auto-restart.
+    restart: "no"
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - lte-data:/data
