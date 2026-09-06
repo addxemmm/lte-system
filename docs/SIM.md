@@ -1,16 +1,16 @@
 # SIM 写卡说明
 
-## 0. 当前状态：无写卡器 + 已写卡（先看这节）
+## 0. 没有写卡器？先看这节
 
-主卡已写好，无需写卡器，全程跳过 `/writesim`：
+如果你手头已有写好的白卡（卡参数与 `user_db.csv` 对应），全程跳过 `/writesim`：
 
 ```csv
-ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
+ue0,mil,001010123456789,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
 ```
 
-- 该行已是 `configs/user_db.csv.example` 首行，容器首次启动自动 seeding 到 `/data/conf/user_db.csv`
+- 上面是 `configs/user_db.csv.example` 首行的格式示例，首次 `/start` 时自动 seeding 到 `/data/conf/user_db.csv`
 - 无读卡器时调 `/writesim` 固定返回 `message_id 2`（读卡器未连），**属正常现象，不是故障**
-- 直接按 `docs/QUICKSTART.md` 启动基站、手机入网即可；下面章节是有写卡器后才用的
+- 直接按 `docs/QUICKSTART.md` 启动基站、终端入网即可；下面章节是有写卡器后才用的
 
 ## 1. 旧硬编码问题
 

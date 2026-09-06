@@ -1,6 +1,6 @@
 #!/bin/bash
 # scripts/smoke.sh — API smoke test against a running container (default 127.0.0.1:8081).
-# Usage: BASE=http://192.168.100.199:8081 bash scripts/smoke.sh
+# Usage: BASE=http://192.0.2.10:8081 bash scripts/smoke.sh
 set -u
 BASE="${BASE:-http://127.0.0.1:8081}"
 

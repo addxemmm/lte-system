@@ -73,7 +73,7 @@ type SimDefaults struct {
 	OP    string `yaml:"op"`    // optional alternative to opc (mutually exclusive)
 	OPType string `yaml:"op_type"` // "opc" or "op", default "opc"
 	Auth  string `yaml:"auth"`  // "mil" or "xor", default "mil"
-	AMF   string `yaml:"amf"`   // 4 hex, default "8001" (matches proven ue3 row)
+	AMF   string `yaml:"amf"`   // 4 hex, default "8001" (matches example card row)
 	ACC   string `yaml:"acc"`   // 4 hex, default "FFFF"
 	ADM   string `yaml:"adm"`   // hex ascii, default "3030303030303030"
 	SPN   string `yaml:"spn"`   // default "LTESystem"

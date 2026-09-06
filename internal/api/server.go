@@ -1,5 +1,5 @@
 // Package api exposes the stateless tool HTTP API.
-// It preserves the 9 legacy Flask routes + message_id semantics verbatim,
+// It preserves the 9 tool routes + message_id semantics verbatim,
 // and adds GET /healthz, GET /status and GET /profile for ops.
 package api
 

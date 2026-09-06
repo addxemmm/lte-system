@@ -16,10 +16,10 @@ default_sdr: "auto"
 default_device_args: "auto"
 default_tx_gain: 80
 default_rx_gain: 40
-# 25 = 5MHz, VM-USB safe (proven on addsdr). Use 50/100 on bare metal.
+# 25 = 5MHz, VM-USB safe. Use 50/100 on bare metal.
 default_n_prb: 25
 # DNS handed to UEs via PCO. If the uplink filters public DNS,
-# point at the LAN resolver (e.g. the gateway 192.168.100.1).
+# point at the LAN resolver (e.g. the gateway 192.0.2.1).
 default_dns: "8.8.8.8"
 # Operator name shown on the UE (NITZ). Legacy display was "srsRAN".
 default_full_net_name: "srsRAN"

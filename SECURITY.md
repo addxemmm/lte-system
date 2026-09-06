@@ -3,7 +3,7 @@
 ## Supported versions
 
 Only the latest `master` (and the `ltesystem-dep:2.x` image line) receives
-security fixes. The `1.x` Flask/srsLTE line is end-of-life.
+security fixes. The `1.x` line is end-of-life.
 
 ## Reporting a vulnerability
 

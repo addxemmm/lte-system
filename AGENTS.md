@@ -1,6 +1,6 @@
-# AGENTS.md — lte-system 本地开发规范
+# AGENTS.md — lte-system 开发规范
 
-> 本地（Windows）只负责代码编辑、文档与 git 管理；**不要在本地运行射频、docker、常驻服务**。一切构建镜像、启动基站、写卡、抓包验证都在 Ubuntu 服务器（192.168.100.199）上执行。
+> 开发机只负责代码编辑、文档与 git 管理；**不要在开发机运行射频、docker、常驻服务**。一切构建镜像、启动基站、写卡、抓包验证都在 SDR 服务器（本文示例 `192.0.2.10`）上执行。
 
 ## 1. 并发与 subagent
 
@@ -20,14 +20,13 @@
 - folk 分支只活一个 PR 周期，合后即删；禁止在 folk 分支上再分叉。
 - 涉及射频/写卡的 folk 必须附服务器验证日志（`docker logs` + `curl` 输出）才能合。
 
-## 4. 本地开发铁律
+## 4. 开发铁律
 
-- Windows 本地可执行：`go test ./...`、`go vet ./...`、`go build`（含 `GOOS=linux` 交叉编译）、文档编辑、`git` 操作。不可执行：`docker build/run`、`./bin/lte-system` 常驻、`uhd_find_devices` 结论性判断（本机无硬件）。
+- 开发机可执行：`go test ./...`、`go vet ./...`、`go build`（含 `GOOS=linux` 交叉编译）、文档编辑、`git` 操作。不可执行：`docker build/run`、`./bin/lte-system` 常驻、`uhd_find_devices` 结论性判断（本机无硬件）。
 - 读文件用 Read，查内容用 Grep/Glob，改文件用 Edit（先 Read），跑命令用 Bash（`workdir` 指到仓库根，不 `cd`）。
 - 每个 Edit 保持最小 diff；改 API 必须同步改 `docs/API.md` + 对应 `*_test.go`。
 - 保密：`wordlist.list`、真实 Ki/OPc、服务器密码不进 git（只提交 `.example`）；`firmware/uhd/*.bin` 例外允许跟踪。
 - 仓库瘦身：运行产物（`*.log`/`*.pcap`/`bin/`/`__pycache__`/crash/生成的 `*_run.conf`）永不入库；代表性样本只收 `docs/samples/`；厂商大包不入库。
-- 当前主卡：ue3 / IMSI `001012333333333`（MCC `001` MNC `01`），无写卡器时跳过 `/writesim`，走 `docs/QUICKSTART.md`。
 
 ## 5. 提交与发布
 

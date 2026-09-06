@@ -47,9 +47,9 @@ sudo docker exec ltesystem bladeRF-cli -e info
 ## 3. `/start` 射频参数
 
 ```bash
-curl -s -X POST http://192.168.100.199:8081/start \
+curl -s -X POST http://192.0.2.10:8081/start \
   -H 'Content-Type: application/json' \
-  -d '{"band":"41","apn":"addxLTE","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","device_args":"auto","tx_gain":80,"rx_gain":40}' ; echo
+  -d '{"band":"41","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","device_args":"auto","tx_gain":80,"rx_gain":40}' ; echo
 ```
 
 - `sdr`：`uhd`（B210）| `bladerf`（`device_name=bladerf`）| `zmq`（仿真）| `auto`（有 bladeRF 且无 B210 则选 bladeRF，否则按 `configs/app.yaml.example` 的 `default_sdr`）。
@@ -69,7 +69,7 @@ privileged: true
 volumes: [/dev/bus/usb:/dev/bus/usb]
 ```
 
-srsRAN 会创建 `srs_spgw_sgi` 网卡并需要宿主 uplink 接口名，bridge 网络拿不到；USRP/ACR1281U 经 `/dev/bus/usb` + `pcscd` 访问，无 `privileged` 会权限不足。本地 Windows 仅做编译，不跑射频。
+srsRAN 会创建 `srs_spgw_sgi` 网卡并需要宿主 uplink 接口名，bridge 网络拿不到；USRP/ACR1281U 经 `/dev/bus/usb` + `pcscd` 访问，无 `privileged` 会权限不足。开发机仅做编译，不跑射频。
 
 ## 5. 常见错误
 

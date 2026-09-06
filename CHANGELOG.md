@@ -8,8 +8,8 @@ All notable changes to this project are documented here. Versioning:
 Full rebuild on the Ubuntu SDR host, validated end-to-end (CPE attach, auth,
 IP, NAT, DNS, traffic capture).
 
-- Go + srsRAN_4G (`release_23_11`): 9 legacy Flask APIs preserved 1:1
-  (`message_id` semantics), plus `GET /healthz`, `/status`, `/profile`
+- Go + srsRAN_4G (`release_23_11`): 9 个工具 API 行为保留
+  (`message_id` 语义)，plus `GET /healthz`, `/status`, `/profile`
 - Flexible `/writesim` (all card params optional) and `/start`
   (`sdr/device_args/gains/n_prb/net names/dns`, profile inheritance,
   empty-body reuse of last config via `/data/last_start.json`)
@@ -23,5 +23,5 @@ IP, NAT, DNS, traffic capture).
 
 ## [1.x] - 2023 (legacy, EOL)
 
-Python/Flask + srsLTE, manual container, `legacy-python-workspace/` archive.
+v1.x Python + srsLTE, manual container, `legacy-python-workspace/` archive.
 See `docs/legacy/`. Not maintained; no security fixes.

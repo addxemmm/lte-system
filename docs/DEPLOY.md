@@ -1,6 +1,6 @@
-# 部署指南（SDR 主机 `192.168.100.199`，Linux 服务器运行）
+# 部署指南（SDR 主机 `192.0.2.10`，Linux 服务器运行）
 
-> 本地（Windows）只负责代码编辑与 git 管理；一切构建、运行、射频验证都在 Ubuntu 服务器上执行。
+> 开发机（Windows/macOS/Linux 均可）只负责代码编辑与 git 管理；一切构建、运行、射频验证都在 SDR 服务器上执行。
 > 想了解镜像内部构造/版本迭代见 **`deploy/docker/README.md`**。
 
 ## 1. 前置条件
@@ -58,7 +58,7 @@ Remove-Item Env:\GOOS; Remove-Item Env:\GOARCH
 一键同步+重建（本地开发机执行，把代码推到服务器后在远端构建）：
 
 ```bash
-./scripts/deploy_to_ubuntu.sh addx@192.168.100.199
+./scripts/deploy_to_ubuntu.sh addx@192.0.2.10
 ```
 
 ## 3. UHD_FPGA 选择
@@ -74,18 +74,17 @@ sudo docker exec ltesystem md5sum /usr/share/uhd/images/usrp_b210_fpga*.bin
 
 ## 4. 首次启动 seeding
 
-`entrypoint.sh` seeding 规则：`sib/rb.conf` 每次启动跟随镜像覆盖（保证修复能生效），`rr.conf` 由每次 `/start` 按频段渲染，`user_db.csv`/`wordlist.list` 仅缺失时复制（永不覆盖你的用户数据）：
+文件来源分两处（幂等，已有文件永不覆盖你的数据）：
 
-- `/app/configs/user_db.csv.example` -> `/data/conf/user_db.csv`
-- `/app/configs/sib.conf,rr.conf,rb.conf` -> `/data/conf/`
-- `/app/configs/wordlist.list.example` -> `/data/wordlist.list`
+- `entrypoint.sh`（容器启动时）：`sib/rb.conf` 跟随镜像覆盖（保证修复能生效）；`wordlist.list` 缺失才复制
+- `/start`（首次调用时，`internal/lte`）：`user_db.csv` 缺失才从 example 播种；`rr.conf` 每次按频段重新渲染
 
 ```bash
 sudo docker exec ltesystem ls -l /data/conf /data/wordlist.list
 sudo docker exec ltesystem cat /data/conf/user_db.csv | head
 ```
 
-改用户/小区配置后重启即可生效。
+改卡库（`user_db.csv`）后必须 `/stop` 再 `/start` 才生效（EPC 只在启动时读库）；改小区静态配置（`sib/rb.conf`）重建容器即生效。
 
 ## 5. 验证（服务器上）
 

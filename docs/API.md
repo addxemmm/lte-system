@@ -2,7 +2,7 @@
 
 > 实现：`internal/api/server.go`。本文逐字对应实现——`message` 文案、`message_id`、字段名都以本文为准；改实现必须同步改本文 + `*_test.go`（见 `AGENTS.md`）。
 
-- 基地址：`http://<服务器IP>:8081`（本机实测 `http://127.0.0.1:8081`，局域网用 `http://192.168.100.199:8081`）
+- 基地址：`http://<服务器IP>:8081`（服务器本机 `http://127.0.0.1:8081`，局域网如 `http://192.0.2.10:8081`）
 - 9 个旧接口全部 `POST` + JSON；新增 `GET /healthz`、`GET /status`、`GET /profile`
 - **HTTP 状态码恒为 `200`**（含错误情况；`GET /getfile` 成功下载除外，见 §8）。成功失败只看 JSON 里的 `status`
 - 统一响应包络：`{"status": bool, "message_id": int, "message": str, ...扩展字段}`
@@ -50,10 +50,10 @@
 | 字段 | 类型 | 必填 | 默认/说明 |
 |---|---|---|---|
 | `band` | string | ✅ | 频段编号，仅限 `1/3/5/7/8/34/39/40/41`（映射见下表） |
-| `apn` | string | ✅ | 接入点名，任意（现网 `addxLTE`），禁 `空格"';&\|<>$`\\` 等注入字符 |
+| `apn` | string | ✅ | 接入点名，任意（如 `srsapn`，须与终端侧一致），禁 `空格"';&\|<>$`\\` 等注入字符 |
 | `mcc` | string | ✅ | 3 位数字，如 `001` / `460` |
 | `mnc` | string | ✅ | 2 或 3 位数字，如 `01` / `00` |
-| `network` | string | ✅ | 服务器上行网卡名（本机实测 `ens33`；`ip route get 8.8.8.8` 看 `dev`），禁注入字符 |
+| `network` | string | ✅ | 服务器上行网卡名（`ip route get 8.8.8.8` 看 `dev`，如 `eth0`），禁注入字符 |
 | `sdr` | string | ❌ | `uhd`/`bladerf`/`zmq`/`auto`（默认 `auto`：有 B210 用 B210，只有 bladeRF 用 bladeRF） |
 | `device_args` | string | ❌ | 透传 `enb.conf [rf] device_args`。`auto`/缺省 + 检测到 B210 时自动注入 VM-USB 稳定参数；显式值永远优先；bladeRF/ZMQ 不受影响 |
 | `tx_gain` | int | ❌ | 默认 `80` |
@@ -61,7 +61,7 @@
 | `n_prb` | int | ❌ | 默认 `25`（5MHz，虚拟机 USB 安全值；裸金属可 `50`/`100`） |
 | `full_net_name` | string | ❌ | 终端显示的运营商全称（NITZ 下发），默认 `srsRAN`，1–32 可打印 ASCII，禁 `"';#$`\\` |
 | `short_net_name` | string | ❌ | 简称，同上 |
-| `dns` | string | ❌ | 经 PCO 下发给终端的 DNS，默认 `8.8.8.8`（上行过滤公网 DNS 时填网关，如 `192.168.100.1`），须为合法 IPv4 |
+| `dns` | string | ❌ | 经 PCO 下发给终端的 DNS，默认 `8.8.8.8`（上行过滤公网 DNS 时填网关，如 `192.0.2.1`），须为合法 IPv4 |
 
 ### 2.2 band → 频点映射（`internal/lte/band.go`，UL EARFCN 显式写入 `rr.conf`）
 
@@ -77,7 +77,7 @@
 | 40 | 39150 | 39150 | 2350 | — | TDD |
 | 41 | 40620 | 40620 | 2593 | — | TDD |
 
-> 本机实测建议：虚拟机 USB 下优先 `7`（FDD 最稳）；TDD（39/40/41）eNB 能起来但上游 UL 推导有坑，已用显式 `ul_earfcn` 绕过，手机先能用 7 就用 7。
+> 虚拟机 USB 下建议优先 `7`（FDD 最稳）；TDD（39/40/41）eNB 能起来但上游 UL 推导有坑，已用显式 `ul_earfcn` 绕过，终端先能用 7 就用 7。
 
 ### 2.3 响应
 
@@ -92,15 +92,15 @@
 ### 2.4 示例
 
 ```bash
-# 最小（现网 ue3 卡）：mcc 001 / mnc 01 / APN addxLTE
+# 最小：mcc/mnc 与卡的 IMSI 对应即可
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"7","apn":"addxLTE","mcc":"001","mnc":"01","network":"ens33"}'
+  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0"}'
 
 # 全参数
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{
-  "band":"7","apn":"addxLTE","mcc":"001","mnc":"01","network":"ens33",
+  "band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0",
   "sdr":"auto","tx_gain":80,"rx_gain":60,"n_prb":25,
-  "full_net_name":"addxLTE","short_net_name":"addxLTE","dns":"192.168.100.1"}'
+  "full_net_name":"MyLTE","short_net_name":"MyLTE","dns":"192.0.2.1"}'
 
 # 日常：一键复用上次（重建容器/重启后）
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{}'
@@ -133,7 +133,7 @@ curl -X POST http://127.0.0.1:8081/stop -H 'Content-Type: application/json' -d '
 
 ```json
 {"status":true,"message_id":1,"message":"Getting information success.",
- "apn":"addxLTE","imsi":"001012333333333","ip":"172.16.0.2"}
+  "apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2"}
 ```
 
 > `apn` 为 `null` 是正常现象：部分终端（实测华为 CPE）的 PDN 请求不走 ESM Information 流程，日志里就没有该行，不代表异常。`imsi`+`ip` 都有即附着成功。
@@ -174,7 +174,7 @@ curl -X POST http://127.0.0.1:8081/crackapn -H 'Content-Type: application/json' 
 
 ```json
 {"status":true,"message_id":1,"message":"Getting information success.",
- "apn":"addxLTE","imsi":"001012333333333","ip":"172.16.0.2",
+ "apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2",
  "username":"mi6test","password":"cmwap"}
 ```
 
@@ -251,7 +251,7 @@ curl -X POST http://127.0.0.1:8081/getfile -H 'Content-Type: application/json' \
 | `opc` / `op` | 32 hex，**二选一互斥** | `opc=63bfa50ee6523365ff14c1f45f88737d` |
 | `op_type` | `op` 或 `opc` | 跟随所选 |
 | `auth` | `mil` 或 `xor` | `mil` |
-| `amf` | 4 hex | `8001`（与 ue3 行一致） |
+| `amf` | 4 hex | `8001`（与示例卡一致） |
 | `acc` | 4 hex 接入等级 | `FFFF` |
 | `adm` | ADM hex | `3030303030303030` |
 | `spn` | 运营商显示名 | `LTESystem` |
@@ -303,7 +303,7 @@ curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' 
 
 ```json
 {"running":true,"epc":true,"enb":true,"pcap":true,
- "started_at":"2026-09-05T10:06:48Z","band":"7","apn":"addxLTE","net_name":"addxLTE"}
+ "started_at":"2026-09-05T10:06:48Z","band":"7","apn":"srsapn","net_name":"MyLTE"}
 ```
 
 空闲时只有 `{"running":false,"epc":false,"enb":false,"pcap":false}`（无 started_at 等字段）。`started_at` 为本次 `/start` 的 UTC 时间。
@@ -312,10 +312,10 @@ curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' 
 
 ```json
 {"has_profile":true,
- "profile":{"band":"7","apn":"addxLTE","mcc":"001","mnc":"01","network":"ens33",
+ "profile":{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0",
             "sdr":"","device_args":"","tx_gain":80,"rx_gain":40,"n_prb":25,
-            "full_net_name":"addxLTE","short_net_name":"addxLTE","dns":"192.168.100.1"},
- "ues":[{"name":"ue3","auth":"mil","imsi":"001012333333333"}]}
+            "full_net_name":"MyLTE","short_net_name":"MyLTE","dns":"192.0.2.1"},
+ "ues":[{"name":"ue0","auth":"mil","imsi":"001010123456789"}]}
 ```
 
 - `profile` 是**解析后的生效值**（含继承的默认增益/带宽），与 `last_start.json` 一致；无存档时无此字段

@@ -1,6 +1,6 @@
 # Docker 指南（Dockerfile · Compose · 镜像版本）
 
-> 运行位置：**Ubuntu 服务器**（本地 Windows 只改代码，不跑 docker）。日常部署看 `docs/DEPLOY.md`，这里讲镜像本身是怎么构成、怎么迭代的。
+> 运行位置：**SDR 服务器**（开发机只改代码，不跑 docker）。日常部署看 `docs/DEPLOY.md`，这里讲镜像本身是怎么构成、怎么迭代的。
 
 ## 1. 文件一览
 

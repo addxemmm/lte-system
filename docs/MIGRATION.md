@@ -1,11 +1,11 @@
-# 迁移说明：Python/Flask → Go + srsRAN_4G
+# 架构说明：v1.x（Python）→ v2.x（Go + srsRAN_4G）
 
-旧实现见 `legacy-python-workspace/`（`run.py` 548 行 Flask + `run.sh`/`stop.sh` + `supervisord.conf`）：
+v1.x 实现见 `legacy-python-workspace/`（只读存档：HTTP 服务 + `run.sh`/`stop.sh` 脚本 + 守护配置），下表是两代实现的对照：
 
-| 旧 | 新 | 说明 |
+| v1.x | v2.x（本仓库） | 说明 |
 |---|---|---|
-| `run.py` Flask `:8081` + gunicorn | `cmd/server` + `internal/api`（stdlib） | 9 接口 + `message_id` 原样兼容 |
-| `run.sh` echo 生成 conf | `internal/lte` text/template | 修复 `/home/skygo/...` 硬编码；band→EARFCN 表不变 |
+| Python HTTP 服务 `:8081` | `cmd/server` + `internal/api`（stdlib） | 9 接口 + `message_id` 语义保留 |
+| shell echo 生成 conf | `internal/lte` text/template | 去掉绝对路径硬编码；band→EARFCN 表保留 |
 | `ps \| grep srs` 状态机 | `internal/sysop` pgrep + 进程组 | 不再误杀同名进程 |
 | `os.popen` shell 拼接 | `exec.Command` 数组 + 校验 | 防注入（APN/IMSI/band） |
 | `tcpdump &` | Manager 子进程 | stop 联动 kill |
@@ -22,6 +22,6 @@
 | DNS 写死 `8.8.8.8` | `/start` 新增 `dns` + `default_dns` 配置 | 上行过滤公网 DNS 时可改网关/内网 DNS |
 | 只加 MASQUERADE 就上网 | 每次 `/start` 额外确保 `DOCKER-USER` 放行 + TCP MSS 钳制，`/stop` 清理 | Docker 新版默认 FORWARD DROP 会静默丢掉 UE 流量；GTP 路径需要 MSS clamp |
 
-`getfile` 缺文件时旧代码误回 `message_id 2`，新代码按文档返回 `3`（唯一有意的行为修正）。
+`getfile` 缺文件时 v1.x 误回 `message_id 2`，v2.x 按文档返回 `3`（唯一有意的行为修正）。
 
-旧资产对应位置：`legacy-python-workspace/`（旧实现全文 + `conf/user_db.csv` 原始多种子，线上种子已精简为 `configs/user_db.csv.example` 的 ue3 主卡）、`docs/legacy/`（2023 年中文 PDF/MD 存档）、`docs/samples/`（ue3 成功入网日志 + 白卡 ATR）。
+旧资产对应位置：`legacy-python-workspace/`（v1.x 实现全文 + 原始多用户种子，线上种子已精简为 `configs/user_db.csv.example` 的单示例卡）、`docs/legacy/`（早期中文文档存档）、`docs/samples/`（成功入网日志样本 + 白卡 ATR）。

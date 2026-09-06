@@ -6,13 +6,13 @@
 Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc
 ```
 
-## 当前主卡（已写好、无需写卡器）
+## 示例卡（与种子文件一致）
 
 ```csv
-ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
+ue0,mil,001010123456789,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
 ```
 
-- IMSI `001012333333333` → MCC `001`、MNC `01`，`/start` 时就填 `mcc=001 mnc=01`
+- IMSI `001010123456789` → MCC `001`、MNC `01`，`/start` 时就填 `mcc=001 mnc=01`
 - `Key`/`OPc` 必须与卡内预置完全一致，否则鉴权失败（表现为 attach 后 `UE Authentication Rejected`）
 - `SQN` 掉线重连失败时可递增一位后重启 EPC 再试
 
@@ -24,8 +24,8 @@ ue3,mil,001012333333333,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff1
 
 ## 相关文件
 
-- `configs/user_db.csv.example` — 带注释的种子文件，首行即主卡 ue3
-- `configs/app.yaml.example` 的 `sim_defaults` — `/writesim` 缺省值，与主卡参数对齐
+- `configs/user_db.csv.example` — 带注释的种子文件，首行为示例卡
+- `configs/app.yaml.example` 的 `sim_defaults` — `/writesim` 缺省值，与示例卡参数对齐
 - `sib.conf` / `rb.conf` — srsRAN_4G 小区静态配置（`rb.conf` 即原 srsLTE 的 `drb.conf`，上游改名；`qci 7/9` 承载与旧版一致），跟随镜像
-- `rr.conf` — 参考渲染文件； live 版本由 `internal/lte` 在每次 `/start` 时按频段渲染（含显式 `ul_earfcn`，见下）
+- `rr.conf` — 参考渲染文件；live 版本由 `internal/lte` 在每次 `/start` 时按频段渲染（含显式 `ul_earfcn`，模板见 `internal/lte/manager.go`）
 - `configs/sim_profiles.yaml` — 卡型说明

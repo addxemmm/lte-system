@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/deploy_to_ubuntu.sh — build & (re)start lte-system on the SDR host.
 # Usage: ./scripts/deploy_to_ubuntu.sh user@host [iface]
-# Example: ./scripts/deploy_to_ubuntu.sh addx@192.168.100.199
+# Example: ./scripts/deploy_to_ubuntu.sh addx@192.0.2.10
 set -e
 HOST="${1:?usage: deploy_to_ubuntu.sh user@host}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"

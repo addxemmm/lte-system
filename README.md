@@ -13,13 +13,11 @@
 
 无状态、无数据库的 LTE 自建基站工具：一个 Go 二进制暴露 HTTP API，编排容器内的 `srsepc` / `srsenb`（srsRAN_4G）、`tcpdump`、`tshark`、`hashcat` 与 ACR1281U 写卡。前端只调 API。
 
-> 分工：**本地（Windows）只做代码编辑与 git 管理；构建、运行、射频验证一律在 Ubuntu 服务器（192.168.100.199）上执行。**
->
-> 当前状态：**无写卡器，主白卡已写好**（ue3 / IMSI `001012333333333` / MCC `001` MNC `01`），开箱按 `docs/QUICKSTART.md` 直接入网，跳过 `/writesim`。
+> 工作流：开发机上改代码，SDR 服务器上构建运行。排障命令默认在服务器执行（本文示例服务器为 `192.0.2.10`，按你的实际地址替换）。
 
 ## 功能
 
-- 9 个兼容旧 Flask 版的接口：`start / stop / basicinfo / crackapn / getcrackresult / userupload / passwordupload / getfile / writesim`（`message_id` 语义不变，见 `docs/API.md`）
+- 9 个稳定的工具接口：`start / stop / basicinfo / crackapn / getcrackresult / userupload / passwordupload / getfile / writesim`（响应语义见 `docs/API.md`）
 - 新增 `GET /healthz`、`GET /status`、`GET /profile`；`/start` 空 body 复用上次配置（持久化见 `docs/RULES.md`）
 - 灵活写卡（有写卡器时）：`imsi` 必填，`ki/op/opc/auth/amf/acc/adm/spn/sqn/qci/card/mcc/mnc/iccid` 全可选（见 `docs/SIM.md`）；无写卡器时该接口不可用，不影响入网
 - SDR：USRP B210（正版 + BlackSDR 兼容板 FPGA 可切换）与 bladeRF（见 `docs/SDR.md`）
@@ -55,16 +53,16 @@ curl -s http://127.0.0.1:8081/healthz; echo
 BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
 ```
 
-启动基站示例（主卡 ue3：mcc `001` mnc `01`，apn 与手机一致）：
+启动基站示例（mcc `001` mnc `01`，apn 与终端一致）：
 
 ```bash
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"7","apn":"addxLTE","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","full_net_name":"addxLTE","short_net_name":"addxLTE"}'
+  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
 ```
 
 完整入网流程见 `docs/QUICKSTART.md`。
 
-本地仅编译验证（Windows）：
+本地编译验证（如 Windows PowerShell）：
 
 ```powershell
 go test ./...
