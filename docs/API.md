@@ -11,6 +11,7 @@
 - 每个响应 Response 带 `X-Request-ID` 头；服务端按 `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` 记审计日志（`docker logs` 可查谁何时调了什么） / Every response carries an `X-Request-ID` header; the server writes audit logs as `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` (use `docker logs` to see who called what and when)
 - 可选鉴权 Optional auth：服务端设 `LTE_API_TOKEN` 后，所有接口（新旧）都要带 `Authorization: Bearer <token>`，否则 401。默认未设 = 局域网开放模式（启动日志有 WARNING） / After the server sets `LTE_API_TOKEN`, all APIs (old and new) require `Authorization: Bearer <token>`, otherwise 401. Unset by default = open LAN mode (a WARNING appears in the boot log)
 - 404/405 也是 JSON 包络 Envelope（旧版根路径 404 保持纯文本，不变） / 404/405 also use the JSON envelope (legacy root-path 404 stays plain text, unchanged)
+- Postman 开箱即用：导入 [`postman/lte-system.postman_collection.json`](../postman/lte-system.postman_collection.json)（26 个请求 + 断言，用法见 [`postman/README.md`](../postman/README.md)）/ Ready-to-import Postman collection (26 requests with assertions, see [`postman/README.md`](../postman/README.md))
 
 目录 Contents：[§1 小区 Cell](#1-小区-cell) · [§2 终端 UE](#2-终端-ue) · [§3 爆破 Cracking](#3-爆破-cracking) · [§4 配置上传 Config Upload](#4-配置上传-config-upload) · [§5 抓包下载 Captures](#5-抓包下载-captures-packet-capture) · [§6 写卡 Simcards](#6-写卡-simcards) · [§7 存档与健康 Saved Profile and Health](#7-存档与健康-saved-profile-and-health) · [§8 错误码 Error Codes](#8-错误码-error-codes) · [§9 旧版新版对照表 Legacy to v1 Mapping](#9-旧版新版对照表-legacy-to-v1-mapping)
 

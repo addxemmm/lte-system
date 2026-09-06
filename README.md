@@ -33,6 +33,7 @@ Stateless, database-free LTE self-hosted base station toolkit: a single Go binar
 ```text
 cmd/server            Go 入口
 internal/api          v1 标准接口 + 旧版兼容 + 中间件（鉴权/审计/request-id）
+postman/              Postman 集合（26 个请求 + 断言，开箱即测）
 internal/lte          srsRAN 启停 + conf 模板渲染 + band 表
 internal/sdr          UHD/bladeRF/ACR1281 探测
 internal/sim          灵活写卡 + user_db.csv
