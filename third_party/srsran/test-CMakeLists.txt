@@ -1,0 +1,28 @@
+add_executable(nas_pdn_reject_test nas_pdn_reject_test.cc)
+target_compile_definitions(nas_pdn_reject_test PRIVATE ASSERTS_ENABLED)
+target_link_libraries(nas_pdn_reject_test
+  srsepc_mme
+  s1ap_asn1
+  srsran_asn1
+  srsran_common
+  srslog
+  support
+  ${CMAKE_THREAD_LIBS_INIT}
+  ${SEC_LIBRARIES}
+  ${SCTP_LIBRARIES})
+add_lte_test(nas_pdn_reject_test nas_pdn_reject_test)
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ipv4v6_fallback_test.cc")
+  add_executable(ipv4v6_fallback_test ipv4v6_fallback_test.cc)
+  target_link_libraries(ipv4v6_fallback_test
+    srsepc_mme
+    s1ap_asn1
+    srsran_asn1
+    srsran_common
+    srslog
+    support
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${SEC_LIBRARIES}
+    ${SCTP_LIBRARIES})
+  add_lte_test(ipv4v6_fallback_test ipv4v6_fallback_test)
+endif()

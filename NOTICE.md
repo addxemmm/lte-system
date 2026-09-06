@@ -19,3 +19,6 @@ The Docker image built from [`deploy/docker/Dockerfile`](deploy/docker/Dockerfil
 | Custom `testsim` card logic 定制 `testsim` 卡逻辑 | GPL-2.0 (see `third_party/pysim/`) | https://github.com/osmocom/pysim |
 `third_party/pysim/cards.py` (GPL-2.0, rescued from the proven 2023 setup) overlays era-pinned upstream pysim in the image (see [`Dockerfile`](deploy/docker/Dockerfile)).
 定制 `testsim` 卡逻辑（GPL-2.0，源自 2023 年实测环境）覆盖 era 版上游 pysim，见 [`Dockerfile`](deploy/docker/Dockerfile)。
+
+[`third_party/srsran/`](third_party/srsran) contains AGPL-3.0-or-later patches and regression tests for the pinned srsRAN source. These modifications are part of the corresponding source for the bundled EPC; they are not covered by the repository's MIT license.
+[`third_party/srsran/`](third_party/srsran) 中的补丁和回归测试采用 AGPL-3.0-or-later，属于镜像中 EPC 的对应修改源码，不属于本仓库自有代码的 MIT 许可范围。

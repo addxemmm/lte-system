@@ -1,0 +1,205 @@
+diff --git a/srsepc/CMakeLists.txt b/srsepc/CMakeLists.txt
+index f118644..1093b8e 100644
+--- a/srsepc/CMakeLists.txt
++++ b/srsepc/CMakeLists.txt
+@@ -47,6 +47,7 @@ link_directories(
+ # Add subdirectories
+ ########################################################################
+ add_subdirectory(src)
++add_subdirectory(test)
+ 
+ ########################################################################
+ # Default configuration files
+diff --git a/srsepc/hdr/mme/nas.h b/srsepc/hdr/mme/nas.h
+index 88364cd..979d3ab 100644
+--- a/srsepc/hdr/mme/nas.h
++++ b/srsepc/hdr/mme/nas.h
+@@ -226,7 +226,7 @@ public:
+ 
+   /* Uplink NAS messages handling */
+   bool handle_attach_request(srsran::byte_buffer_t* nas_rx);
+-  bool handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx);
++  bool handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx, uint8_t sec_hdr_type, bool mac_valid);
+   bool handle_authentication_response(srsran::byte_buffer_t* nas_rx);
+   bool handle_security_mode_complete(srsran::byte_buffer_t* nas_rx);
+   bool handle_attach_complete(srsran::byte_buffer_t* nas_rx);
+diff --git a/srsepc/src/mme/nas.cc b/srsepc/src/mme/nas.cc
+index 7e9834d..b4be693 100644
+--- a/srsepc/src/mme/nas.cc
++++ b/srsepc/src/mme/nas.cc
+@@ -31,6 +31,24 @@
+ 
+ namespace srsepc {
+ 
++namespace {
++
++const uint32_t nas_security_header_len = 6;
++
++bool unpack_pdn_connectivity_request_header(const uint8_t* msg, uint32_t len, uint8_t* eps_bearer_id, uint8_t* pti)
++{
++  if (msg == nullptr || eps_bearer_id == nullptr || pti == nullptr || len < 4 ||
++      (msg[0] & 0x0f) != LIBLTE_MME_PD_EPS_SESSION_MANAGEMENT ||
++      msg[2] != LIBLTE_MME_MSG_TYPE_PDN_CONNECTIVITY_REQUEST) {
++    return false;
++  }
++  *eps_bearer_id = msg[0] >> 4;
++  *pti           = msg[1];
++  return true;
++}
++
++} // namespace
++
+ nas::nas(const nas_init_t& args, const nas_if_t& itf) :
+   m_gtpc(itf.gtpc),
+   m_s1ap(itf.s1ap),
+@@ -971,15 +989,33 @@ bool nas::handle_attach_request(srsran::byte_buffer_t* nas_rx)
+   return true;
+ }
+ 
+-bool nas::handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx)
++bool nas::handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx, uint8_t sec_hdr_type, bool mac_valid)
+ {
+-  LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT pdn_con_req = {};
++  if (!mac_valid || sec_hdr_type != LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED) {
++    m_logger.warning("Discarding PDN Connectivity Request without valid integrity and ciphering");
++    return false;
++  }
+ 
+-  // Get PDN connectivity request messages
+-  LIBLTE_ERROR_ENUM err =
+-      liblte_mme_unpack_pdn_connectivity_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx->msg, &pdn_con_req);
+-  if (err != LIBLTE_SUCCESS) {
+-    m_logger.error("Error unpacking NAS PDN Connectivity Request. Error: %s", liblte_error_text[err]);
++  if (nas_rx == nullptr || nas_rx->N_bytes < nas_security_header_len + 4 ||
++      nas_rx->N_bytes - nas_security_header_len > LIBLTE_MAX_MSG_SIZE_BYTES) {
++    m_logger.error("Invalid protected NAS PDN Connectivity Request length");
++    return false;
++  }
++
++  const uint8_t outer_sec_hdr_type = (nas_rx->msg[0] & 0xf0) >> 4;
++  const uint8_t outer_pd           = nas_rx->msg[0] & 0x0f;
++  if (outer_sec_hdr_type != sec_hdr_type ||
++      outer_pd != LIBLTE_MME_PD_EPS_MOBILITY_MANAGEMENT) {
++    m_logger.error("PDN Connectivity Request is not integrity protected and ciphered");
++    return false;
++  }
++
++  const uint32_t inner_len = nas_rx->N_bytes - nas_security_header_len;
++  uint8_t        eps_bearer_id;
++  uint8_t        proc_transaction_id;
++  if (!unpack_pdn_connectivity_request_header(
++          &nas_rx->msg[nas_security_header_len], inner_len, &eps_bearer_id, &proc_transaction_id)) {
++    m_logger.error("Malformed inner ESM PDN Connectivity Request");
+     return false;
+   }
+ 
+@@ -991,17 +1027,37 @@ bool nas::handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx)
+   }
+ 
+   LIBLTE_MME_PDN_CONNECTIVITY_REJECT_MSG_STRUCT pdn_con_reject = {};
+-  pdn_con_reject.eps_bearer_id                                 = pdn_con_req.eps_bearer_id;
+-  pdn_con_reject.proc_transaction_id                           = pdn_con_req.proc_transaction_id;
++  pdn_con_reject.eps_bearer_id                                 = eps_bearer_id;
++  pdn_con_reject.proc_transaction_id                           = proc_transaction_id;
+   pdn_con_reject.esm_cause                                     = LIBLTE_MME_ESM_CAUSE_SERVICE_OPTION_NOT_SUPPORTED;
+ 
+-  err = liblte_mme_pack_pdn_connectivity_reject_msg(&pdn_con_reject, (LIBLTE_BYTE_MSG_STRUCT*)nas_tx.get());
++  LIBLTE_BYTE_MSG_STRUCT reject_msg = {};
++  LIBLTE_ERROR_ENUM err = liblte_mme_pack_pdn_connectivity_reject_msg(&pdn_con_reject, &reject_msg);
+   if (err != LIBLTE_SUCCESS) {
+     m_logger.error("Error packing PDN connectivity reject");
+     srsran::console("Error packing PDN connectivity reject\n");
+     return false;
+   }
+ 
++  if (reject_msg.N_bytes + nas_security_header_len > nas_tx->get_tailroom()) {
++    m_logger.error("PDN connectivity reject exceeds NAS buffer capacity");
++    return false;
++  }
++
++  const uint32_t next_dl_nas_count = m_sec_ctx.dl_nas_count + 1;
++  nas_tx->msg[0] = (LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED << 4) |
++                   LIBLTE_MME_PD_EPS_MOBILITY_MANAGEMENT;
++  memset(&nas_tx->msg[1], 0, 4);
++  nas_tx->msg[5] = next_dl_nas_count & 0xff;
++  memcpy(&nas_tx->msg[nas_security_header_len], reject_msg.msg, reject_msg.N_bytes);
++  nas_tx->N_bytes           = nas_security_header_len + reject_msg.N_bytes;
++  m_sec_ctx.dl_nas_count    = next_dl_nas_count;
++
++  cipher_encrypt(nas_tx.get());
++  uint8_t mac[4] = {};
++  integrity_generate(nas_tx.get(), mac);
++  memcpy(&nas_tx->msg[1], mac, sizeof(mac));
++
+   // Send reply to eNB
+   m_s1ap->send_downlink_nas_transport(
+       m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, nas_tx.get(), m_ecm_ctx.enb_sri);
+@@ -1926,7 +1982,7 @@ void nas::cipher_decrypt(srsran::byte_buffer_t* pdu)
+       break;
+     case srsran::CIPHERING_ALGORITHM_ID_128_EEA1:
+       srsran::security_128_eea1(&m_sec_ctx.k_nas_enc[16],
+-                                pdu->msg[5],
++                                m_sec_ctx.ul_nas_count,
+                                 0, // Bearer always 0 for NAS
+                                 srsran::SECURITY_DIRECTION_UPLINK,
+                                 &pdu->msg[6],
+@@ -1937,7 +1993,7 @@ void nas::cipher_decrypt(srsran::byte_buffer_t* pdu)
+       break;
+     case srsran::CIPHERING_ALGORITHM_ID_128_EEA2:
+       srsran::security_128_eea2(&m_sec_ctx.k_nas_enc[16],
+-                                pdu->msg[5],
++                                m_sec_ctx.ul_nas_count,
+                                 0, // Bearer always 0 for NAS
+                                 srsran::SECURITY_DIRECTION_UPLINK,
+                                 &pdu->msg[6],
+@@ -1948,7 +2004,7 @@ void nas::cipher_decrypt(srsran::byte_buffer_t* pdu)
+       break;
+     case srsran::CIPHERING_ALGORITHM_ID_128_EEA3:
+       srsran::security_128_eea3(&m_sec_ctx.k_nas_enc[16],
+-                                pdu->msg[5],
++                                m_sec_ctx.ul_nas_count,
+                                 0, // Bearer always 0 for NAS
+                                 srsran::SECURITY_DIRECTION_UPLINK,
+                                 &pdu->msg[6],
+@@ -1971,7 +2027,7 @@ void nas::cipher_encrypt(srsran::byte_buffer_t* pdu)
+       break;
+     case srsran::CIPHERING_ALGORITHM_ID_128_EEA1:
+       srsran::security_128_eea1(&m_sec_ctx.k_nas_enc[16],
+-                                pdu->msg[5],
++                                m_sec_ctx.dl_nas_count,
+                                 0, // Bearer always 0 for NAS
+                                 srsran::SECURITY_DIRECTION_DOWNLINK,
+                                 &pdu->msg[6],
+@@ -1982,7 +2038,7 @@ void nas::cipher_encrypt(srsran::byte_buffer_t* pdu)
+       break;
+     case srsran::CIPHERING_ALGORITHM_ID_128_EEA2:
+       srsran::security_128_eea2(&m_sec_ctx.k_nas_enc[16],
+-                                pdu->msg[5],
++                                m_sec_ctx.dl_nas_count,
+                                 0, // Bearer always 0 for NAS
+                                 srsran::SECURITY_DIRECTION_DOWNLINK,
+                                 &pdu->msg[6],
+@@ -1993,7 +2049,7 @@ void nas::cipher_encrypt(srsran::byte_buffer_t* pdu)
+       break;
+     case srsran::CIPHERING_ALGORITHM_ID_128_EEA3:
+       srsran::security_128_eea3(&m_sec_ctx.k_nas_enc[16],
+-                                pdu->msg[5],
++                                m_sec_ctx.dl_nas_count,
+                                 0, // Bearer always 0 for NAS
+                                 srsran::SECURITY_DIRECTION_DOWNLINK,
+                                 &pdu->msg[6],
+diff --git a/srsepc/src/mme/s1ap_nas_transport.cc b/srsepc/src/mme/s1ap_nas_transport.cc
+index dea0b2c..7ddb649 100644
+--- a/srsepc/src/mme/s1ap_nas_transport.cc
++++ b/srsepc/src/mme/s1ap_nas_transport.cc
+@@ -332,7 +332,9 @@ bool s1ap_nas_transport::handle_uplink_nas_transport(const asn1::s1ap::ul_nas_tr
+     case LIBLTE_MME_MSG_TYPE_PDN_CONNECTIVITY_REQUEST:
+       m_logger.info("UL NAS: PDN Connectivity Request");
+       srsran::console("UL NAS: PDN Connectivity Request\n");
+-      nas_ctx->handle_pdn_connectivity_request(nas_msg.get());
++      if (!nas_ctx->handle_pdn_connectivity_request(nas_msg.get(), sec_hdr_type, mac_valid)) {
++        increase_ul_nas_cnt = false;
++      }
+       break;
+     default:
+       m_logger.warning("Unhandled NAS integrity protected message %s", liblte_nas_msg_type_to_string(msg_type));
