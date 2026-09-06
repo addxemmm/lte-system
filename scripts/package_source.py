@@ -65,7 +65,8 @@ def package(root, output):
             content = source.read_bytes()
             # Respect the repository's LF text policy even on a Windows checkout.
             text_suffixes = {".go", ".mod", ".sum", ".sh", ".ps1", ".py", ".md", ".yaml", ".yml",
-                             ".conf", ".example", ".csv", ".txt", ".toml", ".json"}
+                             ".conf", ".example", ".csv", ".txt", ".toml", ".json",
+                             ".patch", ".cpp", ".cc", ".h", ".hpp", ".cmake"}
             if source.suffix in text_suffixes or source.name in {"Dockerfile", "Makefile", "VERSION", ".dockerignore", ".gitignore", ".gitattributes"}:
                 content = content.replace(b"\r\n", b"\n")
             info.size = len(content)

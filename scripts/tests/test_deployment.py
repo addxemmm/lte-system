@@ -76,6 +76,20 @@ class SourcePackageTests(unittest.TestCase):
         with self.assertRaises((ValueError, subprocess.CalledProcessError)):
             source.package(self.parent, self.archive)
 
+    def test_cpp_patch_sources_are_normalized_to_lf(self):
+        names = ("third_party/srsran/fix.patch", "third_party/srsran/test.cpp",
+                 "third_party/srsran/test.h", "third_party/srsran/test.cmake")
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"first\r\nsecond\r\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "third_party/srsran"],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        source.package(self.root, self.archive)
+        with tarfile.open(self.archive) as archive:
+            for name in names:
+                self.assertEqual(archive.extractfile(name).read(), b"first\nsecond\n")
+
     def test_output_cannot_truncate_source(self):
         path = self.root / "go.mod"
         before = path.read_bytes()

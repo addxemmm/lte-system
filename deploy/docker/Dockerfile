@@ -7,6 +7,7 @@ ARG SRSRAN_VERSION=release_23_11
 # ---------- stage 1: build srsRAN_4G ----------
 FROM ubuntu:22.04 AS srs-builder
 ARG SRSRAN_VERSION
+ARG SRSRAN_BUILD_JOBS=2
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git pkg-config \
@@ -24,9 +25,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN git clone --depth 1 --branch ${SRSRAN_VERSION} https://github.com/srsran/srsRAN_4G.git srsRAN_4G
+# Local NAS interoperability fixes and CPU-only regression tests.
+# Fail closed if the selected upstream revision no longer matches the patch baseline.
+COPY third_party/srsran/0001-protected-pdn-reject.patch \
+     third_party/srsran/0002-ipv4v6-fallback.patch \
+     third_party/srsran/nas_pdn_reject_test.cc \
+     third_party/srsran/ipv4v6_fallback_test.cc \
+     third_party/srsran/test-CMakeLists.txt /tmp/lte-srsran/
+RUN test "$(git -C /src/srsRAN_4G rev-parse HEAD)" = "eea87b1d893ae58e0b08bc381730c502024ae71f" \
+ && mkdir -p /src/srsRAN_4G/srsepc/test \
+ && cp /tmp/lte-srsran/test-CMakeLists.txt /src/srsRAN_4G/srsepc/test/CMakeLists.txt \
+ && cp /tmp/lte-srsran/*_test.cc /src/srsRAN_4G/srsepc/test/ \
+ && git -C /src/srsRAN_4G apply --check /tmp/lte-srsran/0001-protected-pdn-reject.patch \
+ && git -C /src/srsRAN_4G apply /tmp/lte-srsran/0001-protected-pdn-reject.patch \
+ && git -C /src/srsRAN_4G apply --check /tmp/lte-srsran/0002-ipv4v6-fallback.patch \
+ && git -C /src/srsRAN_4G apply /tmp/lte-srsran/0002-ipv4v6-fallback.patch
 WORKDIR /src/srsRAN_4G/build
 RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
- && make -j$(nproc) \
+ && make -j"${SRSRAN_BUILD_JOBS}" \
+ && ctest --output-on-failure --no-tests=error -R '^(nas_pdn_reject_test|ipv4v6_fallback_test)$' \
  && make install \
  && ldconfig
 # Verify RF drivers got compiled in (fail early if UHD missing)
