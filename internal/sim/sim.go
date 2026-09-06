@@ -9,6 +9,7 @@ package sim
 import (
 	"context"
 	"crypto/rand"
+	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -19,28 +20,29 @@ import (
 	"time"
 
 	"github.com/addxemmm/lte-system/internal/config"
+	"github.com/addxemmm/lte-system/internal/subscriber"
 )
 
 // WriteRequest is POST /writesim body. All fields except IMSI are optional.
 type WriteRequest struct {
-	IMSI  string `json:"imsi"`
-	MCC   string `json:"mcc"`   // default: imsi[0:3]
-	MNC   string `json:"mnc"`   // default: imsi[3:5] (2-digit); use MNC3 for 3-digit
-	MNC3  bool   `json:"mnc3"`  // set true when MNC is 3 digits
-	ICCID string `json:"iccid"` // default server iccid; "auto" = don't pass -s (keep factory)
-	Ki    string `json:"ki"`    // 32 hex, default server ki
-	OP    string `json:"op"`    // 32 hex, mutually exclusive with OPc
-	OPc   string `json:"opc"`   // 32 hex, default server opc
+	IMSI   string `json:"imsi"`
+	MCC    string `json:"mcc"`     // default: imsi[0:3]
+	MNC    string `json:"mnc"`     // default: imsi[3:5] (2-digit); use MNC3 for 3-digit
+	MNC3   bool   `json:"mnc3"`    // set true when MNC is 3 digits
+	ICCID  string `json:"iccid"`   // default server iccid; "auto" = don't pass -s (keep factory)
+	Ki     string `json:"ki"`      // 32 hex, default server ki
+	OP     string `json:"op"`      // 32 hex, mutually exclusive with OPc
+	OPc    string `json:"opc"`     // 32 hex, default server opc
 	OPType string `json:"op_type"` // "op" or "opc", default server value
-	Auth  string `json:"auth"`  // "mil" | "xor", default "mil"
-	AMF   string `json:"amf"`   // 4 hex, default "8001" (matches example card row)
-	ACC   string `json:"acc"`   // 4 hex Access Control Class, default "FFFF"
-	ADM   string `json:"adm"`   // hex string, default "3030303030303030"
-	SPN   string `json:"spn"`   // operator name, default "LTESystem"
-	Name  string `json:"name"`  // user_db.csv Name column, default auto ueN
-	SQN   string `json:"sqn"`   // 12 hex sequence, default random
-	QCI   *int   `json:"qci"`
-	Card  string `json:"card"` // pysim card type, default "testsim"
+	Auth   string `json:"auth"`    // "mil" | "xor", default "mil"
+	AMF    string `json:"amf"`     // 4 hex, default "8001" (matches example card row)
+	ACC    string `json:"acc"`     // 4 hex Access Control Class, default "FFFF"
+	ADM    string `json:"adm"`     // hex string, default "3030303030303030"
+	SPN    string `json:"spn"`     // operator name, default "LTESystem"
+	Name   string `json:"name"`    // user_db.csv Name column, default auto ueN
+	SQN    string `json:"sqn"`     // 12 hex sequence, default random
+	QCI    *int   `json:"qci"`
+	Card   string `json:"card"`    // pysim card type, default "testsim"
 	PinADM string `json:"pin_adm"` // rarely needed; ADM hex is used as -A
 }
 
@@ -52,6 +54,7 @@ type Resolved struct {
 }
 
 var (
+	reIMSI  = regexp.MustCompile(`^\d{15}$`)
 	reHex32 = regexp.MustCompile(`^[0-9a-fA-F]{32}$`)
 	reHex4  = regexp.MustCompile(`^[0-9a-fA-F]{4}$`)
 	reHex12 = regexp.MustCompile(`^[0-9a-fA-F]{12}$`)
@@ -61,7 +64,7 @@ var (
 func Resolve(req WriteRequest, cfg config.Config) (Resolved, error) {
 	r := Resolved{WriteRequest: req}
 	d := cfg.Sim
-	if !regexp.MustCompile(`^\d{15}$`).MatchString(req.IMSI) {
+	if !reIMSI.MatchString(req.IMSI) {
 		return r, fmt.Errorf("imsi must be 15 digits")
 	}
 	if r.MCC == "" {
@@ -159,7 +162,34 @@ func Resolve(req WriteRequest, cfg config.Config) (Resolved, error) {
 		}
 		r.QCI = &q
 	}
-	return r, nil
+	return r, validateSubscriber(r)
+}
+
+// validateSubscriber also protects AddUser callers that construct Resolved directly.
+func validateSubscriber(r Resolved) error {
+	if !reIMSI.MatchString(r.IMSI) || !reHex32.MatchString(r.Ki) ||
+		!reHex32.MatchString(r.OPValue) || !reHex4.MatchString(r.AMF) || !reHex12.MatchString(r.SQN) {
+		return fmt.Errorf("invalid subscriber identity or authentication fields")
+	}
+	if r.Auth != "mil" && r.Auth != "xor" {
+		return fmt.Errorf("auth must be mil or xor")
+	}
+	wantType := "op"
+	if r.UseOPc {
+		wantType = "opc"
+	}
+	if r.OPType != wantType {
+		return fmt.Errorf("op_type must match the resolved op or opc value")
+	}
+	if strings.HasPrefix(strings.TrimSpace(r.Name), "#") || strings.ContainsAny(r.Name, ",\"") {
+		return fmt.Errorf("name contains illegal characters")
+	}
+	for _, c := range r.Name {
+		if c < 0x20 || c == 0x7f {
+			return fmt.Errorf("name contains illegal characters")
+		}
+	}
+	return nil
 }
 
 // ProgArgs builds the pySim-prog.py argv (no shell). Mirrors legacy:
@@ -184,10 +214,33 @@ func (r Resolved) ProgArgs(pysimDir string) []string {
 
 // Program runs the full write -> verify -> user_db.csv flow.
 func Program(ctx context.Context, cfg config.Config, req WriteRequest) (msgID int, msg string, err error) {
+	return program(ctx, cfg, req, programResolved)
+}
+
+// program keeps the transaction testable without executing reader or card commands.
+func program(ctx context.Context, cfg config.Config, req WriteRequest,
+	run func(context.Context, config.Config, Resolved) (int, string, error)) (int, string, error) {
 	r, err := Resolve(req, cfg)
 	if err != nil {
 		return 6, "Invalid parameters: " + err.Error(), err
 	}
+	subscriber.Mutex.Lock()
+	defer subscriber.Mutex.Unlock()
+	if err := ctx.Err(); err != nil {
+		return 0, "Failed.", err
+	}
+	_, records, err := readSubscribers(cfg.UserDBPath())
+	if err != nil {
+		return 0, "Failed.", fmt.Errorf("read user_db.csv before programming: %w", err)
+	}
+	if _, err := matchingSubscriber(records, r); err != nil {
+		return 6, "Invalid parameters: " + err.Error(), err
+	}
+	return run(ctx, cfg, r)
+}
+
+// programResolved requires subscriber.Mutex to remain held through read-back and append.
+func programResolved(ctx context.Context, cfg config.Config, r Resolved) (int, string, error) {
 	// 1. pcscd + reader/card presence
 	if err := restartPCSCD(ctx); err != nil {
 		// non-fatal; reader may already be up
@@ -222,7 +275,7 @@ func Program(ctx context.Context, cfg config.Config, req WriteRequest) (msgID in
 		return 0, "Failed.", fmt.Errorf("verify failed: %v %.500s", err, string(readOut))
 	}
 	// 4. append to user_db.csv
-	st, err := AddUser(cfg.UserDBPath(), r)
+	st, err := addUserLocked(cfg.UserDBPath(), r)
 	if err != nil {
 		return 3, "Writting card successfully, but write user_db.csv failed.", err
 	}
@@ -332,16 +385,29 @@ func probeCardStrict(ctx context.Context, cfg config.Config) (bool, bool) {
 // AddUser appends "Name,Auth,IMSI,Key,OP_Type,OP,AMF,SQN,QCI,IP_alloc" to user_db.csv.
 // Returns "added" or "exists". It parses CSV properly (legacy used magic offset 1738).
 func AddUser(userDBPath string, r Resolved) (string, error) {
-	var existing []byte
-	if b, err := os.ReadFile(userDBPath); err == nil {
-		existing = b
+	subscriber.Mutex.Lock()
+	defer subscriber.Mutex.Unlock()
+	return addUserLocked(userDBPath, r)
+}
+
+func addUserLocked(userDBPath string, r Resolved) (string, error) {
+	if err := validateSubscriber(r); err != nil {
+		return "", err
 	}
-	if strings.Contains(string(existing), r.IMSI) {
+	existing, records, err := readSubscribers(userDBPath)
+	if err != nil {
+		return "", err
+	}
+	exists, err := matchingSubscriber(records, r)
+	if err != nil {
+		return "", err
+	}
+	if exists {
 		return "exists", nil
 	}
 	name := r.Name
 	if name == "" {
-		name = nextUEName(string(existing))
+		name = nextUEName(records)
 	}
 	qci := 7
 	if r.QCI != nil {
@@ -350,28 +416,73 @@ func AddUser(userDBPath string, r Resolved) (string, error) {
 	line := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s,%d,dynamic\n",
 		name, r.Auth, r.IMSI, strings.ToLower(r.Ki), r.OPType, r.OPValue,
 		strings.ToUpper(r.AMF), strings.ToLower(r.SQN), qci)
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		line = "\n" + line
+	}
 	f, err := os.OpenFile(userDBPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
 	if _, err := f.WriteString(line); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
 		return "", err
 	}
 	return "added", nil
 }
 
-func nextUEName(content string) string {
-	max := -1
-	for _, line := range strings.Split(content, "\n") {
+func readSubscribers(path string) ([]byte, [][]string, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var records [][]string
+	for i, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		cols := strings.Split(line, ",")
-		if len(cols) == 0 {
+		reader := csv.NewReader(strings.NewReader(line))
+		reader.FieldsPerRecord = 10
+		reader.TrimLeadingSpace = true
+		cols, err := reader.Read()
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid user_db.csv row %d: %w", i+1, err)
+		}
+		for j := range cols {
+			cols[j] = strings.TrimSpace(cols[j])
+		}
+		records = append(records, cols)
+	}
+	return b, records, nil
+}
+
+// SQN is deliberately excluded: it evolves during authentication and has a random
+// request default. Names and bearer settings do not change card credentials.
+func matchingSubscriber(records [][]string, r Resolved) (bool, error) {
+	found := false
+	for _, cols := range records {
+		if cols[2] != r.IMSI {
 			continue
 		}
+		found = true
+		if cols[1] != r.Auth || !strings.EqualFold(cols[3], r.Ki) ||
+			!strings.EqualFold(cols[4], r.OPType) || !strings.EqualFold(cols[5], r.OPValue) ||
+			!strings.EqualFold(cols[6], r.AMF) {
+			return false, fmt.Errorf("existing imsi has conflicting authentication parameters")
+		}
+	}
+	return found, nil
+}
+
+func nextUEName(records [][]string) string {
+	max := -1
+	for _, cols := range records {
 		var n int
 		if _, err := fmt.Sscanf(cols[0], "ue%d", &n); err == nil && n > max {
 			max = n
