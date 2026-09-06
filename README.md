@@ -17,7 +17,8 @@
 
 ## 功能
 
-- 9 个稳定的工具接口：`start / stop / basicinfo / crackapn / getcrackresult / userupload / passwordupload / getfile / writesim`（响应语义见 `docs/API.md`）
+- 标准 REST：`/api/v1`（正确状态码 + `{"code","message","data","request_id"}` 包络 + OpenAPI，见 `docs/API.md`）
+- 9 个稳定的根路径工具接口（已冻结，见 `docs/API_LEGACY.md`）
 - 新增 `GET /healthz`、`GET /status`、`GET /profile`；`/start` 空 body 复用上次配置（持久化见 `docs/RULES.md`）
 - 灵活写卡（有写卡器时）：`imsi` 必填，`ki/op/opc/auth/amf/acc/adm/spn/sqn/qci/card/mcc/mnc/iccid` 全可选（见 `docs/SIM.md`）；无写卡器时该接口不可用，不影响入网
 - SDR：USRP B210（正版 + BlackSDR 兼容板 FPGA 可切换）与 bladeRF（见 `docs/SDR.md`）
@@ -27,7 +28,7 @@
 
 ```text
 cmd/server            Go 入口
-internal/api          9 接口 + healthz/status/profile
+internal/api          v1 标准接口 + 旧版兼容 + 中间件（鉴权/审计/request-id）
 internal/lte          srsRAN 启停 + conf 模板渲染 + band 表
 internal/sdr          UHD/bladeRF/ACR1281 探测
 internal/sim          灵活写卡 + user_db.csv

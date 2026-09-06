@@ -167,10 +167,14 @@ func TestProfileEndpoint(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["has_profile"] != true {
+	if body["code"] != float64(0) {
+		t.Fatalf("want code 0: %v", body)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data["has_profile"] != true {
 		t.Fatalf("want profile: %v", body)
 	}
-	ues, _ := body["ues"].([]any)
+	ues, _ := data["ues"].([]any)
 	if len(ues) != 1 {
 		t.Fatalf("want 1 ue: %v", body)
 	}

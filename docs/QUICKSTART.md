@@ -1,5 +1,8 @@
 # QUICKSTART — 无写卡器 + 已写卡，直接入网
 
+> 本页命令用旧版根路径（最短）。新集成请用 `/api/v1` 等价接口，对照表见 `API.md §9`
+> （如 `POST /start` ↔ `POST /api/v1/cell`，`POST /basicinfo` ↔ `GET /api/v1/ue`）。
+
 前提：服务器已部署（见 `DEPLOY.md`），手头白卡已写好，主配置行：
 
 ```csv

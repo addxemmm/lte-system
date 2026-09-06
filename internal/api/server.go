@@ -45,11 +45,26 @@ func New(cfg config.Config, mgr *lte.Manager) *Server {
 	s.mux.HandleFunc("/healthz", s.handleHealthz)
 	s.mux.HandleFunc("/status", s.handleStatus)
 	s.mux.HandleFunc("/profile", s.handleProfile)
+	// Standard REST API. The "/api/" prefix route below only fires for
+	// paths nothing else matched (Go 1.22+ longest-prefix wins).
+	s.mux.HandleFunc("/api/", s.serveV1)
+	s.mux.HandleFunc("/", s.handleNotFound)
 	return s
 }
 
-// Handler returns the mux (with timeout wrapper applied by main).
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler returns the mux wrapped in the middleware chain
+// (recover -> request id + audit log -> optional bearer auth).
+func (s *Server) Handler() http.Handler { return chain(s.mux) }
+
+// handleNotFound keeps unknown paths machine-readable: v1-style JSON under
+// /api/*, legacy plain-text 404 elsewhere (frozen legacy behavior).
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	if len(r.URL.Path) >= 5 && r.URL.Path[:5] == "/api/" {
+		writeV1(w, r, CodeNotFound, "not found: "+r.URL.Path, nil)
+		return
+	}
+	http.NotFound(w, r)
+}
 
 // ---- response envelope (legacy: status/message_id/message) ----
 
@@ -423,7 +438,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, resp(false, 0, "Failed"))
+		writeV1(w, r, CodeMethod, "method not allowed, want GET", nil)
 		return
 	}
 	p, ok := s.mgr.LoadProfile()
@@ -435,5 +450,5 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		out["profile"] = p
 	}
-	writeJSON(w, out)
+	writeV1(w, r, CodeOK, "ok", out)
 }

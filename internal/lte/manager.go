@@ -95,6 +95,21 @@ func isDigits(s string) bool {
 	return true
 }
 
+// checkIface verifies the uplink interface exists. Skipped where the
+// sysfs network view is absent (non-Linux dev machines running unit tests).
+func checkIface(name string) error {
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil || len(entries) == 0 {
+		return nil
+	}
+	for _, e := range entries {
+		if e.Name() == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown network interface %q", name)
+}
+
 // validIPv4 is a strict dotted-quad check (no leading-zero octets > 255).
 func validIPv4(s string) bool {
 	parts := strings.Split(s, ".")
@@ -135,8 +150,12 @@ type Manager struct {
 
 	startedAt time.Time
 	lastStart StartParams
-	lastBand  BandInfo
-	bandKnown bool
+	// lastNetwork snapshots the uplink iface of the current run so Stop
+	// removes the right NAT rule even if params change later. Cleared on
+	// successful Stop.
+	lastNetwork string
+	lastBand    BandInfo
+	bandKnown   bool
 }
 
 // New creates a Manager.
@@ -183,6 +202,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 
 	if sysop.Running("srsepc") || sysop.Running("srsenb") {
 		return false, fmt.Errorf("is running")
+	}
+	if err := checkIface(p.Network); err != nil {
+		return false, err
 	}
 	if err := m.cfg.EnsureDirs(); err != nil {
 		return false, err
@@ -258,11 +280,13 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, fmt.Errorf("epc exited early, see %s", epcRunLog)
 	}
 
-	// 2. NAT for UE subnet via the uplink interface (legacy iptables rule).
-	_ = exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING",
-		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run()
-	_ = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
-		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run()
+	// 2. NAT for UE subnet via the uplink interface (legacy iptables rule,
+	// added once: skip when already present).
+	if exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING",
+		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run() != nil {
+		_ = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
+			"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run()
+	}
 	// 2b. UE-subnet forwarding on Docker-managed hosts (FORWARD defaults
 	// to DROP) + TCP MSS clamp for the GTP path.
 	ensureForwarding()
@@ -271,6 +295,8 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	enbLogF, err := os.Create(enbRunLog)
 	if err != nil {
 		m.killLocked()
+		deleteNAT(p.Network)
+		cleanupForwarding()
 		return known, err
 	}
 	enbCmd := exec.CommandContext(context.Background(), m.cfg.SrsENBBin, enbConf)
@@ -279,6 +305,8 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	if err := enbCmd.Start(); err != nil {
 		enbLogF.Close()
 		m.killLocked()
+		deleteNAT(p.Network)
+		cleanupForwarding()
 		return known, fmt.Errorf("start enb: %w", err)
 	}
 	m.enbCmd = enbCmd
@@ -293,6 +321,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 
 	m.startedAt = time.Now()
 	m.lastStart = p
+	m.lastNetwork = p.Network
 	m.lastBand = band
 	m.bandKnown = known
 	_ = ctx
@@ -392,15 +421,28 @@ func (m *Manager) Stop() bool {
 	defer m.mu.Unlock()
 	was := sysop.Running("srsepc") || sysop.Running("srsenb") || sysop.Running("tcpdump")
 	m.killLocked()
-	// Remove our NAT rule (ignore errors; interface may be gone).
-	if m.lastStart.Network != "" {
-		_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
-			"-s", "172.16.0.1/24", "-o", m.lastStart.Network, "-j", "MASQUERADE").Run()
+	// Remove our NAT rules (loop: history may hold duplicates from older
+	// builds; ignore errors, the interface may be gone).
+	if m.lastNetwork != "" {
+		deleteNAT(m.lastNetwork)
 	}
 	cleanupForwarding()
 	time.Sleep(time.Second)
 	still := sysop.Running("srsepc") || sysop.Running("srsenb") || sysop.Running("tcpdump")
+	if was && !still {
+		m.lastNetwork = ""
+	}
 	return was && !still || (was && m.epcCmd == nil && m.enbCmd == nil && !still)
+}
+
+// deleteNAT removes every matching MASQUERADE rule for iface.
+func deleteNAT(iface string) {
+	for i := 0; i < 5; i++ {
+		if exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
+			"-s", "172.16.0.1/24", "-o", iface, "-j", "MASQUERADE").Run() != nil {
+			return
+		}
+	}
 }
 
 func (m *Manager) killLocked() {

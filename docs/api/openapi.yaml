@@ -1,0 +1,204 @@
+openapi: 3.0.3
+info:
+  title: lte-system API v1
+  version: 2.1.0
+  description: |
+    Standard REST API for the stateless LTE lab-cell toolkit.
+    Legacy ad-hoc routes (`/start`, `/stop`, …) remain frozen for
+    compatibility; new integrations must use `/api/v1`.
+    See docs/API.md for the full reference and migration table.
+servers:
+  - url: http://192.0.2.10:8081
+    description: SDR host (replace with yours)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Required only when LTE_API_TOKEN is set on the server.
+  schemas:
+    Envelope:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: integer
+          description: 0 = success; HTTP*100+seq otherwise
+          example: 0
+        message:
+          type: string
+          example: cell started
+        data:
+          description: endpoint payload (object, array or null)
+        request_id:
+          type: string
+          example: 432678718a07d689
+    FieldError:
+      type: object
+      required: [field, reason]
+      properties:
+        field: { type: string, example: band }
+        reason: { type: string, example: must be one of 1,3,5,7,8,34,39,40,41 }
+    CellStart:
+      type: object
+      properties:
+        band: { type: string, example: "7", description: "one of 1,3,5,7,8,34,39,40,41" }
+        apn: { type: string, example: srsapn }
+        mcc: { type: string, example: "001", description: 3 digits }
+        mnc: { type: string, example: "01", description: 2-3 digits }
+        network: { type: string, example: eth0, description: uplink iface on the host }
+        sdr: { type: string, enum: [auto, uhd, bladerf, zmq], default: auto }
+        device_args: { type: string, description: RF driver args, auto-tuned for B210 when unset }
+        tx_gain: { type: integer, minimum: 0, maximum: 90, default: 80 }
+        rx_gain: { type: integer, minimum: 0, maximum: 90, default: 40 }
+        n_prb: { type: integer, enum: [6, 15, 25, 50, 75, 100], default: 25 }
+        full_net_name: { type: string, description: operator name on UE (NITZ), 1-32 chars }
+        short_net_name: { type: string, description: short operator name, 1-32 chars }
+        dns: { type: string, description: DNS handed to UEs via PCO (IPv4) }
+      description: Empty object {} reuses the saved profile from the last successful start.
+    UE:
+      type: object
+      properties:
+        apn: { type: string, nullable: true }
+        imsi: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+    SIMProgram:
+      type: object
+      required: [imsi]
+      properties:
+        imsi: { type: string, example: "001010123456789", description: 15 digits }
+        mcc: { type: string }
+        mnc: { type: string }
+        mnc3: { type: boolean }
+        iccid: { type: string, description: '"auto" keeps the factory value' }
+        ki: { type: string, description: 32 hex }
+        op: { type: string, description: 32 hex, mutually exclusive with opc }
+        opc: { type: string, description: 32 hex }
+        op_type: { type: string, enum: [op, opc] }
+        auth: { type: string, enum: [mil, xor] }
+        amf: { type: string, description: 4 hex }
+        acc: { type: string, description: 4 hex }
+        adm: { type: string }
+        spn: { type: string }
+        name: { type: string }
+        sqn: { type: string, description: 12 hex }
+        qci: { type: integer }
+        card: { type: string }
+    UEEntry:
+      type: object
+      properties:
+        name: { type: string }
+        auth: { type: string }
+        imsi: { type: string }
+paths:
+  /api/v1/cell:
+    post:
+      summary: Start the cell (empty body reuses saved profile)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CellStart' }
+      responses:
+        '200': { description: started (also on idempotent reuse) }
+        '400': { description: malformed body }
+        '409': { description: cell already running }
+        '422': { description: validation failed (data.errors) }
+        '503': { description: no SDR attached }
+    get:
+      summary: Cell status
+      responses:
+        '200': { description: '{running,epc,enb,pcap,started_at?,band?,apn?,net_name?}' }
+    delete:
+      summary: Stop the cell (idempotent)
+      responses:
+        '200': { description: '{stopped:true|false}' }
+  /api/v1/ue:
+    get:
+      summary: Attached UE snapshot (first UE only)
+      responses:
+        '200': { description: UE }
+        '404': { description: no UE attached }
+        '412': { description: cell not running }
+  /api/v1/crack/jobs:
+    post:
+      summary: Start APN password cracking (STOPS the running cell)
+      responses:
+        '202': { description: job running, poll /api/v1/crack/result }
+        '404': { description: no UE data }
+        '409': { description: job already running }
+        '412': { description: no CHAP handshake in capture }
+  /api/v1/crack/result:
+    get:
+      summary: Cracking result
+      responses:
+        '200': { description: state ready|running }
+        '404': { description: password not in dictionary / no UE data }
+        '412': { description: no CHAP handshake in capture }
+  /api/v1/config/subscribers:
+    post:
+      summary: Upload user_db.csv (takes effect after restart)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                userdb: { type: string, format: binary }
+      responses:
+        '200': { description: uploaded }
+        '413': { description: exceeds 8 MiB }
+        '422': { description: missing file }
+  /api/v1/config/wordlist:
+    post:
+      summary: Upload crack dictionary
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                wordlist: { type: string, format: binary }
+      responses:
+        '200': { description: uploaded }
+        '413': { description: exceeds 8 MiB }
+        '422': { description: missing file }
+  /api/v1/captures/{id}:
+    get:
+      summary: Download a capture
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, enum: [lte-data, s1ap, enb, epc, "0", "1", "2", "3"] }
+      responses:
+        '200': { description: file download }
+        '404': { description: unknown id or not ready }
+  /api/v1/simcards:
+    post:
+      summary: Program a SIM card (up to ~180s)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SIMProgram' }
+      responses:
+        '200': { description: programmed }
+        '409': { description: card already in database }
+        '412': { description: no card inserted }
+        '422': { description: validation failed }
+        '503': { description: no reader attached }
+  /api/v1/profile:
+    get:
+      summary: Saved launch profile + UE list (no key material)
+      responses:
+        '200': { description: '{has_profile,profile?,ues[]}' }
+  /api/v1/health:
+    get:
+      summary: Health + SDR detection
+      responses:
+        '200': { description: '{ok,running,sdr,time}' }

@@ -1,362 +1,192 @@
-# LTE-System API 参考手册（Go `:8081`）
+# LTE-System API v1（标准接口）
 
-> 实现：`internal/api/server.go`。本文逐字对应实现——`message` 文案、`message_id`、字段名都以本文为准；改实现必须同步改本文 + `*_test.go`（见 `AGENTS.md`）。
+> 旧版根路径接口（`/start`、`/stop`…）仍可用但已冻结，见 [`API_LEGACY.md`](API_LEGACY.md)。
+> 机器可读契约：[`api/openapi.yaml`](api/openapi.yaml)（OpenAPI 3.0）。
 
 - 基地址：`http://<服务器IP>:8081`（服务器本机 `http://127.0.0.1:8081`，局域网如 `http://192.0.2.10:8081`）
-- 9 个旧接口全部 `POST` + JSON；新增 `GET /healthz`、`GET /status`、`GET /profile`
-- **HTTP 状态码恒为 `200`**（含错误情况；`GET /getfile` 成功下载除外，见 §8）。成功失败只看 JSON 里的 `status`
-- 统一响应包络：`{"status": bool, "message_id": int, "message": str, ...扩展字段}`
-- `message_id = 0` 在所有接口都表示“通用失败，需查日志”（`sudo docker logs ltesystem` / `/data/log/`）
-- 请求体大小限制：`/start` 1MB，`/getfile`·`/writesim` 64KB，上传类 8MB（超限 `upload failed: file too large`）
-- 服务端超时：读 30s / 写 60s；`/start` 最长 90s（下面解释为什么）；`/writesim` 最长 180s
-- 非 POST 调 POST 接口：返回各接口自己的 `message_id 0` 文案（见各节），不是 404/405
+- 统一包络：`{"code": int, "message": str, "data": obj|null, "request_id": str}`，`code 0` = 成功
+- `code = HTTP状态码*100+序号`（如 `40401` → HTTP 404），对照表见 §错误码
+- 每个响应带 `X-Request-ID` 头；服务端按 `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` 记审计日志（`docker logs` 可查谁何时调了什么）
+- 可选鉴权：服务端设 `LTE_API_TOKEN` 后，所有接口（新旧）都要带 `Authorization: Bearer <token>`，否则 401。默认未设 = 局域网开放模式（启动日志有 WARNING）
+- 404/405 也是 JSON 包络（旧版根路径 404 保持纯文本，不变）
 
-目录：[§1 通用约定](#1-通用约定) · [§2 /start](#2-post-start启动基站并抓包) · [§3 /stop](#3-post-stop停止) · [§4 /basicinfo](#4-post-basicinfo读终端基础信息) · [§5 /crackapn](#5-post-crackapn开始破解apn密码注意会停基站) · [§6 /getcrackresult](#6-post-getcrackresult取破解结果) · [§7 上传](#7-post-userupload--passwordupload上传卡库字典) · [§8 /getfile](#8-post-getfile下载抓包文件) · [§9 /writesim](#9-post-writesim写卡有写卡器时才用) · [§10 状态接口](#10-状态接口-healthzstatusprofile) · [§11 典型流程](#11-典型流程) · [§12 message_id 总表](#12-message_id-总表)
+目录：[§1 小区](#1-小区-cell) · [§2 终端](#2-终端-ue) · [§3 爆破](#3-爆破-crack) · [§4 配置上传](#4-配置上传) · [§5 抓包下载](#5-抓包下载-captures) · [§6 写卡](#6-写卡-simcards) · [§7 存档与健康](#7-存档与健康) · [§8 错误码](#8-错误码) · [§9 旧版新版对照表](#9-旧版新版对照表)
 
 ---
 
-## 1. 通用约定
+## 1. 小区 cell
 
-### 1.1 响应包络
+### POST /api/v1/cell — 启动
 
-```jsonc
-{
-  "status": true,          // 本次语义是否成功（注意不是 HTTP 状态）
-  "message_id": 1,         // 机器可判读码，各接口独立编号
-  "message": "Start successfully",  // 人读文案，逐字见各节
-  // ... 各接口扩展字段（apn/imsi/ip/username/password/profile/ues 等）
-}
-```
+启动顺序与耗时同旧版（渲染配置 → srsepc → NAT → srsenb → tcpdump，约 6–10 秒，curl 设 `--max-time 100`）。
 
-### 1.2 缺失值用 `null`
+字段与旧 `/start` 一致（band/apn/mcc/mnc/network/sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name/dns，见 openapi.yaml），另有三处**标准化差异**：
 
-`basicinfo` / `getcrackresult` 里没取到的字段返回 JSON `null`（不是空字符串也不是 `"NULL"`），客户端判空用 `== null`。
-
-### 1.3 配置持久化（`/start` 空 body）
-
-每次 `/start` 成功后，**解析后的全量参数**存入 `/data/last_start.json`（随 `lte-data` 卷保留，重建容器不丢）。之后：
-
-- `POST /start` 传 `{}` → 复用上次配置直接启动
-- 只传个别字段（如 `{"band":"3"}`）→ 其余自动继承上次
-- 全新环境无存档时传 `{}` → `message_id 3`（参数不全）
-- `GET /profile` 查看存档 + 卡库清单
-
-## 2. POST /start（启动基站并抓包）
-
-启动顺序：渲染 `epc_run.conf`/`enb_run.conf`/`rr.conf` → 起 `srsepc`（等 3s）→ 加 NAT → 起 `srsenb`（等 3s）→ 起 `tcpdump` 抓 `srs_spgw_sgi`。**全程约 6–10 秒**，curl 记得设 `--max-time 100`。
-
-### 2.1 请求字段
-
-| 字段 | 类型 | 必填 | 默认/说明 |
-|---|---|---|---|
-| `band` | string | ✅ | 频段编号，仅限 `1/3/5/7/8/34/39/40/41`（映射见下表） |
-| `apn` | string | ✅ | 接入点名，任意（如 `srsapn`，须与终端侧一致），禁 `空格"';&\|<>$`\\` 等注入字符 |
-| `mcc` | string | ✅ | 3 位数字，如 `001` / `460` |
-| `mnc` | string | ✅ | 2 或 3 位数字，如 `01` / `00` |
-| `network` | string | ✅ | 服务器上行网卡名（`ip route get 8.8.8.8` 看 `dev`，如 `eth0`），禁注入字符 |
-| `sdr` | string | ❌ | `uhd`/`bladerf`/`zmq`/`auto`（默认 `auto`：有 B210 用 B210，只有 bladeRF 用 bladeRF） |
-| `device_args` | string | ❌ | 透传 `enb.conf [rf] device_args`。`auto`/缺省 + 检测到 B210 时自动注入 VM-USB 稳定参数；显式值永远优先；bladeRF/ZMQ 不受影响 |
-| `tx_gain` | int | ❌ | 默认 `80` |
-| `rx_gain` | int | ❌ | 默认 `40`（本机上行弱时实测 `60` 有效） |
-| `n_prb` | int | ❌ | 默认 `25`（5MHz，虚拟机 USB 安全值；裸金属可 `50`/`100`） |
-| `full_net_name` | string | ❌ | 终端显示的运营商全称（NITZ 下发），默认 `srsRAN`，1–32 可打印 ASCII，禁 `"';#$`\\` |
-| `short_net_name` | string | ❌ | 简称，同上 |
-| `dns` | string | ❌ | 经 PCO 下发给终端的 DNS，默认 `8.8.8.8`（上行过滤公网 DNS 时填网关，如 `192.0.2.1`），须为合法 IPv4 |
-
-### 2.2 band → 频点映射（`internal/lte/band.go`，UL EARFCN 显式写入 `rr.conf`）
-
-| band | DL EARFCN | UL EARFCN | 下行 MHz | 上行 MHz | 双工 |
-|---|---|---|---|---|---|
-| 1 | 300 | 18300 | 2140 | 1950 | FDD |
-| 3 | 1575 | 19575 | 1842.5 | 1747.5 | FDD |
-| 5 | 2525 | 20525 | 881.5 | 836.5 | FDD |
-| 7 | 3350 | 21350 | 2680 | 2560 | FDD |
-| 8 | 3625 | 21625 | 942.5 | 897.5 | FDD |
-| 34 | 36275 | 36275 | 2017.5 | — | TDD |
-| 39 | 38450 | 38450 | 1900 | — | TDD |
-| 40 | 39150 | 39150 | 2350 | — | TDD |
-| 41 | 40620 | 40620 | 2593 | — | TDD |
-
-> 虚拟机 USB 下建议优先 `7`（FDD 最稳）；TDD（39/40/41）eNB 能起来但上游 UL 推导有坑，已用显式 `ul_earfcn` 绕过，终端先能用 7 就用 7。
-
-### 2.3 响应
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `Start successfully` | 成功（`status:true`）。配置已存档，可 `GET /profile` 核对 |
-| 2 | `is running` | 已有 srsepc/srsenb 在跑，先 `/stop` |
-| 3 | `Incomplete parameters` | 缺 band/apn/mcc/mnc/network 任一；或 JSON 解析失败；或无存档时空启动 |
-| 4 | `device is not connected, please connect usrp device.` | 没检测到 USRP（`sdr:uhd` 强制要求 B210；`auto` 且无任何 SDR 也报这个） |
-| 0 | `Start Failed` / `Start Failed: <原因>` | 其他失败（mcc/mnc/apn/network 格式非法、epc 早退、二进制缺失…），看 `docker logs` |
-
-### 2.4 示例
-
-```bash
-# 最小：mcc/mnc 与卡的 IMSI 对应即可
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0"}'
-
-# 全参数
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{
-  "band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0",
-  "sdr":"auto","tx_gain":80,"rx_gain":60,"n_prb":25,
-  "full_net_name":"MyLTE","short_net_name":"MyLTE","dns":"192.0.2.1"}'
-
-# 日常：一键复用上次（重建容器/重启后）
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{}'
-
-# 只换频段，其余继承
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' -d '{"band":"3"}'
-```
-
-注意事项：启动后终端用相匹配的白卡才能附着（IMSI 的 MCC/MNC须与本次一致）；多终端时**只有第一台能上网**（上游 SPGW 限制）；`network` 填错会导致终端能上网但出不了公网（NAT 绑错口）。
-
-## 3. POST /stop（停止）
-
-无参数（body 可空）。停止顺序：杀 `tcpdump` → `srsenb` → `srsepc` → 删本次加的 NAT 规则 → 清理自加的转发规则。约 2–4 秒。
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `Stop successfully.` | 停干净了 |
-| 2 | `Not running.` | 本来就没在跑 |
-| 0 | `Stop failed.` | 还有杀不掉的进程，看 `docker exec ltesystem ps -eo pid,stat,comm`（`Z` 僵尸会被排除判定） |
-
-```bash
-curl -X POST http://127.0.0.1:8081/stop -H 'Content-Type: application/json' -d '{}'
-```
-
-## 4. POST /basicinfo（读终端基础信息）
-
-无参数。解析 `/data/log/srsLTE_epc.log` 三个关键字（`ESM Info: APN` / `Found User` / `pool ip addr`，取**最后一次**出现=最新附着），**只报第一台终端**。
-
-成功响应（取不到的字段为 `null`）：
-
-```json
-{"status":true,"message_id":1,"message":"Getting information success.",
-  "apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2"}
-```
-
-> `apn` 为 `null` 是正常现象：部分终端（实测华为 CPE）的 PDN 请求不走 ESM Information 流程，日志里就没有该行，不代表异常。`imsi`+`ip` 都有即附着成功。
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `Getting information success.` | 成功（见上） |
-| 2 | `Is not running, please start first.` | 基站没在跑 |
-| 3 | `no UE connected` | 跑着但尚无终端附着 |
-| 0 | `Failed` | 非 POST 或未知错误 |
-
-```bash
-curl -X POST http://127.0.0.1:8081/basicinfo -H 'Content-Type: application/json' -d '{}'
-```
-
-## 5. POST /crackapn（开始破解 APN 密码，注意会停基站）
-
-无参数。流程：从 `srsLTE_enb_s1ap.pcap` 用 tshark 提取 CHAP（`response:challenge:id`）→ **停掉正在运行的基站**（释放 CPU、固定 pcap）→ 后台起 `hashcat -m 4800` 字典爆破 → 立即返回。**调用前确保已有一台 CHAP 认证的终端连过**（iPhone 不行，读不到 CHAP）。
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `Start crack success.` | 爆破已在后台跑，用 `/getcrackresult` 查 |
-| 2 | `Hashcat is running.` | 已有一个爆破在跑，等它结束 |
-| 3 | `Can not get UE's data, please start first and connect UE, or just connect UE. Then try again.` | 日志里无终端数据（没启动过或没终端连过） |
-| 4 | `Can not get username and password` | pcap 里提不出 CHAP（终端不支持或 pcap 为空） |
-| 5 | `Stop program failed, please try to stop manually.` | 停基站失败，手动调 `/stop` 再试 |
-| 0 | `Failed` | 非 POST / hashcat 起不来 |
-
-```bash
-curl -X POST http://127.0.0.1:8081/crackapn -H 'Content-Type: application/json' -d '{}'
-```
-
-## 6. POST /getcrackresult（取破解结果）
-
-无参数。hashcat 还在跑就直接返回等候；否则用当前字典跑 `--show` 取口令。**本接口不启停基站**，读的是历史日志+pcap。
-
-成功响应：
-
-```json
-{"status":true,"message_id":1,"message":"Getting information success.",
- "apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2",
- "username":"mi6test","password":"cmwap"}
-```
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `Getting information success.` | 成功（见上） |
-| 2 | `Cracking apn is still running, please try again later.` | 还在爆破，稍后再查 |
-| 3 | `Can not get password from dict.` | 字典里没有这个口令，换更大的字典重传后重跑 |
-| 4 | `Can not get username and password.` | 同 crackapn 的 4 |
-| 5 | `Can not get UE's data, please start first and connect UE, or just connect UE, then try again.` | 同 crackapn 的 3 |
-| 0 | `Failed.` | 非 POST / `--show` 执行失败 |
-
-```bash
-curl -X POST http://127.0.0.1:8081/getcrackresult -H 'Content-Type: application/json' -d '{}'
-```
-
-## 7. POST /userupload · /passwordupload（上传卡库/字典）
-
-`multipart/form-data`，字段名固定（错了按空文件处理）：
-
-| 接口 | 字段名 | 落盘位置 | 上限 |
-|---|---|---|---|
-| `/userupload` | `userdb` | `/data/conf/user_db.csv`（原子替换） | 8MB |
-| `/passwordupload` | `wordlist` | `/data/wordlist.list`（原子替换） | 8MB |
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `upload success` | 成功（原子替换，旧文件先写 `.tmp` 再改名） |
-| 2 | `no file` | 字段名错 / 没带文件 / 空文件 |
-| 0 | `upload failed` / `upload failed: file too large` | 解析失败 / 超 8MB / 写盘失败 |
-
-```bash
-curl -X POST http://127.0.0.1:8081/userupload -F userdb=@user_db.csv
-curl -X POST http://127.0.0.1:8081/passwordupload -F wordlist=@wordlist.list
-```
-
-- `user_db.csv` 格式：`Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc`，`Name` 唯一，末尾留空行（见 `configs/README.md`）。**EPC 只在启动时读库**：上传后必须 `/stop` 再 `/start` 才生效。
-- 字典格式：一行一个候选口令（见 `configs/wordlist.list.example`）。下次 `/crackapn` 即用新字典。
-
-## 8. POST /getfile（下载抓包文件）
-
-请求：`{"fileid": N}`（`fileid` 缺失或体裁错误 → `Error id`）。
-
-| fileid | 文件 | 内容 |
-|---|---|---|
-| 0 | `lte_data.pcap` | SGi 口业务流量（tcpdump 抓的，上网行为分析用这个） |
-| 1 | `srsLTE_enb_s1ap.pcap` | eNB S1AP（Wireshark DLT=150 + s1ap 解析） |
-| 2 | `srsLTE_enb.pcap` | eNB 空口 MAC |
-| 3 | `srsLTE_epc.pcap` | EPC |
-
-- 成功：直接返回文件下载（`Content-Disposition: attachment`），curl 加 `-OJ` 保存。
-- 失败 JSON：`{"status":false,"message_id":2,"message":"Error id"}`（id 非法/缺失）；`{"status":false,"message_id":3,"message":"Cant not find the file"}`（文件尚不存在，如还没跑过基站）。
-- 非 POST → `message_id 0` + `Failed`。
-
-```bash
-curl -X POST http://127.0.0.1:8081/getfile -H 'Content-Type: application/json' \
-  -d '{"fileid":0}' -OJ
-```
-
-## 9. POST /writesim（写卡，有写卡器时才用）
-
-> **当前无写卡器：本接口固定返回 `message_id 2`，直接跳过**，走 `docs/QUICKSTART.md` 用已写好的卡。有写卡器（ACR1281U 接好）后按下文使用。
-
-超时 180s（写卡+回读慢）。未知 JSON 字段会被**直接拒绝**（`Invalid parameters`），拼写注意。
-
-### 9.1 请求字段（除 `imsi` 全可选，缺省取服务端默认）
-
-| 字段 | 说明 | 默认 |
-|---|---|---|
-| `imsi` | ✅必填，15 位数字字符串 | — |
-| `mcc`/`mnc` | 缺省从 IMSI 切片（前 3 / 接着 2 位） | IMSI 派生 |
-| `mnc3` | `true` 时 MNC 取 3 位 | `false` |
-| `ki` | 32 hex | `00112233445566778899aabbccddeeff` |
-| `opc` / `op` | 32 hex，**二选一互斥** | `opc=63bfa50ee6523365ff14c1f45f88737d` |
-| `op_type` | `op` 或 `opc` | 跟随所选 |
-| `auth` | `mil` 或 `xor` | `mil` |
-| `amf` | 4 hex | `8001`（与示例卡一致） |
-| `acc` | 4 hex 接入等级 | `FFFF` |
-| `adm` | ADM hex | `3030303030303030` |
-| `spn` | 运营商显示名 | `LTESystem` |
-| `iccid` | 指定值，或 `"auto"`=保留出厂值（SJA2 类卡必须用 `auto`） | `89860123456789012345` |
-| `sqn` | 12 hex 序列号 | 随机 |
-| `qci` | int | `7` |
-| `card` | pysim 卡型（`testsim`/`sysmoUSIM-SJS1`/…，见 `configs/sim_profiles.yaml`） | `testsim` |
-| `name` | 卡库 `Name` 列 | 自动 `ueN` |
-| `pin_adm` | 极少用，ADM 覆盖 | — |
-
-### 9.2 响应
-
-| id | message（原文） | 说明 |
-|---|---|---|
-| 1 | `Succeed.` | 写卡+回读校验+入库全成 |
-| 2 | `Device is not connected, please connect acr1281 first.` | 读卡器没连（**无写卡器时恒定返回这个**） |
-| 3 | `Writting card successfully, but write user_db.csv failed.` | 卡写好了但入库失败，手动补一行 |
-| 4 | `The card already exists and can be used directly.` | 该 IMSI 已在库，直接用 |
-| 5 | `SIM card is not inserted.` | 读卡器在但没插卡 |
-| 6 | `Invalid parameters` / `Invalid parameters: <原因>` | JSON 非法、未知字段、`imsi` 缺失、ki/opc/amf 等格式错 |
-| 0 | `Failed.` | 非 POST / 写卡失败 / 回读校验失败 |
+1. **空 `{}` 复用存档**（`/data/last_start.json`，行为同旧版，见 `RULES.md`）
+2. **严格校验**：缺字段/非法值/未知 band/非法 `n_prb`（仅允许 6/15/25/50/75/100）/`tx_rx` 越界（0–90）一律 **422**，`data.errors` 逐字段说明；**未知 band 不再静默回退**
+3. TDD band 成功时 `data.warning` 提示上行注意事项
 
 ```bash
 # 最小
-curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' -d '{"imsi":"001010123456781"}'
-# 全参数（460 网络示例）
-curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' -d '{
-  "imsi":"460001234567890","mcc":"460","mnc":"00",
-  "ki":"00112233445566778899aabbccddeeff","opc":"63bfa50ee6523365ff14c1f45f88737d",
-  "auth":"mil","amf":"8001","spn":"CMCC","card":"testsim"}'
+curl -X POST http://127.0.0.1:8081/api/v1/cell -H 'Content-Type: application/json' \
+  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0"}'
+# 200 {"code":0,"message":"cell started","data":{"band":"7","apn":"srsapn","net_name":"srsRAN"},...}
+
+# 422 示例
+# 422 {"code":42201,"message":"validation failed",
+#      "data":{"errors":[{"field":"band","reason":"must be one of 1,3,5,7,8,34,39,40,41"}]},...}
 ```
 
-流程细节：`service pcscd restart` → 探卡 → `pySim-prog.py` 写卡（判 `Programming successful`）→ `pySim-read.py` 回读核对 IMSI → 追加 `user_db.csv`。注意 `testsim` 类卡 Ki/OPc 出厂预置不可改，写卡参数必须与出厂值一致（见 `docs/SIM.md` §0）。
+| 情况 | HTTP | code | message |
+|---|---|---|---|
+| 成功 | 200 | 0 | `cell started` |
+| body 非 JSON | 400 | 40001 | `malformed JSON body` |
+| 校验失败 | 422 | 42201 | `validation failed` |
+| 已在运行 | 409 | 40901 | `cell already running` |
+| 无 SDR | 503 | 50301 | `no SDR device attached` |
+| 网卡名不存在 | 422 | 42201 | `unknown network interface "xxx"` |
+| 其他失败 | 500 | 50001 | `start failed: <原因>` |
 
-## 10. 状态接口 /healthz、/status、/profile
-
-### GET /healthz（任意方法均可）
+### GET /api/v1/cell — 状态
 
 ```json
-{"ok":true,"running":true,
- "sdr":{"uhd_b210":true,"bladerf":false,"acr1281":false,
-        "uhd_raw":"...","bladerf_raw":"...","usb_acr_raw":"..."},
- "time":"2026-09-05T08:13:53Z"}
+{"code":0,"message":"ok","data":
+ {"running":true,"epc":true,"enb":true,"pcap":true,
+  "started_at":"2026-09-05T10:06:48Z","band":"7","apn":"srsapn","net_name":"MyLTE"}}
 ```
 
-`sdr` 为实时探测：B210（含序列号/型号原文）、bladeRF、ACR1281U。容器刚起、USB 刚插拔后查这个。
+空闲时 `data` 为 `{"running":false,"epc":false,"enb":false,"pcap":false}`。
 
-### GET /status（任意方法均可）
+### DELETE /api/v1/cell — 停止（幂等）
 
-```json
-{"running":true,"epc":true,"enb":true,"pcap":true,
- "started_at":"2026-09-05T10:06:48Z","band":"7","apn":"srsapn","net_name":"MyLTE"}
-```
-
-空闲时只有 `{"running":false,"epc":false,"enb":false,"pcap":false}`（无 started_at 等字段）。`started_at` 为本次 `/start` 的 UTC 时间。
-
-### GET /profile（必须 GET，其他方法 → `message_id 0` + `Failed`）
-
-```json
-{"has_profile":true,
- "profile":{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0",
-            "sdr":"","device_args":"","tx_gain":80,"rx_gain":40,"n_prb":25,
-            "full_net_name":"MyLTE","short_net_name":"MyLTE","dns":"192.0.2.1"},
- "ues":[{"name":"ue0","auth":"mil","imsi":"001010123456789"}]}
-```
-
-- `profile` 是**解析后的生效值**（含继承的默认增益/带宽），与 `last_start.json` 一致；无存档时无此字段
-- `ues` 为卡库清单（**不含密钥**，密钥只在服务器文件里）；空库为 `[]`
+运行中 → `200 {"code":0,"message":"cell stopped","data":{"stopped":true}}`；
+本来就没跑 → 同样 200，`stopped:false`（旧版此处返回“失败”，v1 改为幂等成功）。
 
 ```bash
-curl http://127.0.0.1:8081/healthz
-curl http://127.0.0.1:8081/status
-curl http://127.0.0.1:8081/profile
+curl -X DELETE http://127.0.0.1:8081/api/v1/cell
 ```
 
-## 11. 典型流程
+## 2. 终端 ue
+
+### GET /api/v1/ue — 附着终端快照（第一台）
+
+```json
+{"code":0,"message":"ok","data":{"apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2"}}
+```
+
+取不到的字段为 `null`（部分终端不走 ESM Information 流程时 `apn` 为 null，属正常）。
+
+| 情况 | HTTP | code |
+|---|---|---|
+| 成功 | 200 | 0 |
+| 基站没跑 | 412 | 41201 `cell not running` |
+| 无终端 | 404 | 40401 `no UE attached` |
+
+## 3. 爆破 crack
+
+### POST /api/v1/crack/jobs — 开始爆破（⚠️ 会停基站）
+
+从 S1AP 包提 CHAP → 停基站 → 后台 `hashcat -m 4800`。成功返回 **202**：
+
+```json
+{"code":0,"message":"crack job running",
+ "data":{"state":"running","poll":"/api/v1/crack/result"}}
+```
+
+| 情况 | HTTP | code |
+|---|---|---|
+| 已有任务在跑 | 409 | 40901 |
+| 无终端数据 | 404 | 40401 |
+| pcap 无 CHAP（终端不用 CHAP，如 iPhone） | 412 | 41201 |
+| 停基站失败 | 500 | 50001 |
+
+### GET /api/v1/crack/result — 取结果
+
+| data.state | 含义 |
+|---|---|
+| `running`（200） | 还在跑，稍后轮询 |
+| `ready`（200） | 成功，带 `apn/imsi/ip/username/password` |
+| 无（404） | 字典无此口令（`password not in dictionary`，带 `username`）/ 无终端数据 |
+
+## 4. 配置上传
+
+`POST /api/v1/config/subscribers`（字段 `userdb` → `/data/conf/user_db.csv`）与
+`POST /api/v1/config/wordlist`（字段 `wordlist` → `/data/wordlist.list`），`multipart/form-data`，上限 8MB。
+
+成功 200，`data.note` 提示生效时机（卡库需重启 EPC，字典下次爆破即用）：
+
+```json
+{"code":0,"message":"upload success",
+ "data":{"bytes":2645,"note":"takes effect after restart (EPC reads at boot)"}}
+```
+
+缺文件 422，超限 413（`upload exceeds limit`，带 `max_bytes`），失败 500。
 
 ```bash
-BASE=http://127.0.0.1:8081
-curl -s $BASE/healthz                          # 1. 硬件在不在（uhd_b210 应 true）
-curl -s -X POST $BASE/start -d '{}'            # 2. 一键复用上次配置启动（首次用全参数）
-curl -s -X POST $BASE/basicinfo -d '{}'        # 3. 终端附着后查 IMSI/IP
-curl -s -X POST $BASE/getfile -d '{"fileid":0}' -OJ   # 4. 下业务包分析
-curl -s -X POST $BASE/stop -d '{}'             # 5. 收工
-# 换卡库：先传后重启
-curl -s -X POST $BASE/userupload -F userdb=@user_db.csv
-curl -s -X POST $BASE/stop -d '{}' && curl -s -X POST $BASE/start -d '{}'
-# APN 口令爆破（会停基站！做完重起）
-curl -s -X POST $BASE/crackapn -d '{}'
-curl -s -X POST $BASE/getcrackresult -d '{}'
+curl -X POST http://127.0.0.1:8081/api/v1/config/subscribers -F userdb=@user_db.csv
 ```
 
-冒烟脚本：`BASE=http://127.0.0.1:8081 bash scripts/smoke.sh`（覆盖 healthz/status/stop/basicinfo/getfile/上传干跑；start/crack/writesim 需硬件不测）。
+## 5. 抓包下载 captures
 
-## 12. message_id 总表
+`GET /api/v1/captures/{id}`，`id` 取 `lte-data`（业务流量）/`s1ap`/`enb`/`epc`（兼容旧数字 `0-3`）。
+成功直接下载；未知 id 或文件未就绪 → 404。
 
-| 接口 | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
-|---|---|---|---|---|---|---|---|
-| `/start` | 启动失败（原因见 message） | 启动成功 | 运行中 | 参数不全/JSON错/无存档 | 无 USRP | — | — |
-| `/stop` | 停止失败 | 停止成功 | 本来就没跑 | — | — | — | — |
-| `/basicinfo` | 失败 | 获取成功 | 基站没跑 | 无终端 | — | — | — |
-| `/crackapn` | 失败 | 爆破已启动 | hashcat忙 | 无终端数据 | 无CHAP | 停基站失败 | — |
-| `/getcrackresult` | 失败 | 获取成功 | 爆破中 | 字典无此口令 | 无CHAP | 无终端数据 | — |
-| `/userupload`·`/passwordupload` | 上传失败/超8MB | 上传成功 | 无文件 | — | — | — | — |
-| `/getfile` | 方法错 | —（成功直接下载） | 非法id | 文件不存在 | — | — | — |
-| `/writesim` | 写卡/校验失败 | 写卡成功 | 无读卡器 | 入库失败 | 卡已在库 | 没插卡 | 参数非法 |
+```bash
+curl -OJ http://127.0.0.1:8081/api/v1/captures/lte-data
+```
 
-> `/getcrackresult` 没有 6（旧文档误列，已按实现修正）；`/start` 没有 5；`getfile` 成功时不返回 JSON。
+> 想下 EPC/eNB 运行日志？暂不支持（在规划中），目前用 `docker exec ltesystem tail /data/log/srsLTE_epc.log`。
+
+## 6. 写卡 simcards
+
+`POST /api/v1/simcards`，body 同旧 `/writesim` 全字段（`imsi` 必填，其余可选，见 openapi.yaml；
+**未知字段忽略**——旧版会直接拒绝，这是故意的向前兼容差异）。最长 180s。
+
+| 情况 | HTTP | code |
+|---|---|---|
+| 写卡成功 | 200 | 0，`data.result=programmed` |
+| 卡已在库 | 409 | 40901，`data.result=exists` |
+| 无读卡器 | 503 | 50301 |
+| 没插卡 | 412 | 41201 |
+| 参数非法 | 422 | 42201 |
+| 入库失败/写卡失败 | 500 | 50001 |
+
+无读卡器环境调本接口恒定 503，属正常（跳过即可，不影响入网）。
+
+## 7. 存档与健康
+
+- `GET /api/v1/profile` → `200 {"code":0,…,"data":{"has_profile":true,"profile":{…},"ues":[{"name","auth","imsi"}]}}`（无密钥；无存档时无 `profile` 字段）。旧 `GET /profile` 已统一为同一包络。
+- `GET /api/v1/health` → `200 {"code":0,…,"data":{"ok":true,"running":bool,"sdr":{…},"time":"…"}}`（旧 `GET /healthz` 保留原样）。
+
+## 8. 错误码
+
+| code | HTTP | 含义 |
+|---|---|---|
+| 0 | 200 | 成功（DELETE 停止空闲、GET 轮询 `running` 等也属成功） |
+| 40001 | 400 | body 非 JSON / multipart 坏 |
+| 40101 | 401 | 缺少或错误的 Bearer token（仅设 `LTE_API_TOKEN` 时） |
+| 40401 | 404 | 资源不存在（未知路径/capture id/无终端/字典无口令/无 UE 数据） |
+| 40501 | 405 | 方法不允许 |
+| 40901 | 409 | 冲突（小区在跑/爆破在跑/卡已在库） |
+| 41201 | 412 | 前置条件不满足（小区没跑/无 CHAP/没插卡） |
+| 41301 | 413 | 上传超限（带 `max_bytes`） |
+| 42201 | 422 | 校验失败（`data.errors:[{field,reason}]`） |
+| 50001 | 500 | 内部失败（message 带原因） |
+| 50301 | 503 | 硬件缺失（无 SDR/无读卡器） |
+
+## 9. 旧版新版对照表
+
+| 旧版（根路径，已冻结） | 新版（`/api/v1`） | 行为差异 |
+|---|---|---|
+| `POST /start` | `POST /api/v1/cell` | 未知 band 由静默回退改为 422；`n_prb`/增益/网卡加入校验；TDD 成功带 warning |
+| `POST /stop` | `DELETE /api/v1/cell` | 空闲停止由“失败”改为幂等成功 |
+| `POST /basicinfo` | `GET /api/v1/ue` | 无终端由包络失败改为 404 |
+| `POST /crackapn` | `POST /api/v1/crack/jobs` | 成功改 202；无 CHAP 由失败改为 412 |
+| `POST /getcrackresult` | `GET /api/v1/crack/result` | `running`/`ready` 状态机替代真假值 |
+| `POST /userupload` | `POST /api/v1/config/subscribers` | 成功带生效时机 note；超限改 413 |
+| `POST /passwordupload` | `POST /api/v1/config/wordlist` | 同上 |
+| `POST /getfile {fileid}` | `GET /api/v1/captures/{id}` | 字符串 id（数字别名兼容） |
+| `POST /writesim` | `POST /api/v1/simcards` | 未知字段由拒绝改忽略；卡已在库改 409 |
+| `GET /healthz`·`/status`·`/profile` | `GET /api/v1/health`·`/api/v1/cell`·`/api/v1/profile` | 统一包络（旧 `/profile` 已同步新包络） |
+
+旧版完整逐字文档：[`API_LEGACY.md`](API_LEGACY.md)。旧版永不删除（除非大版本公告），但不再加功能。

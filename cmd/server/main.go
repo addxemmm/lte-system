@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,12 +33,16 @@ func main() {
 		log.Fatalf("ensure dirs: %v", err)
 	}
 	mgr := lte.New(cfg)
+	if strings.TrimSpace(os.Getenv("LTE_API_TOKEN")) == "" {
+		log.Printf("WARNING: LTE_API_TOKEN unset, API is open (LAN-only deployment required)")
+	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           api.New(cfg, mgr).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		// Must exceed the longest handler context (/writesim 180s + margin).
+		WriteTimeout:      220 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
