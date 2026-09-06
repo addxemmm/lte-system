@@ -59,10 +59,12 @@ COPY --from=srs-builder /usr/local/lib/ /usr/local/lib/
 COPY --from=srs-builder /usr/local/share/srsran/ /usr/local/share/srsran/
 RUN ldconfig
 
-# UHD FPGA images (stock) + compat firmware overlay
+# UHD FPGA images (stock) + compat firmware overlay.
+# Sources live in per-board dirs under firmware/uhd/ (see its README);
+# dest names are kept stable for select-uhd-fpga.sh.
 RUN /usr/lib/uhd/utils/uhd_images_downloader.py || true
-COPY firmware/uhd/usrp_b210_fpga.blacksdr_compat.bin /usr/share/uhd/images/usrp_b210_fpga.blacksdr_compat.bin
-COPY firmware/uhd/usrp_b210_fpga.stock.bin /usr/share/uhd/images/usrp_b210_fpga.stock.bin
+COPY firmware/uhd/blacksdr-B210mini-clone/usrp_b210_fpga.bin /usr/share/uhd/images/usrp_b210_fpga.blacksdr_compat.bin
+COPY firmware/uhd/ettus-B210-stock/usrp_b210_fpga.bin /usr/share/uhd/images/usrp_b210_fpga.stock.bin
 COPY deploy/docker/select-uhd-fpga.sh /usr/local/bin/select-uhd-fpga
 RUN chmod +x /usr/local/bin/select-uhd-fpga
 

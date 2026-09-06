@@ -20,7 +20,7 @@
 
 ### 系统架构
 
-![ltesystem](./image/ltesystem-easy.png)
+![ltesystem](../images/ltesystem-easy.png)
 
 ### 系统功能
 

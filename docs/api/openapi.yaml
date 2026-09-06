@@ -3,13 +3,16 @@ info:
   title: lte-system API v1
   version: 2.1.0
   description: |
+    无状态 LTE 实验小区工具的标准 REST API。
+    旧版零散路由（`/start`、`/stop`…）为兼容性冻结保留；新集成必须使用 `/api/v1`。
+    完整参考与迁移表见 docs/API.md。
     Standard REST API for the stateless LTE lab-cell toolkit.
     Legacy ad-hoc routes (`/start`, `/stop`, …) remain frozen for
     compatibility; new integrations must use `/api/v1`.
     See docs/API.md for the full reference and migration table.
 servers:
   - url: http://192.0.2.10:8081
-    description: SDR host (replace with yours)
+    description: SDR 服务器（替换为你的地址） / SDR host (replace with yours)
 security:
   - bearerAuth: []
 components:
@@ -17,7 +20,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Required only when LTE_API_TOKEN is set on the server.
+      description: 仅当服务端设置 LTE_API_TOKEN 时需要 / Required only when LTE_API_TOKEN is set on the server.
   schemas:
     Envelope:
       type: object
@@ -25,13 +28,13 @@ components:
       properties:
         code:
           type: integer
-          description: 0 = success; HTTP*100+seq otherwise
+          description: 0 表示成功，否则为 HTTP 状态码*100+序号 / 0 = success; HTTP*100+seq otherwise
           example: 0
         message:
           type: string
           example: cell started
         data:
-          description: endpoint payload (object, array or null)
+          description: 端点负载（对象、数组或 null） / endpoint payload (object, array or null)
         request_id:
           type: string
           example: 432678718a07d689
@@ -44,20 +47,20 @@ components:
     CellStart:
       type: object
       properties:
-        band: { type: string, example: "7", description: "one of 1,3,5,7,8,34,39,40,41" }
+        band: { type: string, example: "7", description: "取值之一 / one of 1,3,5,7,8,34,39,40,41" }
         apn: { type: string, example: srsapn }
-        mcc: { type: string, example: "001", description: 3 digits }
-        mnc: { type: string, example: "01", description: 2-3 digits }
-        network: { type: string, example: eth0, description: uplink iface on the host }
+        mcc: { type: string, example: "001", description: "3 位数字 / 3 digits" }
+        mnc: { type: string, example: "01", description: "2-3 位数字 / 2-3 digits" }
+        network: { type: string, example: eth0, description: "宿主机上行网卡 / uplink iface on the host" }
         sdr: { type: string, enum: [auto, uhd, bladerf, zmq], default: auto }
-        device_args: { type: string, description: RF driver args, auto-tuned for B210 when unset }
+        device_args: { type: string, description: "射频驱动参数，未设置时针对 B210 自动调优 / RF driver args, auto-tuned for B210 when unset" }
         tx_gain: { type: integer, minimum: 0, maximum: 90, default: 80 }
         rx_gain: { type: integer, minimum: 0, maximum: 90, default: 40 }
         n_prb: { type: integer, enum: [6, 15, 25, 50, 75, 100], default: 25 }
-        full_net_name: { type: string, description: operator name on UE (NITZ), 1-32 chars }
-        short_net_name: { type: string, description: short operator name, 1-32 chars }
-        dns: { type: string, description: DNS handed to UEs via PCO (IPv4) }
-      description: Empty object {} reuses the saved profile from the last successful start.
+        full_net_name: { type: string, description: "UE 上显示的运营商名称（NITZ），1-32 字符 / operator name on UE (NITZ), 1-32 chars" }
+        short_net_name: { type: string, description: "运营商短名称，1-32 字符 / short operator name, 1-32 chars" }
+        dns: { type: string, description: "经 PCO 下发给 UE 的 DNS（IPv4） / DNS handed to UEs via PCO (IPv4)" }
+      description: 空对象 {} 复用上次成功启动的存档 / Empty object {} reuses the saved profile from the last successful start.
     UE:
       type: object
       properties:
@@ -68,22 +71,22 @@ components:
       type: object
       required: [imsi]
       properties:
-        imsi: { type: string, example: "001010123456789", description: 15 digits }
+        imsi: { type: string, example: "001010123456789", description: "15 位数字 / 15 digits" }
         mcc: { type: string }
         mnc: { type: string }
         mnc3: { type: boolean }
-        iccid: { type: string, description: '"auto" keeps the factory value' }
-        ki: { type: string, description: 32 hex }
-        op: { type: string, description: 32 hex, mutually exclusive with opc }
-        opc: { type: string, description: 32 hex }
+        iccid: { type: string, description: '"auto" 保留出厂值 / "auto" keeps the factory value' }
+        ki: { type: string, description: "32 位十六进制 / 32 hex" }
+        op: { type: string, description: "32 位十六进制，与 opc 互斥 / 32 hex, mutually exclusive with opc" }
+        opc: { type: string, description: "32 位十六进制 / 32 hex" }
         op_type: { type: string, enum: [op, opc] }
         auth: { type: string, enum: [mil, xor] }
-        amf: { type: string, description: 4 hex }
-        acc: { type: string, description: 4 hex }
+        amf: { type: string, description: "4 位十六进制 / 4 hex" }
+        acc: { type: string, description: "4 位十六进制 / 4 hex" }
         adm: { type: string }
         spn: { type: string }
         name: { type: string }
-        sqn: { type: string, description: 12 hex }
+        sqn: { type: string, description: "12 位十六进制 / 12 hex" }
         qci: { type: integer }
         card: { type: string }
     UEEntry:
@@ -95,51 +98,51 @@ components:
 paths:
   /api/v1/cell:
     post:
-      summary: Start the cell (empty body reuses saved profile)
+      summary: 启动小区（空 body 复用存档） / Start the cell (empty body reuses saved profile)
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CellStart' }
       responses:
-        '200': { description: started (also on idempotent reuse) }
-        '400': { description: malformed body }
-        '409': { description: cell already running }
-        '422': { description: validation failed (data.errors) }
-        '503': { description: no SDR attached }
+        '200': { description: 启动成功（含幂等复用） / started (also on idempotent reuse) }
+        '400': { description: 请求体损坏 / malformed body }
+        '409': { description: 小区运行中 / cell already running }
+        '422': { description: 校验失败（含 data.errors） / validation failed (data.errors) }
+        '503': { description: 无 SDR 附着 / no SDR attached }
     get:
-      summary: Cell status
+      summary: 小区状态 / Cell status
       responses:
-        '200': { description: '{running,epc,enb,pcap,started_at?,band?,apn?,net_name?}' }
+        '200': { description: '小区状态 / {running,epc,enb,pcap,started_at?,band?,apn?,net_name?}' }
     delete:
-      summary: Stop the cell (idempotent)
+      summary: 停止小区（幂等） / Stop the cell (idempotent)
       responses:
-        '200': { description: '{stopped:true|false}' }
+        '200': { description: '停止结果 / {stopped:true|false}' }
   /api/v1/ue:
     get:
-      summary: Attached UE snapshot (first UE only)
+      summary: 附着终端快照（仅第一台） / Attached UE snapshot (first UE only)
       responses:
-        '200': { description: UE }
-        '404': { description: no UE attached }
-        '412': { description: cell not running }
+        '200': { description: 终端信息 / UE }
+        '404': { description: 无附着终端 / no UE attached }
+        '412': { description: 小区未运行 / cell not running }
   /api/v1/crack/jobs:
     post:
-      summary: Start APN password cracking (STOPS the running cell)
+      summary: 开始爆破（会停止运行中小区） / Start APN password cracking (STOPS the running cell)
       responses:
-        '202': { description: job running, poll /api/v1/crack/result }
-        '404': { description: no UE data }
-        '409': { description: job already running }
-        '412': { description: no CHAP handshake in capture }
+        '202': { description: 任务运行中，轮询 /api/v1/crack/result / job running, poll /api/v1/crack/result }
+        '404': { description: 无终端数据 / no UE data }
+        '409': { description: 任务已在运行 / job already running }
+        '412': { description: 抓包中无 CHAP 握手 / no CHAP handshake in capture }
   /api/v1/crack/result:
     get:
-      summary: Cracking result
+      summary: 爆破结果 / Cracking result
       responses:
-        '200': { description: state ready|running }
-        '404': { description: password not in dictionary / no UE data }
-        '412': { description: no CHAP handshake in capture }
+        '200': { description: 状态 ready|running / state ready|running }
+        '404': { description: 字典无口令 / 无终端数据 / password not in dictionary / no UE data }
+        '412': { description: 抓包中无 CHAP 握手 / no CHAP handshake in capture }
   /api/v1/config/subscribers:
     post:
-      summary: Upload user_db.csv (takes effect after restart)
+      summary: 上传 user_db.csv（重启后生效） / Upload user_db.csv (takes effect after restart)
       requestBody:
         required: true
         content:
@@ -149,12 +152,12 @@ paths:
               properties:
                 userdb: { type: string, format: binary }
       responses:
-        '200': { description: uploaded }
-        '413': { description: exceeds 8 MiB }
-        '422': { description: missing file }
+        '200': { description: 上传成功 / uploaded }
+        '413': { description: 超过 8 MiB / exceeds 8 MiB }
+        '422': { description: 缺少文件 / missing file }
   /api/v1/config/wordlist:
     post:
-      summary: Upload crack dictionary
+      summary: 上传爆破字典 / Upload crack dictionary
       requestBody:
         required: true
         content:
@@ -164,41 +167,41 @@ paths:
               properties:
                 wordlist: { type: string, format: binary }
       responses:
-        '200': { description: uploaded }
-        '413': { description: exceeds 8 MiB }
-        '422': { description: missing file }
+        '200': { description: 上传成功 / uploaded }
+        '413': { description: 超过 8 MiB / exceeds 8 MiB }
+        '422': { description: 缺少文件 / missing file }
   /api/v1/captures/{id}:
     get:
-      summary: Download a capture
+      summary: 下载抓包 / Download a capture
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string, enum: [lte-data, s1ap, enb, epc, "0", "1", "2", "3"] }
       responses:
-        '200': { description: file download }
-        '404': { description: unknown id or not ready }
+        '200': { description: 文件下载 / file download }
+        '404': { description: 未知 id 或未就绪 / unknown id or not ready }
   /api/v1/simcards:
     post:
-      summary: Program a SIM card (up to ~180s)
+      summary: 写卡（最长约 180s） / Program a SIM card (up to ~180s)
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/SIMProgram' }
       responses:
-        '200': { description: programmed }
-        '409': { description: card already in database }
-        '412': { description: no card inserted }
-        '422': { description: validation failed }
-        '503': { description: no reader attached }
+        '200': { description: 写卡成功 / programmed }
+        '409': { description: 卡已在库 / card already in database }
+        '412': { description: 未插卡 / no card inserted }
+        '422': { description: 校验失败 / validation failed }
+        '503': { description: 无读卡器 / no reader attached }
   /api/v1/profile:
     get:
-      summary: Saved launch profile + UE list (no key material)
+      summary: 存档启动配置与终端列表（无密钥） / Saved launch profile + UE list (no key material)
       responses:
-        '200': { description: '{has_profile,profile?,ues[]}' }
+        '200': { description: '存档与终端列表 / {has_profile,profile?,ues[]}' }
   /api/v1/health:
     get:
-      summary: Health + SDR detection
+      summary: 健康与 SDR 检测 / Health + SDR detection
       responses:
-        '200': { description: '{ok,running,sdr,time}' }
+        '200': { description: '健康状态 / {ok,running,sdr,time}' }
