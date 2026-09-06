@@ -173,12 +173,14 @@ type Status struct {
 	NetName   string     `json:"net_name,omitempty"`
 }
 
-// IsRunning reports live state (managed procs OR external same-name procs).
+// IsRunning reports live state. Only non-zombie, non-exited processes
+// count: a srsenb that died on RF init (or any defunct child) must read
+// as stopped, never as running.
 func (m *Manager) IsRunning() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	epc := sysop.Running("srsepc") || (m.epcCmd != nil && m.epcCmd.Process != nil)
-	enb := sysop.Running("srsenb") || (m.enbCmd != nil && m.enbCmd.Process != nil)
+	epc := sysop.Running("srsepc") || alive(m.epcCmd)
+	enb := sysop.Running("srsenb") || alive(m.enbCmd)
 	pcap := sysop.Running("tcpdump")
 	st := Status{EPC: epc, ENB: enb, Pcap: pcap, Running: epc || enb}
 	if st.Running && !m.startedAt.IsZero() {
@@ -274,6 +276,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, fmt.Errorf("start epc: %w", err)
 	}
 	m.epcCmd = epcCmd
+	track(epcCmd)
 	time.Sleep(3 * time.Second)
 	if epcCmd.ProcessState != nil && epcCmd.ProcessState.Exited() {
 		epcLogF.Close()
@@ -310,7 +313,17 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, fmt.Errorf("start enb: %w", err)
 	}
 	m.enbCmd = enbCmd
-	time.Sleep(3 * time.Second)
+	track(enbCmd)
+	time.Sleep(5 * time.Second)
+	// Fail fast when the eNB died during init (typical: RF device vanished).
+	// A live-but-slow eNB passes through; only a certain exit fails here.
+	if enbCmd.ProcessState != nil && enbCmd.ProcessState.Exited() {
+		enbLogF.Close()
+		m.killLocked()
+		deleteNAT(p.Network)
+		cleanupForwarding()
+		return known, fmt.Errorf("enb exited early: %s", tailFile(enbRunLog, 5))
+	}
 
 	// 4. traffic capture on the SGi interface (best-effort).
 	pcapPath := m.cfg.LogPath(m.cfg.PcapLTEData)
@@ -318,6 +331,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		"-i", "srs_spgw_sgi", "-w", pcapPath)
 	_ = pcapCmd.Start()
 	m.pcapCmd = pcapCmd
+	track(pcapCmd)
 
 	m.startedAt = time.Now()
 	m.lastStart = p
@@ -459,6 +473,23 @@ func (m *Manager) killLocked() {
 	sysop.KillAll("srsenb", 3*time.Second)
 	sysop.KillAll("srsepc", 3*time.Second)
 	m.startedAt = time.Time{}
+}
+
+// alive reports a managed child as running only while it has neither
+// exited nor been reaped as exited. (Relies on track() below keeping
+// ProcessState fresh.)
+func alive(cmd *exec.Cmd) bool {
+	if cmd == nil || cmd.Process == nil {
+		return false
+	}
+	st := cmd.ProcessState
+	return st == nil || !st.Exited()
+}
+
+// track reaps a child on natural exit so it never lingers as <defunct>
+// and ProcessState stays accurate for alive().
+func track(cmd *exec.Cmd) {
+	go func() { _ = cmd.Wait() }()
 }
 
 // reap waits for a killed child so it doesn't linger as <defunct>.
@@ -836,6 +867,30 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 	}
 	return writeTmpl(filepath.Join(m.cfg.ConfDir, "rr.conf"), rrTmpl,
 		rrTmplData{DLEARFCN: band.DLEARFCN, ULEARFCN: band.ULEARFCN})
+}
+
+
+// tailFile returns the last n non-empty lines of path joined for log snippets.
+func tailFile(path string, n int) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err.Error()
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		out = append(out, strings.TrimSpace(line))
+		if len(out) > n {
+			out = out[1:]
+		}
+	}
+	s := strings.Join(out, " | ")
+	if len(s) > 500 {
+		s = s[len(s)-500:]
+	}
+	return s
 }
 
 func writeTmpl(path string, t *template.Template, data any) error {

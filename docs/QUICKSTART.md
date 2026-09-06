@@ -89,6 +89,7 @@ curl -X POST http://127.0.0.1:8081/stop -H 'Content-Type: application/json' -d '
 | 反复 attach 失败 / Repeated attach failures | `SQN` 过期：把 ue0 行 `SQN` 改大一点（如 `000000001235`），重启容器再试 / `SQN` expired: increase `SQN` in the ue0 line (e.g. `000000001235`) and restart the container |
 | 能附着但不能上网 / Attached but no internet | 按顺序查：①终端 ping 网关 `172.16.0.1` ②ping `8.8.8.8` 看延迟/丢包（上行 SNR 差会导致 TCP 瘫痪，先看 `PUSCH snr`）③`nslookup` 查 DNS（上行过滤公网 DNS 时 `/start` 加 `"dns"` 参数）④仍不行看 `RULES.md` 转发链自查 / Check in order: 1) from the UE/terminal device ping the gateway `172.16.0.1` 2) ping `8.8.8.8` for latency/loss (poor uplink SNR stalls TCP, check `PUSCH snr` first) 3) `nslookup` for DNS (if uplink filters public DNS, add `"dns"` to `/start`) 4) if still failing, see the forwarding-chain self-check in `RULES.md` |
 | `/start` 返回 `4` / `/start` returns `4` | USRP 没识别：`sudo docker exec ltesystem uhd_find_devices`，见 `SDR.md` / USRP not detected: `sudo docker exec ltesystem uhd_find_devices`, see `SDR.md` |
+| 启动后 `status` 全 false / status all false right after start | eNB 初始化失败会直接报错（看 `/data/log/enb_run.log` 尾）；`lsusb` 无 B210 则重插 USB 查供电换口 / eNB init failure fails fast with the log tail; B210 missing from `lsusb` means re-plug USB and check power/port |
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
