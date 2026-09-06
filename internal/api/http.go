@@ -8,10 +8,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -21,17 +24,17 @@ import (
 
 // Business codes for the v1 envelope. HTTP status is derived from code/1000.
 const (
-	CodeOK            = 0
-	CodeMalformed     = 40001 // body not JSON / wrong shape (HTTP 400)
-	CodeUnauthorized  = 40101 // missing or bad bearer token (HTTP 401)
-	CodeNotFound      = 40401 // unknown resource id (HTTP 404)
-	CodeMethod        = 40501 // method not allowed (HTTP 405)
-	CodeConflict      = 40901 // cell/crack already running, card exists (HTTP 409)
-	CodePrecondition  = 41201 // cell not running, no UE/CHAP/data, no card (HTTP 412)
-	CodeTooLarge      = 41301 // upload exceeds limit (HTTP 413)
-	CodeInvalid       = 42201 // validation failed, see data.errors (HTTP 422)
-	CodeInternal      = 50001 // unexpected failure (HTTP 500)
-	CodeNoHardware    = 50301 // no SDR / reader attached (HTTP 503)
+	CodeOK           = 0
+	CodeMalformed    = 40001 // body not JSON / wrong shape (HTTP 400)
+	CodeUnauthorized = 40101 // missing or bad bearer token (HTTP 401)
+	CodeNotFound     = 40401 // unknown resource id (HTTP 404)
+	CodeMethod       = 40501 // method not allowed (HTTP 405)
+	CodeConflict     = 40901 // cell/crack already running, card exists (HTTP 409)
+	CodePrecondition = 41201 // cell not running, no UE/CHAP/data, no card (HTTP 412)
+	CodeTooLarge     = 41301 // JSON body or upload exceeds limit (HTTP 413)
+	CodeInvalid      = 42201 // validation failed, see data.errors (HTTP 422)
+	CodeInternal     = 50001 // unexpected failure (HTTP 500)
+	CodeNoHardware   = 50301 // no SDR / reader attached (HTTP 503)
 )
 
 // FieldError describes one rejected field for 422 responses.
@@ -52,6 +55,8 @@ type ctxKey int
 
 const requestIDKey ctxKey = iota
 
+var errJSONTooLarge = errors.New("JSON body exceeds limit")
+
 // RequestID returns the request id attached by middleware ("" when absent).
 func RequestID(r *http.Request) string {
 	if v, ok := r.Context().Value(requestIDKey).(string); ok {
@@ -66,6 +71,40 @@ func newRequestID() string {
 		return time.Now().UTC().Format("20060102150405.000000")
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// decodeJSONObject accepts exactly one JSON object. Decoding into a RawMessage
+// first is deliberate: encoding/json otherwise accepts null for struct targets,
+// and a single Decode silently ignores a second value or trailing garbage.
+func decodeJSONObject(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64, disallowUnknown bool) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return classifyJSONError(err)
+	}
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err == nil {
+		return errors.New("JSON body must contain exactly one value")
+	} else if err != io.EOF {
+		return classifyJSONError(err)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return errors.New("JSON body must be an object")
+	}
+	obj := json.NewDecoder(bytes.NewReader(raw))
+	if disallowUnknown {
+		obj.DisallowUnknownFields()
+	}
+	return obj.Decode(dst)
+}
+
+func classifyJSONError(err error) error {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		return errJSONTooLarge
+	}
+	return err
 }
 
 // writeV1 writes a v1 envelope with the HTTP status derived from code.
@@ -96,44 +135,62 @@ func writeV1Status(w http.ResponseWriter, r *http.Request, status, code int, mes
 		Code: code, Message: message, Data: data, RequestID: RequestID(r),
 	})
 }
+
 // statusRecorder captures the status code for the audit log.
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
+	if s.wroteHeader {
+		return
+	}
 	s.status = code
+	s.wroteHeader = true
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(p []byte) (int, error) {
+	if !s.wroteHeader {
+		s.WriteHeader(http.StatusOK)
+	}
+	return s.ResponseWriter.Write(p)
 }
 
 // chain applies middlewares: recover -> request id + audit log -> auth.
 func chain(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				log.Printf("panic recovered: %v", rec)
-				// RequestID may be unset; still return a valid envelope.
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(Envelope{Code: CodeInternal, Message: "internal error"})
-			}
-		}()
 		id := newRequestID()
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey, id))
+		rec := &statusRecorder{ResponseWriter: w}
+		rec.Header().Set("X-Request-ID", id)
+		start := time.Now()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Printf("rid=%s panic recovered: %v", id, recovered)
+				// Once a handler has committed a response, appending a JSON error
+				// would corrupt it. Audit the committed status instead.
+				if !rec.wroteHeader {
+					writeV1(rec, r, CodeInternal, "internal error", nil)
+				}
+			}
+			status := rec.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			log.Printf("rid=%s %s %s -> %d (%s)", id, r.Method, r.URL.Path, status, time.Since(start).Round(time.Millisecond))
+		}()
 		if !authorized(r) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-Request-ID", id)
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(Envelope{
+			rec.Header().Set("Content-Type", "application/json")
+			rec.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(rec).Encode(Envelope{
 				Code: CodeUnauthorized, Message: "unauthorized: bad or missing bearer token", RequestID: id,
 			})
 			return
 		}
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		start := time.Now()
 		next.ServeHTTP(rec, r)
-		log.Printf("rid=%s %s %s -> %d (%s)", id, r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
 	})
 }
 

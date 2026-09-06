@@ -6,12 +6,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/addxemmm/lte-system/internal/config"
@@ -20,6 +22,7 @@ import (
 	"github.com/addxemmm/lte-system/internal/parser"
 	"github.com/addxemmm/lte-system/internal/sdr"
 	"github.com/addxemmm/lte-system/internal/sim"
+	"github.com/addxemmm/lte-system/internal/subscriber"
 	"github.com/addxemmm/lte-system/internal/sysop"
 )
 
@@ -91,7 +94,7 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p lte.StartParams
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
+	if err := decodeJSONObject(w, r, &p, 1<<20, false); err != nil {
 		writeJSON(w, resp(false, 3, "Incomplete parameters"))
 		return
 	}
@@ -265,7 +268,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, field, dst
 		writeJSON(w, resp(false, 0, "upload failed"))
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes+ (1<<20))
+	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes+(1<<20))
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
 		writeJSON(w, resp(false, 0, "upload failed"))
 		return
@@ -276,37 +279,77 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, field, dst
 		return
 	}
 	defer f.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		writeJSON(w, resp(false, 0, "upload failed"))
+	if field == "userdb" {
+		subscriber.Mutex.Lock()
+		defer subscriber.Mutex.Unlock()
+	}
+	_, err = saveUpload(f, dst, s.cfg.MaxUploadBytes)
+	if errors.Is(err, errUploadEmpty) {
+		writeJSON(w, resp(false, 2, "no file"))
 		return
 	}
-	tmp := dst + ".tmp"
-	out, err := os.Create(tmp)
+	if errors.Is(err, errUploadTooLarge) {
+		writeJSON(w, resp(false, 0, "upload failed: file too large"))
+		return
+	}
 	if err != nil {
 		writeJSON(w, resp(false, 0, "upload failed"))
 		return
 	}
-	n, err := io.Copy(out, io.LimitReader(f, s.cfg.MaxUploadBytes+1))
-	_ = out.Close()
-	if err != nil || n == 0 {
-		_ = os.Remove(tmp)
-		if n == 0 {
-			writeJSON(w, resp(false, 2, "no file"))
-			return
-		}
-		writeJSON(w, resp(false, 0, "upload failed"))
-		return
-	}
-	if n > s.cfg.MaxUploadBytes {
-		_ = os.Remove(tmp)
-		writeJSON(w, resp(false, 0, "upload failed: file too large"))
-		return
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		writeJSON(w, resp(false, 0, "upload failed"))
-		return
-	}
 	writeJSON(w, resp(true, 1, "upload success"))
+}
+
+var (
+	errUploadEmpty    = errors.New("empty upload")
+	errUploadTooLarge = errors.New("upload exceeds limit")
+	uploadRenameMu    sync.Mutex
+)
+
+// saveUpload atomically replaces dst from a unique temporary file. Unique
+// names prevent concurrent requests from truncating each other's staging
+// file; the deferred removal covers every failure path.
+func saveUpload(src io.Reader, dst string, maxBytes int64) (n int64, err error) {
+	dir := filepath.Dir(dst)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return 0, err
+	}
+	tmp, err := os.CreateTemp(dir, ".upload-*")
+	if err != nil {
+		return 0, err
+	}
+	tmpName := tmp.Name()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = tmp.Close()
+		}
+		_ = os.Remove(tmpName)
+	}()
+
+	n, err = io.Copy(tmp, io.LimitReader(src, maxBytes+1))
+	if err != nil {
+		return n, err
+	}
+	closeErr := tmp.Close()
+	closed = true
+	if closeErr != nil {
+		return n, closeErr
+	}
+	if n == 0 {
+		return 0, errUploadEmpty
+	}
+	if n > maxBytes {
+		return n, errUploadTooLarge
+	}
+	// Windows rejects some simultaneous replacement renames; serialize only
+	// the atomic commit while retaining concurrent writes to unique temp files.
+	uploadRenameMu.Lock()
+	err = os.Rename(tmpName, dst)
+	uploadRenameMu.Unlock()
+	if err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 // ---- /getfile ----
@@ -326,7 +369,7 @@ func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		FileID *int `json:"fileid"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&body); err != nil || body.FileID == nil {
+	if err := decodeJSONObject(w, r, &body, 64*1024, false); err != nil || body.FileID == nil {
 		writeJSON(w, resp(false, 2, "Error id"))
 		return
 	}
@@ -354,9 +397,7 @@ func (s *Server) handleWriteSIM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req sim.WriteRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := decodeJSONObject(w, r, &req, 64*1024, true); err != nil {
 		// Back-compat: legacy sometimes sent {"imsi":001010123456789} (number, no quotes).
 		// Retry with a loose decode.
 		var loose struct {

@@ -8,11 +8,9 @@ package api
 
 import (
 	"context"
-	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +19,7 @@ import (
 	"github.com/addxemmm/lte-system/internal/parser"
 	"github.com/addxemmm/lte-system/internal/sdr"
 	"github.com/addxemmm/lte-system/internal/sim"
+	"github.com/addxemmm/lte-system/internal/subscriber"
 	"github.com/addxemmm/lte-system/internal/sysop"
 )
 
@@ -102,9 +101,11 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleV1Start(w http.ResponseWriter, r *http.Request) {
 	var p lte.StartParams
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := decodeJSONObject(w, r, &p, 1<<20, true); err != nil {
+		if errors.Is(err, errJSONTooLarge) {
+			writeV1(w, r, CodeTooLarge, "JSON body exceeds limit", map[string]any{"max_bytes": 1 << 20})
+			return
+		}
 		writeV1(w, r, CodeMalformed, "malformed JSON body", nil)
 		return
 	}
@@ -149,19 +150,17 @@ func (s *Server) handleV1CellStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleV1Stop(w http.ResponseWriter, r *http.Request) {
-	if !sysop.Running("srsepc") && !sysop.Running("srsenb") {
-		writeV1(w, r, CodeOK, "already stopped", map[string]any{"stopped": false})
+	stopped := s.mgr.Stop()
+	state := s.mgr.IsRunning()
+	if state.Running || state.Pcap {
+		writeV1(w, r, CodeInternal, "stop failed, inspect logs", nil)
 		return
 	}
-	if s.mgr.Stop() {
+	if stopped {
 		writeV1(w, r, CodeOK, "cell stopped", map[string]any{"stopped": true})
 		return
 	}
-	if !sysop.Running("srsepc") && !sysop.Running("srsenb") {
-		writeV1(w, r, CodeOK, "cell stopped", map[string]any{"stopped": true})
-		return
-	}
-	writeV1(w, r, CodeInternal, "stop failed, inspect logs", nil)
+	writeV1(w, r, CodeOK, "already stopped", map[string]any{"stopped": false})
 }
 
 // ---- GET /api/v1/ue ----
@@ -251,6 +250,11 @@ func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleV1Upload(w http.ResponseWriter, r *http.Request, field, dst, note string) {
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes+(1<<20))
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeV1(w, r, CodeTooLarge, "upload exceeds limit", map[string]any{"max_bytes": s.cfg.MaxUploadBytes})
+			return
+		}
 		writeV1(w, r, CodeMalformed, "malformed multipart body", nil)
 		return
 	}
@@ -261,35 +265,21 @@ func (s *Server) handleV1Upload(w http.ResponseWriter, r *http.Request, field, d
 		return
 	}
 	defer f.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		writeV1(w, r, CodeInternal, "upload failed", nil)
+	if field == "userdb" {
+		subscriber.Mutex.Lock()
+		defer subscriber.Mutex.Unlock()
+	}
+	n, err := saveUpload(f, dst, s.cfg.MaxUploadBytes)
+	if errors.Is(err, errUploadEmpty) {
+		writeV1(w, r, CodeInvalid, "missing file field: "+field, map[string]any{
+			"errors": []map[string]string{{"field": field, "reason": "empty"}}})
 		return
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".upload-v1-*")
-	if err != nil {
-		writeV1(w, r, CodeInternal, "upload failed", nil)
-		return
-	}
-	tmpName := tmp.Name()
-	n, err := io.Copy(tmp, io.LimitReader(f, s.cfg.MaxUploadBytes+1))
-	_ = tmp.Close()
-	if err != nil || n == 0 {
-		_ = os.Remove(tmpName)
-		if n == 0 {
-			writeV1(w, r, CodeInvalid, "missing file field: "+field, map[string]any{
-				"errors": []map[string]string{{"field": field, "reason": "empty"}}})
-			return
-		}
-		writeV1(w, r, CodeInternal, "upload failed", nil)
-		return
-	}
-	if n > s.cfg.MaxUploadBytes {
-		_ = os.Remove(tmpName)
+	if errors.Is(err, errUploadTooLarge) {
 		writeV1(w, r, CodeTooLarge, "upload exceeds limit", map[string]any{"max_bytes": s.cfg.MaxUploadBytes})
 		return
 	}
-	if err := os.Rename(tmpName, dst); err != nil {
-		_ = os.Remove(tmpName)
+	if err != nil {
 		writeV1(w, r, CodeInternal, "upload failed", nil)
 		return
 	}
@@ -336,7 +326,11 @@ func (s *Server) handleV1Capture(w http.ResponseWriter, r *http.Request, id stri
 func (s *Server) handleV1SIM(w http.ResponseWriter, r *http.Request) {
 	var req sim.WriteRequest
 	// Unknown fields are ignored (forward compatibility), unlike legacy.
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
+	if err := decodeJSONObject(w, r, &req, 64*1024, false); err != nil {
+		if errors.Is(err, errJSONTooLarge) {
+			writeV1(w, r, CodeTooLarge, "JSON body exceeds limit", map[string]any{"max_bytes": 64 * 1024})
+			return
+		}
 		writeV1(w, r, CodeMalformed, "malformed JSON body", nil)
 		return
 	}

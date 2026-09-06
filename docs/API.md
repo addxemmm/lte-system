@@ -5,12 +5,13 @@
 > 机器可读契约：[`api/openapi.yaml`](api/openapi.yaml)（OpenAPI 3.0）。
 > Machine-readable contract: [`api/openapi.yaml`](api/openapi.yaml) (OpenAPI 3.0).
 
-- 基地址 Base URL：`http://<服务器IP>:8081`（服务器本机 `http://127.0.0.1:8081`，局域网如 `http://192.0.2.10:8081`） / Base URL: `http://<服务器IP>:8081` (local `http://127.0.0.1:8081`, LAN e.g. `http://192.0.2.10:8081`)
+- 基地址 Base URL：Docker 默认仅绑定 `http://127.0.0.1:8081`；需要局域网访问时显式设置 `LTE_LISTEN`，并同时设置强随机 `LTE_API_TOKEN` / Docker binds only to `http://127.0.0.1:8081` by default; LAN access requires an explicit `LTE_LISTEN` plus a strong random `LTE_API_TOKEN`
 - 统一包络 Envelope：`{"code": int, "message": str, "data": obj|null, "request_id": str}`，`code 0` = 成功 / Unified envelope: same schema, `code 0` means success
 - 错误码 Error code：`code = HTTP状态码*100+序号`（如 `40401` → HTTP 404），对照表见 §8 错误码 / Formula: `code = HTTP status * 100 + index` (e.g. `40401` means HTTP 404); see §8 Error Codes for the table
-- 每个响应 Response 带 `X-Request-ID` 头；服务端按 `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` 记审计日志（`docker logs` 可查谁何时调了什么） / Every response carries an `X-Request-ID` header; the server writes audit logs as `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` (use `docker logs` to see who called what and when)
+- 每个响应 Response 带 `X-Request-ID` 头；服务端按 `rid=<id> <METHOD> <PATH> -> <状态> (<耗时>)` 记审计日志，401 与已恢复 panic 也记录且使用同一 request ID / Every response carries an `X-Request-ID` header; the server audits `rid=<id> <METHOD> <PATH> -> <status> (<duration>)`, including 401 responses and recovered panics under the same request ID
 - 可选鉴权 Optional auth：服务端设 `LTE_API_TOKEN` 后，所有接口（新旧）都要带 `Authorization: Bearer <token>`，否则 401。默认未设 = 局域网开放模式（启动日志有 WARNING） / After the server sets `LTE_API_TOKEN`, all APIs (old and new) require `Authorization: Bearer <token>`, otherwise 401. Unset by default = open LAN mode (a WARNING appears in the boot log)
 - 404/405 也是 JSON 包络 Envelope（旧版根路径 404 保持纯文本，不变） / 404/405 also use the JSON envelope (legacy root-path 404 stays plain text, unchanged)
+- JSON 请求体必须是且只能是一个对象；`null`、数组、第二个 JSON 值或尾随垃圾均返回 400 且不产生副作用。`cell` 上限 1 MiB，`simcards` 上限 64 KiB，超限返回 413。各端点原有未知字段策略不变 / A JSON body must contain exactly one object; `null`, arrays, a second JSON value, and trailing garbage return 400 without side effects. Limits are 1 MiB for `cell` and 64 KiB for `simcards`; excess returns 413. Each endpoint keeps its existing unknown-field policy
 - Postman 开箱即用：导入 [`postman/lte-system.postman_collection.json`](../postman/lte-system.postman_collection.json)（26 个请求 + 断言，用法见 [`postman/README.md`](../postman/README.md)）/ Ready-to-import Postman collection (26 requests with assertions, see [`postman/README.md`](../postman/README.md))
 
 目录 Contents：[§1 小区 Cell](#1-小区-cell) · [§2 终端 UE](#2-终端-ue) · [§3 爆破 Cracking](#3-爆破-cracking) · [§4 配置上传 Config Upload](#4-配置上传-config-upload) · [§5 抓包下载 Captures](#5-抓包下载-captures-packet-capture) · [§6 写卡 Simcards](#6-写卡-simcards) · [§7 存档与健康 Saved Profile and Health](#7-存档与健康-saved-profile-and-health) · [§8 错误码 Error Codes](#8-错误码-error-codes) · [§9 旧版新版对照表 Legacy to v1 Mapping](#9-旧版新版对照表-legacy-to-v1-mapping)
@@ -47,7 +48,8 @@ curl -X POST http://127.0.0.1:8081/api/v1/cell -H 'Content-Type: application/jso
 | 情况 | HTTP | code | message |
 |---|---|---|---|
 | 成功 | 200 | 0 | `cell started` |
-| body 非 JSON | 400 | 40001 | `malformed JSON body` |
+| body 非单一 JSON 对象 | 400 | 40001 | `malformed JSON body` |
+| JSON body 超过 1 MiB | 413 | 41301 | `JSON body exceeds limit` |
 | 校验失败 | 422 | 42201 | `validation failed` |
 | 已在运行 | 409 | 40901 | `cell already running` |
 | 无 SDR | 503 | 50301 | `no SDR device attached` |
@@ -66,8 +68,10 @@ curl -X POST http://127.0.0.1:8081/api/v1/cell -H 'Content-Type: application/jso
 
 ### DELETE /api/v1/cell — 停止 Stop（幂等 Idempotent）
 
-运行中 → `200 {"code":0,"message":"cell stopped","data":{"stopped":true}}`；
+运行中或仍有本服务管理的孤立抓包进程 → 清理后 `200 {"code":0,"message":"cell stopped","data":{"stopped":true}}`；
 本来就没跑 → 同样 200，`stopped:false`（旧版此处返回“失败”，v1 改为幂等成功）。
+
+Running, or an orphaned capture still owned by this service, is cleaned up and returns `stopped:true`; an already idle manager returns 200 with `stopped:false`.
 
 ```bash
 curl -X DELETE http://127.0.0.1:8081/api/v1/cell
@@ -140,6 +144,10 @@ Success returns 200; `data.note` notes when it takes effect (subscriber DB needs
 
 Missing file returns 422, over-limit returns 413 (`upload exceeds limit` with `max_bytes`), failure returns 500.
 
+替换通过同目录唯一临时文件原子提交；并发上传不会互相截断，任何解析、大小或写入失败都会保留旧文件。订户库替换与写卡事务串行，避免丢失并发新增的用户。
+
+Replacement is atomically committed from a unique same-directory temporary file. Concurrent uploads cannot truncate each other, and any parse, size, or write failure preserves the previous file. Subscriber-database replacement is serialized with SIM-programming transactions so a concurrently added subscriber is not lost.
+
 ```bash
 curl -X POST http://127.0.0.1:8081/api/v1/config/subscribers -F userdb=@user_db.csv
 ```
@@ -167,6 +175,10 @@ curl -OJ http://127.0.0.1:8081/api/v1/captures/lte-data
 `POST /api/v1/simcards` takes the same full field set as legacy `/writesim` (`imsi` required, others optional; see openapi.yaml;
 **unknown fields are ignored** — legacy rejected them outright, an intentional forward-compatibility difference). Takes up to 180s.
 
+写卡从冲突预检、硬件操作到用户库提交为单一串行事务。已有 IMSI 的认证参数若与请求冲突会在任何硬件操作前以 422 拒绝；请先解决数据库冲突。`name` 禁止逗号、双引号、控制字符和注释前缀，`op_type` 必须与实际提供的 OP/OPc 一致。
+
+Programming is one serialized transaction from conflict preflight through hardware work and subscriber-database commit. Authentication parameters conflicting with an existing IMSI are rejected with 422 before any hardware action; resolve the database conflict first. `name` rejects commas, quotes, control characters, and comment prefixes, while `op_type` must match the supplied OP/OPc material.
+
 | 情况 Case | HTTP | code |
 |---|---|---|
 | 写卡成功 / Programmed | 200 | 0，`data.result=programmed` |
@@ -174,6 +186,7 @@ curl -OJ http://127.0.0.1:8081/api/v1/captures/lte-data
 | 无读卡器 / No reader attached | 503 | 50301 |
 | 没插卡 / No card inserted | 412 | 41201 |
 | 参数非法 / Invalid parameters | 422 | 42201 |
+| JSON body 超过 64 KiB / JSON body over 64 KiB | 413 | 41301 |
 | 入库失败/写卡失败 / DB insert failed / Programming failed | 500 | 50001 |
 
 无读卡器环境调本接口恒定 503，属正常（跳过即可，不影响入网）。
@@ -190,13 +203,13 @@ Calling this API without a reader always returns 503, which is normal (just skip
 | code | HTTP | 含义 Meaning |
 |---|---|---|
 | 0 | 200 | 成功（DELETE 停止空闲、GET 轮询 `running` 等也属成功） / Success (idle DELETE stop, polling `running` via GET, etc. also count as success) |
-| 40001 | 400 | body 非 JSON / multipart 坏 / Body is not JSON / bad multipart |
+| 40001 | 400 | body 非单一 JSON 对象 / multipart 坏 / Body is not exactly one JSON object / bad multipart |
 | 40101 | 401 | 缺少或错误的 Bearer token（仅设 `LTE_API_TOKEN` 时） / Missing or invalid Bearer token (only when `LTE_API_TOKEN` is set) |
 | 40401 | 404 | 资源不存在（未知路径/capture id/无终端/字典无口令/无 UE 数据） / Resource not found (unknown path / capture id / no UE / password not in dictionary / no UE data) |
 | 40501 | 405 | 方法不允许 / Method not allowed |
 | 40901 | 409 | 冲突（小区在跑/爆破在跑/卡已在库） / Conflict (cell running / cracking job running / card already in database) |
 | 41201 | 412 | 前置条件不满足（小区没跑/无 CHAP/没插卡） / Precondition failed (cell not running / no CHAP / no card inserted) |
-| 41301 | 413 | 上传超限（带 `max_bytes`） / Upload exceeds limit (with `max_bytes`) |
+| 41301 | 413 | JSON body 或上传超限（带 `max_bytes`） / JSON body or upload exceeds limit (with `max_bytes`) |
 | 42201 | 422 | 校验失败（`data.errors:[{field,reason}]`） / Validation failed (`data.errors:[{field,reason}]`) |
 | 50001 | 500 | 内部失败（message 带原因） / Internal failure (message carries the reason) |
 | 50301 | 503 | 硬件缺失（无 SDR/无读卡器） / Hardware missing (no SDR / no reader attached) |
