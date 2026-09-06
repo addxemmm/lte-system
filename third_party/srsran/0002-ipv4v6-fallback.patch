@@ -1,0 +1,73 @@
+diff --git a/srsepc/hdr/mme/nas.h b/srsepc/hdr/mme/nas.h
+index 88364cd..e335564 100644
+--- a/srsepc/hdr/mme/nas.h
++++ b/srsepc/hdr/mme/nas.h
+@@ -84,6 +84,7 @@ typedef struct {
+   uint64_t               imsi;
+   emm_state_t            state;
+   uint8_t                procedure_transaction_id;
++  uint8_t                requested_pdn_type;
+   uint8_t                attach_type;
+   struct in_addr         ue_ip;
+   srsran::gtpc_f_teid_ie sgw_ctrl_fteid;
+diff --git a/srsepc/src/mme/nas.cc b/srsepc/src/mme/nas.cc
+index 7e9834d..4337840 100644
+--- a/srsepc/src/mme/nas.cc
++++ b/srsepc/src/mme/nas.cc
+@@ -245,6 +245,7 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t
+ 
+   uint8_t eps_bearer_id                       = pdn_con_req.eps_bearer_id; // TODO: Unused
+   nas_ctx->m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
++  nas_ctx->m_emm_ctx.requested_pdn_type        = pdn_con_req.pdn_type;
+ 
+   // Initialize NAS count
+   nas_ctx->m_sec_ctx.ul_nas_count = 0;
+@@ -372,6 +373,7 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t
+   nas_ctx->m_sec_ctx.ul_nas_count             = 0;
+   nas_ctx->m_sec_ctx.dl_nas_count             = 0;
+   nas_ctx->m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
++  nas_ctx->m_emm_ctx.requested_pdn_type        = pdn_con_req.pdn_type;
+ 
+   // Set ECM context
+   nas_ctx->m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
+@@ -451,6 +453,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+     ecm_ctx->enb_ue_s1ap_id = enb_ue_s1ap_id;
+ 
+     emm_ctx->procedure_transaction_id = pdn_con_req.proc_transaction_id;
++    emm_ctx->requested_pdn_type        = pdn_con_req.pdn_type;
+ 
+     // Save Attach type
+     emm_ctx->attach_type = attach_req.eps_attach_type;
+@@ -526,7 +529,8 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+     // Set EMM as de-registered
+     emm_ctx->state = EMM_STATE_DEREGISTERED;
+     // Save Attach type
+-    emm_ctx->attach_type = attach_req.eps_attach_type;
++    emm_ctx->attach_type        = attach_req.eps_attach_type;
++    emm_ctx->requested_pdn_type = pdn_con_req.pdn_type;
+ 
+     // Set eNB information
+     ecm_ctx->enb_ue_s1ap_id = enb_ue_s1ap_id;
+@@ -918,6 +922,7 @@ bool nas::handle_attach_request(srsran::byte_buffer_t* nas_rx)
+ 
+     uint8_t eps_bearer_id              = pdn_con_req.eps_bearer_id; // TODO: Unused
+     m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
++    m_emm_ctx.requested_pdn_type        = pdn_con_req.pdn_type;
+ 
+     // Initialize NAS count
+     m_sec_ctx.ul_nas_count = 0;
+@@ -1604,7 +1609,13 @@ bool nas::pack_attach_accept(srsran::byte_buffer_t* nas_buffer)
+   act_def_eps_bearer_context_req.radio_prio_present        = false;
+   act_def_eps_bearer_context_req.packet_flow_id_present    = false;
+   act_def_eps_bearer_context_req.apn_ambr_present          = false;
+-  act_def_eps_bearer_context_req.esm_cause_present         = false;
++  if (m_emm_ctx.requested_pdn_type == LIBLTE_MME_PDN_TYPE_IPV4V6 &&
++      act_def_eps_bearer_context_req.pdn_addr.pdn_type == LIBLTE_MME_PDN_TYPE_IPV4) {
++    act_def_eps_bearer_context_req.esm_cause_present = true;
++    act_def_eps_bearer_context_req.esm_cause = LIBLTE_MME_ESM_CAUSE_PDN_TYPE_IPV4_ONLY_ALLOWED;
++  } else {
++    act_def_eps_bearer_context_req.esm_cause_present = false;
++  }
+   act_def_eps_bearer_context_req.connectivity_type_present = false;
+ 
+   uint8_t sec_hdr_type = 2;
