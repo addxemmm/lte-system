@@ -11,6 +11,7 @@
 | [SIM.md](SIM.md) | 写卡（有写卡器时）与 `user_db.csv` 行格式 / SIM writing (with writer) and `user_db.csv` row format |
 | [SDR.md](SDR.md) | B210（正版/兼容板 FPGA 切换）与 bladeRF / B210 (genuine/compatible board FPGA switching) and bladeRF |
 | [MIGRATION.md](MIGRATION.md) | 旧 Python 版 → Go 版对照 / Old Python vs Go version mapping |
+| [UE_DIAGNOSTICS_2026-09-06.md](UE_DIAGNOSTICS_2026-09-06.md) | 手机入网、NAS 互通缺陷与射频 A–B–A 证据 / Handset registration, NAS interoperability defects and RF A–B–A evidence |
 | [images/](images/) | 架构图（`ltesystem.png` 全量 / `ltesystem-easy.png` 简版）与写卡参数图 / Architecture diagrams and SIM-writing parameter figures |
 | [samples/](samples/) | 真机样本：成功入网 EPC 日志、`atr-*.txt`（白卡 ATR） / Real-device samples: successful network-entry EPC logs, `atr-*.txt` (test-SIM ATR) |
 | [legacy/](legacy/) | 早期中文文档（PDF/MD，仅存档，以本目录文档为准） / Early Chinese docs (PDF/MD, archived; this directory takes precedence) |

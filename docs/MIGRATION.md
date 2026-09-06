@@ -47,5 +47,13 @@ Legacy asset locations: git tag `archive/v1-python` (full v1.x implementation + 
 - 部署使用排除私有数据的独立快照；按用户部署需求，Compose 默认全网卡 `0.0.0.0:8081` 监听且可传令牌。发布保持实际数据卷并保存旧镜像，详见 [DEPLOY](DEPLOY.md)。
   Deployment uses fresh snapshots excluding private state. Per the deployment requirement, Compose defaults to all-interface `0.0.0.0:8081` binding and passes tokens. Releases retain the actual data volume and old image; see [DEPLOY](DEPLOY.md).
 
+## 2026-09 NAS 互通修复 / NAS interoperability fixes
+
+srsRAN 仍基于 `release_23_11` / `eea87b1d893ae58e0b08bc381730c502024ae71f`，镜像构建时应用 [`third_party/srsran`](../third_party/srsran) 中的显式补丁，并运行纯 CPU C++ 回归。升级上游版本时必须重新审查补丁，构建会拒绝不匹配的基线。详见 [终端诊断](UE_DIAGNOSTICS_2026-09-06.md)。
+srsRAN remains based on `release_23_11` / `eea87b1d893ae58e0b08bc381730c502024ae71f`. Image builds apply explicit patches from [`third_party/srsran`](../third_party/srsran) and run CPU-only C++ regressions. Upstream upgrades require patch review; a mismatched baseline fails the build. See [UE diagnostics](UE_DIAGNOSTICS_2026-09-06.md).
+
+额外 PDN 拒绝修复消息结构/内层 ESM 解包与响应安全封装；IPv4-only 默认承载按原始 IPv4v6 请求有条件附带 cause 50。没有增加 IPv6、IMS 或 VoLTE，也没有改动 BlackSDR FPGA、射频配置、SIM 内容或 API 契约。
+Additional-PDN rejection fixes message/inner-ESM decoding and response security protection. IPv4-only default bearers conditionally include cause 50 for original IPv4v6 requests. This adds no IPv6, IMS or VoLTE and changes no BlackSDR FPGA, RF configuration, SIM contents or API contract.
+
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
