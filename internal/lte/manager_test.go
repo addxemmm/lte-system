@@ -148,6 +148,29 @@ func TestForwardRules(t *testing.T) {
 	}
 }
 
+func TestEnsureUserDBPreservesExistingAndPropagatesErrors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "user_db.csv")
+	const existing = "existing subscriber\n"
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureUserDB(path, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != existing {
+		t.Fatalf("existing database changed: %q, %v", got, err)
+	}
+
+	notDir := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(notDir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureUserDB(filepath.Join(notDir, "user_db.csv"), notDir); err == nil {
+		t.Fatal("seed write/setup error must be propagated")
+	}
+}
+
 func TestProfile_SaveLoadOverlay(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()

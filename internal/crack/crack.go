@@ -126,7 +126,12 @@ func StartAsync(cfg config.Config, hash string) error {
 	}
 	cmd.Stdout = f
 	cmd.Stderr = f
-	return cmd.Start()
+	defer f.Close() // The child inherits its own descriptor after Start.
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }() // Reap the asynchronous child exactly once.
+	return nil
 }
 
 // Show runs `hashcat -m 4800 <hash> <wordlist> --show` and returns cracked password or "".

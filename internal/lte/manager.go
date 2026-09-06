@@ -15,6 +15,7 @@ import (
 
 	"github.com/addxemmm/lte-system/internal/config"
 	"github.com/addxemmm/lte-system/internal/sdr"
+	"github.com/addxemmm/lte-system/internal/subscriber"
 	"github.com/addxemmm/lte-system/internal/sysop"
 )
 
@@ -144,19 +145,28 @@ type Manager struct {
 	cfg config.Config
 	mu  sync.Mutex
 
-	epcCmd  *exec.Cmd
-	enbCmd  *exec.Cmd
-	pcapCmd *exec.Cmd
+	epcCmd  *managedChild
+	enbCmd  *managedChild
+	pcapCmd *managedChild
 
 	startedAt time.Time
 	lastStart StartParams
 	// lastNetwork snapshots the uplink iface of the current run so Stop
 	// removes the right NAT rule even if params change later. Cleared on
 	// successful Stop.
-	lastNetwork string
-	lastBand    BandInfo
-	bandKnown   bool
+	lastNetwork     string
+	natOwned        bool
+	forwardingOwned []iptRule
+	lastBand        BandInfo
+	bandKnown       bool
 }
+
+// Startup grace periods are variables so lifecycle tests can exercise
+// cancellation without sleeping for the production RF initialization window.
+var (
+	epcInitDelay = 3 * time.Second
+	enbInitDelay = 5 * time.Second
+)
 
 // New creates a Manager.
 func New(cfg config.Config) *Manager { return &Manager{cfg: cfg} }
@@ -179,9 +189,9 @@ type Status struct {
 func (m *Manager) IsRunning() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	epc := sysop.Running("srsepc") || alive(m.epcCmd)
-	enb := sysop.Running("srsenb") || alive(m.enbCmd)
-	pcap := sysop.Running("tcpdump")
+	epc := alive(m.epcCmd)
+	enb := alive(m.enbCmd)
+	pcap := alive(m.pcapCmd)
 	st := Status{EPC: epc, ENB: enb, Pcap: pcap, Running: epc || enb}
 	if st.Running && !m.startedAt.IsZero() {
 		t := m.startedAt
@@ -202,8 +212,16 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if sysop.Running("srsepc") || sysop.Running("srsenb") {
+	if m.anyAliveLocked() || sysop.Running("srsepc") || sysop.Running("srsenb") {
 		return false, fmt.Errorf("is running")
+	}
+	// Clear handles/rules left by a run whose children all exited naturally.
+	// Foreign same-name processes are never adopted or stopped.
+	if m.hasLifecycleLocked() {
+		m.stopLocked()
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 	if err := checkIface(p.Network); err != nil {
 		return false, err
@@ -257,6 +275,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	if err := m.renderAll(p, band, devName, devArgs, txGain, rxGain, nPRB); err != nil {
 		return known, err
 	}
+	if err := ctx.Err(); err != nil {
+		return known, err
+	}
 
 	epcConf := filepath.Join(m.cfg.ConfDir, "epc_run.conf")
 	enbConf := filepath.Join(m.cfg.ConfDir, "enb_run.conf")
@@ -271,15 +292,20 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	epcCmd := exec.CommandContext(context.Background(), m.cfg.SrsEPCBin, epcConf)
 	epcCmd.Stdout = epcLogF
 	epcCmd.Stderr = epcLogF
-	if err := epcCmd.Start(); err != nil {
-		epcLogF.Close()
+	epc, err := startManaged(epcCmd)
+	// Start duplicates the descriptor into the child. The Manager must not
+	// retain its parent copy for the lifetime of the cell.
+	_ = epcLogF.Close()
+	if err != nil {
 		return known, fmt.Errorf("start epc: %w", err)
 	}
-	m.epcCmd = epcCmd
-	track(epcCmd)
-	time.Sleep(3 * time.Second)
-	if epcCmd.ProcessState != nil && epcCmd.ProcessState.Exited() {
-		epcLogF.Close()
+	m.epcCmd = epc
+	if err := waitForInit(ctx, epcInitDelay); err != nil {
+		m.stopLocked()
+		return known, err
+	}
+	if !alive(epc) {
+		m.stopLocked()
 		return known, fmt.Errorf("epc exited early, see %s", epcRunLog)
 	}
 
@@ -287,41 +313,44 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	// added once: skip when already present).
 	if exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING",
 		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run() != nil {
-		_ = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
-			"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run()
+		if exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
+			"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run() == nil {
+			m.lastNetwork = p.Network
+			m.natOwned = true
+		}
 	}
 	// 2b. UE-subnet forwarding on Docker-managed hosts (FORWARD defaults
 	// to DROP) + TCP MSS clamp for the GTP path.
-	ensureForwarding()
+	m.forwardingOwned = ensureForwarding()
+	if err := ctx.Err(); err != nil {
+		m.stopLocked()
+		return known, err
+	}
 
 	// 3. srsenb
 	enbLogF, err := os.Create(enbRunLog)
 	if err != nil {
-		m.killLocked()
-		deleteNAT(p.Network)
-		cleanupForwarding()
+		m.stopLocked()
 		return known, err
 	}
 	enbCmd := exec.CommandContext(context.Background(), m.cfg.SrsENBBin, enbConf)
 	enbCmd.Stdout = enbLogF
 	enbCmd.Stderr = enbLogF
-	if err := enbCmd.Start(); err != nil {
-		enbLogF.Close()
-		m.killLocked()
-		deleteNAT(p.Network)
-		cleanupForwarding()
+	enb, err := startManaged(enbCmd)
+	_ = enbLogF.Close()
+	if err != nil {
+		m.stopLocked()
 		return known, fmt.Errorf("start enb: %w", err)
 	}
-	m.enbCmd = enbCmd
-	track(enbCmd)
-	time.Sleep(5 * time.Second)
+	m.enbCmd = enb
+	if err := waitForInit(ctx, enbInitDelay); err != nil {
+		m.stopLocked()
+		return known, err
+	}
 	// Fail fast when the eNB died during init (typical: RF device vanished).
 	// A live-but-slow eNB passes through; only a certain exit fails here.
-	if enbCmd.ProcessState != nil && enbCmd.ProcessState.Exited() {
-		enbLogF.Close()
-		m.killLocked()
-		deleteNAT(p.Network)
-		cleanupForwarding()
+	if !alive(enb) {
+		m.stopLocked()
 		return known, fmt.Errorf("enb exited early: %s", tailFile(enbRunLog, 5))
 	}
 
@@ -329,16 +358,15 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	pcapPath := m.cfg.LogPath(m.cfg.PcapLTEData)
 	pcapCmd := exec.CommandContext(context.Background(), m.cfg.TcpdumpBin,
 		"-i", "srs_spgw_sgi", "-w", pcapPath)
-	_ = pcapCmd.Start()
-	m.pcapCmd = pcapCmd
-	track(pcapCmd)
+	if pcap, err := startManaged(pcapCmd); err == nil {
+		m.pcapCmd = pcap
+	}
 
 	m.startedAt = time.Now()
 	m.lastStart = p
 	m.lastNetwork = p.Network
 	m.lastBand = band
 	m.bandKnown = known
-	_ = ctx
 	_ = m.SaveProfile(p) // best-effort: next /start {} reuses it
 	return known, nil
 }
@@ -429,78 +457,111 @@ func (m *Manager) OverlayProfile(p *StartParams) bool {
 	return true
 }
 
-// Stop kills tcpdump + srsenb + srsepc and removes the NAT rule we added.
+// Stop kills only children launched by this Manager and removes only network
+// rules this Manager added. Same-name processes owned by other services are
+// deliberately left alone.
 func (m *Manager) Stop() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	was := sysop.Running("srsepc") || sysop.Running("srsenb") || sysop.Running("tcpdump")
-	m.killLocked()
-	// Remove our NAT rules (loop: history may hold duplicates from older
-	// builds; ignore errors, the interface may be gone).
-	if m.lastNetwork != "" {
+	was := m.hasLifecycleLocked()
+	stopped := m.stopLocked()
+	return was && stopped
+}
+
+// deleteNAT removes the single MASQUERADE rule recorded as ours.
+func deleteNAT(iface string) {
+	_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
+		"-s", "172.16.0.1/24", "-o", iface, "-j", "MASQUERADE").Run()
+}
+
+func (m *Manager) stopLocked() bool {
+	for _, child := range []*managedChild{m.pcapCmd, m.enbCmd, m.epcCmd} {
+		stopManaged(child, 2*time.Second)
+	}
+	if !alive(m.pcapCmd) {
+		m.pcapCmd = nil
+	}
+	if !alive(m.enbCmd) {
+		m.enbCmd = nil
+	}
+	if !alive(m.epcCmd) {
+		m.epcCmd = nil
+	}
+	if m.natOwned && m.lastNetwork != "" {
 		deleteNAT(m.lastNetwork)
 	}
-	cleanupForwarding()
-	time.Sleep(time.Second)
-	still := sysop.Running("srsepc") || sysop.Running("srsenb") || sysop.Running("tcpdump")
-	if was && !still {
-		m.lastNetwork = ""
-	}
-	return was && !still || (was && m.epcCmd == nil && m.enbCmd == nil && !still)
-}
-
-// deleteNAT removes every matching MASQUERADE rule for iface.
-func deleteNAT(iface string) {
-	for i := 0; i < 5; i++ {
-		if exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
-			"-s", "172.16.0.1/24", "-o", iface, "-j", "MASQUERADE").Run() != nil {
-			return
-		}
-	}
-}
-
-func (m *Manager) killLocked() {
-	for _, cmd := range []*exec.Cmd{m.pcapCmd, m.enbCmd, m.epcCmd} {
-		if cmd != nil && cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			reap(cmd)
-		}
-	}
-	m.pcapCmd = nil
-	m.enbCmd = nil
-	m.epcCmd = nil
-	sysop.KillAll("tcpdump", 2*time.Second)
-	sysop.KillAll("srsenb", 3*time.Second)
-	sysop.KillAll("srsepc", 3*time.Second)
+	cleanupForwarding(m.forwardingOwned)
+	m.lastNetwork = ""
+	m.natOwned = false
+	m.forwardingOwned = nil
 	m.startedAt = time.Time{}
+	return !m.anyAliveLocked()
 }
 
-// alive reports a managed child as running only while it has neither
-// exited nor been reaped as exited. (Relies on track() below keeping
-// ProcessState fresh.)
-func alive(cmd *exec.Cmd) bool {
-	if cmd == nil || cmd.Process == nil {
+func (m *Manager) anyAliveLocked() bool {
+	return alive(m.epcCmd) || alive(m.enbCmd) || alive(m.pcapCmd)
+}
+
+func (m *Manager) hasLifecycleLocked() bool {
+	return m.epcCmd != nil || m.enbCmd != nil || m.pcapCmd != nil ||
+		m.natOwned || len(m.forwardingOwned) != 0
+}
+
+// managedChild has exactly one Wait caller. done is the synchronization point
+// for every status/start/stop path, avoiding races on exec.Cmd.ProcessState.
+type managedChild struct {
+	cmd  *exec.Cmd
+	done chan struct{}
+}
+
+func startManaged(cmd *exec.Cmd) (*managedChild, error) {
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	child := &managedChild{cmd: cmd, done: make(chan struct{})}
+	go func() {
+		_ = cmd.Wait()
+		close(child.done)
+	}()
+	return child, nil
+}
+
+// alive treats every completed Wait alike: zero, non-zero and signal exits
+// are all stopped. ProcessState.Exited is intentionally not consulted because
+// it is false for signal termination on Unix.
+func alive(child *managedChild) bool {
+	if child == nil || child.cmd == nil || child.cmd.Process == nil {
 		return false
 	}
-	st := cmd.ProcessState
-	return st == nil || !st.Exited()
-}
-
-// track reaps a child on natural exit so it never lingers as <defunct>
-// and ProcessState stays accurate for alive().
-func track(cmd *exec.Cmd) {
-	go func() { _ = cmd.Wait() }()
-}
-
-// reap waits for a killed child so it doesn't linger as <defunct>.
-// (Unreaped zombies made PIDs lie until the zombie-aware check was added;
-// belt and suspenders.)
-func reap(cmd *exec.Cmd) {
-	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
 	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-child.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func stopManaged(child *managedChild, timeout time.Duration) {
+	if child == nil || !alive(child) {
+		return
+	}
+	_ = child.cmd.Process.Kill()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-child.done:
+	case <-timer.C:
+	}
+}
+
+func waitForInit(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -546,20 +607,25 @@ func (r iptRule) run(op string) error {
 	return exec.Command("iptables", argv...).Run()
 }
 
-// ensureForwarding adds missing rules (idempotent via -C check).
-func ensureForwarding() {
+// ensureForwarding adds missing rules and returns exactly the rules added by
+// this invocation. Stop must not delete a pre-existing host rule.
+func ensureForwarding() []iptRule {
+	var added []iptRule
 	for _, r := range forwardRules() {
 		check := append([]string{"-C"}, r.baseArgs()...)
 		check = append(check, r.args...)
 		if exec.Command("iptables", check...).Run() != nil {
-			_ = r.run("-A")
+			if r.run("-A") == nil {
+				added = append(added, r)
+			}
 		}
 	}
+	return added
 }
 
-// cleanupForwarding removes our rules best-effort (-D ignores missing).
-func cleanupForwarding() {
-	for _, r := range forwardRules() {
+// cleanupForwarding removes only rules recorded as added by this Manager.
+func cleanupForwarding(owned []iptRule) {
+	for _, r := range owned {
 		_ = r.run("-D")
 	}
 }
@@ -567,19 +633,19 @@ func cleanupForwarding() {
 // ---- config rendering (ports of run.sh echo blocks) ----
 
 type epcTmplData struct {
-	MCC, MNC, APN                    string
-	FullNetName, ShortNetName        string
-	DNSAddr                          string
-	UserDB, EPCPcap, EPCLog           string
+	MCC, MNC, APN             string
+	FullNetName, ShortNetName string
+	DNSAddr                   string
+	UserDB, EPCPcap, EPCLog   string
 }
 
 type enbTmplData struct {
-	MCC, MNC                   string
-	DLEARFCN                   int
-	TxGain, RxGain, NPRB       int
-	DeviceName, DeviceArgs     string
-	SibConf, RrConf, RbConf     string
-	ENBPcap, S1APPcap, ENBLog  string
+	MCC, MNC                  string
+	DLEARFCN                  int
+	TxGain, RxGain, NPRB      int
+	DeviceName, DeviceArgs    string
+	SibConf, RrConf, RbConf   string
+	ENBPcap, S1APPcap, ENBLog string
 }
 
 var epcTmpl = template.Must(template.New("epc").Parse(`[mme]
@@ -811,21 +877,8 @@ nr_cell_list =
 
 func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs string, tx, rx, nprb int) error {
 	userDB := m.cfg.UserDBPath()
-	// Ensure a user_db.csv exists (copy example on first run).
-	if _, err := os.Stat(userDB); os.IsNotExist(err) {
-		seeded := false
-		for _, cand := range []string{"configs/user_db.csv.example", "/app/configs/user_db.csv.example", "user_db.csv.example"} {
-			if b, err := os.ReadFile(cand); err == nil {
-				_ = os.MkdirAll(m.cfg.ConfDir, 0o755)
-				_ = os.WriteFile(userDB, b, 0o644)
-				seeded = true
-				break
-			}
-		}
-		if !seeded {
-			_ = os.MkdirAll(m.cfg.ConfDir, 0o755)
-			_ = os.WriteFile(userDB, []byte("# Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc\n"), 0o644)
-		}
+	if err := ensureUserDB(userDB, m.cfg.ConfDir); err != nil {
+		return err
 	}
 	// Copy static sib/rb if missing (from bundled configs dir).
 	// rr.conf is rendered below on every start (cell earfcns depend on band).
@@ -844,7 +897,7 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 		MCC: p.MCC, MNC: p.MNC, APN: p.APN,
 		FullNetName: p.FullNetName, ShortNetName: p.ShortNetName,
 		DNSAddr: p.DNS,
-		UserDB: userDB,
+		UserDB:  userDB,
 		EPCPcap: m.cfg.LogPath(m.cfg.PcapEPC),
 		EPCLog:  m.cfg.LogPath(m.cfg.EPCLogName),
 	}
@@ -852,12 +905,12 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 		MCC: p.MCC, MNC: p.MNC,
 		DLEARFCN: band.DLEARFCN, TxGain: tx, RxGain: rx, NPRB: nprb,
 		DeviceName: devName, DeviceArgs: devArgs,
-		SibConf: filepath.Join(m.cfg.ConfDir, "sib.conf"),
-		RrConf:  filepath.Join(m.cfg.ConfDir, "rr.conf"),
+		SibConf:  filepath.Join(m.cfg.ConfDir, "sib.conf"),
+		RrConf:   filepath.Join(m.cfg.ConfDir, "rr.conf"),
 		RbConf:   filepath.Join(m.cfg.ConfDir, "rb.conf"),
-		ENBPcap: m.cfg.LogPath(m.cfg.PcapENB),
+		ENBPcap:  m.cfg.LogPath(m.cfg.PcapENB),
 		S1APPcap: m.cfg.LogPath(m.cfg.PcapS1AP),
-		ENBLog:  m.cfg.LogPath(m.cfg.ENBLogName),
+		ENBLog:   m.cfg.LogPath(m.cfg.ENBLogName),
 	}
 	if err := writeTmpl(filepath.Join(m.cfg.ConfDir, "epc_run.conf"), epcTmpl, epcData); err != nil {
 		return err
@@ -869,6 +922,34 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 		rrTmplData{DLEARFCN: band.DLEARFCN, ULEARFCN: band.ULEARFCN})
 }
 
+// ensureUserDB serializes only the first-run check+seed mutation with API
+// replacement, SIM programming and subscriber append operations.
+func ensureUserDB(userDB, confDir string) error {
+	subscriber.Mutex.Lock()
+	defer subscriber.Mutex.Unlock()
+
+	if _, err := os.Stat(userDB); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat user database: %w", err)
+	}
+	if err := os.MkdirAll(confDir, 0o755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	for _, cand := range []string{"configs/user_db.csv.example", "/app/configs/user_db.csv.example", "user_db.csv.example"} {
+		if b, err := os.ReadFile(cand); err == nil {
+			if err := os.WriteFile(userDB, b, 0o644); err != nil {
+				return fmt.Errorf("seed user database: %w", err)
+			}
+			return nil
+		}
+	}
+	header := []byte("# Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc\n")
+	if err := os.WriteFile(userDB, header, 0o644); err != nil {
+		return fmt.Errorf("create user database: %w", err)
+	}
+	return nil
+}
 
 // tailFile returns the last n non-empty lines of path joined for log snippets.
 func tailFile(path string, n int) string {

@@ -63,10 +63,8 @@ func KillAll(name string, timeout time.Duration) int {
 }
 
 func killPID(pid int, timeout time.Duration) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 	// TERM first
-	_ = exec.CommandContext(ctx, "kill", strconv.Itoa(pid)).Run()
+	runKill(timeout, strconv.Itoa(pid))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if !pidAlive(pid) {
@@ -74,9 +72,21 @@ func killPID(pid int, timeout time.Duration) bool {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	_ = exec.CommandContext(ctx, "kill", "-9", strconv.Itoa(pid)).Run()
+	// TERM's deadline has elapsed here. KILL needs a fresh context; reusing the
+	// expired TERM context silently prevents the escalation command from ever
+	// starting.
+	runKill(timeout, "-9", strconv.Itoa(pid))
 	time.Sleep(300 * time.Millisecond)
 	return !pidAlive(pid)
+}
+
+func runKill(timeout time.Duration, args ...string) {
+	if timeout < time.Second {
+		timeout = time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "kill", args...).Run()
 }
 
 func pidAlive(pid int) bool {

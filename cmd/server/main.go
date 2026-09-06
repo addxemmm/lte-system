@@ -42,8 +42,8 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// Must exceed the longest handler context (/writesim 180s + margin).
-		WriteTimeout:      220 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		WriteTimeout: 220 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	go func() {
 		log.Printf("lte-system listening on %s (data=%s)", cfg.ListenAddr, cfg.DataDir)
@@ -54,7 +54,9 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// A SIM operation may take 180s; allow its database update to finish.
+	// Compose stop_grace_period must exceed this drain deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	mgr.Stop()
