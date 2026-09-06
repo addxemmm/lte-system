@@ -9,8 +9,8 @@
 
 # LTE-System API 参考手册（Go `:8081`） API Reference (Go `:8081`)
 
-> 实现：`internal/api/server.go`。本文逐字对应实现——`message` 文案、`message_id`、字段名都以本文为准；改实现必须同步改本文 + `*_test.go`（见 `AGENTS.md`）。
-> Implementation: `internal/api/server.go`. This document matches the implementation word for word — `message` text, `message_id`, and field names are authoritative here; any implementation change must update this document plus `*_test.go` together (see `AGENTS.md`).
+> 实现：[`internal/api/server.go`](../internal/api/server.go)。本文逐字对应实现——`message` 文案、`message_id`、字段名都以本文为准；改实现必须同步改本文 + `*_test.go`（见 `AGENTS.md`）。
+> Implementation: [`internal/api/server.go`](../internal/api/server.go). This document matches the implementation word for word — `message` text, `message_id`, and field names are authoritative here; any implementation change must update this document plus `*_test.go` together (see `AGENTS.md`).
 
 - 基地址 Base URL：`http://<服务器IP>:8081`（服务器本机 `http://127.0.0.1:8081`，局域网如 `http://192.0.2.10:8081`） / Base URL: `http://<服务器IP>:8081` (local: `http://127.0.0.1:8081`; LAN example: `http://192.0.2.10:8081`)
 - 9 个旧接口全部 `POST` + JSON；新增 `GET /healthz`、`GET /status`、`GET /profile` / All 9 legacy endpoints use `POST` + JSON; plus new `GET /healthz`, `GET /status`, `GET /profile`
@@ -79,7 +79,7 @@ Startup sequence: render `epc_run.conf`/`enb_run.conf`/`rr.conf` → start `srse
 | `short_net_name` | string | ❌ | 简称，同上 / Short name, same as above |
 | `dns` | string | ❌ | 经 PCO 下发给终端的 DNS，默认 `8.8.8.8`（上行过滤公网 DNS 时填网关，如 `192.0.2.1`），须为合法 IPv4 / DNS delivered to the UE via PCO, default `8.8.8.8` (when uplink filters public DNS, fill the gateway, e.g. `192.0.2.1`); must be a valid IPv4 |
 
-### 2.2 band → 频点映射 Band to Frequency Mapping（`internal/lte/band.go`，UL EARFCN 显式写入 `rr.conf` / UL EARFCN explicitly written to `rr.conf`)
+### 2.2 band → 频点映射 Band to Frequency Mapping（[`internal/lte/band.go`](../internal/lte/band.go)，UL EARFCN 显式写入 `rr.conf` / UL EARFCN explicitly written to `rr.conf`)
 
 | band | DL EARFCN | UL EARFCN | 下行 MHz / Downlink MHz | 上行 MHz / Uplink MHz | 双工 / Duplex |
 |---|---|---|---|---|---|
@@ -241,10 +241,10 @@ curl -X POST http://127.0.0.1:8081/userupload -F userdb=@user_db.csv
 curl -X POST http://127.0.0.1:8081/passwordupload -F wordlist=@wordlist.list
 ```
 
-- `user_db.csv` 格式：`Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc`，`Name` 唯一，末尾留空行（见 `configs/README.md`）。**EPC 只在启动时读库**：上传后必须 `/stop` 再 `/start` 才生效。
-- The `user_db.csv` format is `Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc` with a unique `Name` and a trailing empty line (see `configs/README.md`). **The EPC only reads the DB at startup**: after uploading you must `/stop` then `/start` for it to take effect.
-- 字典格式：一行一个候选口令（见 `configs/wordlist.list.example`）。下次 `/crackapn` 即用新字典。
-- Wordlist format: one candidate password per line (see `configs/wordlist.list.example`). The next `/crackapn` uses the new wordlist immediately.
+- `user_db.csv` 格式：`Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc`，`Name` 唯一，末尾留空行（见 [`configs/README.md`](../configs/README.md)）。**EPC 只在启动时读库**：上传后必须 `/stop` 再 `/start` 才生效。
+- The `user_db.csv` format is `Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc` with a unique `Name` and a trailing empty line (see [`configs/README.md`](../configs/README.md)). **The EPC only reads the DB at startup**: after uploading you must `/stop` then `/start` for it to take effect.
+- 字典格式：一行一个候选口令（见 [`configs/wordlist.list.example`](../configs/wordlist.list.example)）。下次 `/crackapn` 即用新字典。
+- Wordlist format: one candidate password per line (see [`configs/wordlist.list.example`](../configs/wordlist.list.example)). The next `/crackapn` uses the new wordlist immediately.
 
 ## 8. POST /getfile（下载抓包文件） Download Packet Capture Files
 
@@ -270,8 +270,8 @@ curl -X POST http://127.0.0.1:8081/getfile -H 'Content-Type: application/json' \
 
 ## 9. POST /writesim（写卡，有写卡器时才用） SIM Programming (Card Reader Required)
 
-> **当前无写卡器：本接口固定返回 `message_id 2`，直接跳过**，走 `docs/QUICKSTART.md` 用已写好的卡。有写卡器（ACR1281U 接好）后按下文使用。
-> **Currently there is no card reader: this endpoint always returns `message_id 2`; skip it** and use the pre-programmed cards via `docs/QUICKSTART.md`. With a card reader (ACR1281U connected), use it as described below.
+> **当前无写卡器：本接口固定返回 `message_id 2`，直接跳过**，走 [`docs/QUICKSTART.md`](QUICKSTART.md) 用已写好的卡。有写卡器（ACR1281U 接好）后按下文使用。
+> **Currently there is no card reader: this endpoint always returns `message_id 2`; skip it** and use the pre-programmed cards via [`docs/QUICKSTART.md`](QUICKSTART.md). With a card reader (ACR1281U connected), use it as described below.
 
 超时 180s（写卡+回读慢）。未知 JSON 字段会被**直接拒绝**（`Invalid parameters`），拼写注意。
 
@@ -295,7 +295,7 @@ Timeout is 180s (SIM programming + read-back is slow). Unknown JSON fields are *
 | `iccid` | 指定值，或 `"auto"`=保留出厂值（SJA2 类卡必须用 `auto`） / Explicit value, or `"auto"` = keep the factory value (SJA2 cards must use `auto`) | `89860123456789012345` |
 | `sqn` | 12 hex 序列号 / 12-hex sequence number | 随机 / Random |
 | `qci` | int | `7` |
-| `card` | pysim 卡型（`testsim`/`sysmoUSIM-SJS1`/…，见 `configs/sim_profiles.yaml`） / pysim card type (`testsim`/`sysmoUSIM-SJS1`/…, see `configs/sim_profiles.yaml`) | `testsim` |
+| `card` | pysim 卡型（`testsim`/`sysmoUSIM-SJS1`/…，见 [`configs/sim_profiles.yaml`](../configs/sim_profiles.yaml)） / pysim card type (`testsim`/`sysmoUSIM-SJS1`/…, see [`configs/sim_profiles.yaml`](../configs/sim_profiles.yaml)) | `testsim` |
 | `name` | 卡库 `Name` 列 / `Name` column in the subscriber DB | 自动 `ueN` / Auto `ueN` |
 | `pin_adm` | 极少用，ADM 覆盖 / Rarely used, ADM override | — |
 
@@ -321,9 +321,9 @@ curl -X POST http://127.0.0.1:8081/writesim -H 'Content-Type: application/json' 
   "auth":"mil","amf":"8001","spn":"CMCC","card":"testsim"}'
 ```
 
-流程细节：`service pcscd restart` → 探卡 → `pySim-prog.py` 写卡（判 `Programming successful`）→ `pySim-read.py` 回读核对 IMSI → 追加 `user_db.csv`。注意 `testsim` 类卡 Ki/OPc 出厂预置不可改，写卡参数必须与出厂值一致（见 `docs/SIM.md` §0）。
+流程细节：`service pcscd restart` → 探卡 → `pySim-prog.py` 写卡（判 `Programming successful`）→ `pySim-read.py` 回读核对 IMSI → 追加 `user_db.csv`。注意 `testsim` 类卡 Ki/OPc 出厂预置不可改，写卡参数必须与出厂值一致（见 [`docs/SIM.md`](SIM.md) §0）。
 
-Process details: `service pcscd restart` → detect the card → program it with `pySim-prog.py` (look for `Programming successful`) → read it back with `pySim-read.py` to verify the IMSI → append to `user_db.csv`. Note that `testsim` cards have factory-preset Ki/OPc that cannot be changed; programming parameters must match the factory values (see `docs/SIM.md` §0).
+Process details: `service pcscd restart` → detect the card → program it with `pySim-prog.py` (look for `Programming successful`) → read it back with `pySim-read.py` to verify the IMSI → append to `user_db.csv`. Note that `testsim` cards have factory-preset Ki/OPc that cannot be changed; programming parameters must match the factory values (see [`docs/SIM.md`](SIM.md) §0).
 
 ## 10. 状态接口 /healthz、/status、/profile Status Endpoints
 

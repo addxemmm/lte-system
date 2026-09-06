@@ -6,14 +6,14 @@ v1.x implementation lives under `legacy-python-workspace/` (read-only archive: H
 
 | v1.x | v2.x（本仓库） v2.x (This Repository) | 说明 Description |
 |---|---|---|
-| Python HTTP 服务 `:8081` / Python HTTP service `:8081` | `cmd/server` + `internal/api`（stdlib） | 9 接口 + `message_id` 语义保留 / 9 endpoints + `message_id` semantics preserved |
-| shell echo 生成 conf / Generate conf via shell echo | `internal/lte` text/template | 去掉绝对路径硬编码；band→EARFCN 表保留 / Remove absolute-path hard-coding; band-to-EARFCN table preserved |
-| `ps \| grep srs` 状态机 / state machine | `internal/sysop` pgrep + 进程组 / process group | 不再误杀同名进程 / No longer kills unrelated processes with the same name |
+| Python HTTP 服务 `:8081` / Python HTTP service `:8081` | [`cmd/server`](../cmd/server) + [`internal/api`](../internal/api)（stdlib） | 9 接口 + `message_id` 语义保留 / 9 endpoints + `message_id` semantics preserved |
+| shell echo 生成 conf / Generate conf via shell echo | [`internal/lte`](../internal/lte) text/template | 去掉绝对路径硬编码；band→EARFCN 表保留 / Remove absolute-path hard-coding; band-to-EARFCN table preserved |
+| `ps \| grep srs` 状态机 / state machine | [`internal/sysop`](../internal/sysop) pgrep + 进程组 / process group | 不再误杀同名进程 / No longer kills unrelated processes with the same name |
 | `os.popen` shell 拼接 / shell concatenation | `exec.Command` 数组 + 校验 / array + validation | 防注入（APN/IMSI/band） / Prevents injection via APN/IMSI/band |
 | `tcpdump &` | Manager 子进程 / child process | stop 联动 kill / Kill linked with stop |
-| `tshark … grep -A 7` 下标解析 / index-based parsing | `internal/crack` 正则解析 / regex parsing | 容忍 tshark 版本漂移 / Tolerates tshark version drift |
+| `tshark … grep -A 7` 下标解析 / index-based parsing | [`internal/crack`](../internal/crack) 正则解析 / regex parsing | 容忍 tshark 版本漂移 / Tolerates tshark version drift |
 | `hashcat --force &` | `StartAsync` + `--show` | 相同 `-m 4800` / Same `-m 4800` |
-| 写卡全硬编码 / Fully hard-coded SIM programming | `internal/sim` + `configs/app.yaml` 默认 / defaults | IMSI 必填，其余可选 / `IMSI` required, others optional |
+| 写卡全硬编码 / Fully hard-coded SIM programming | [`internal/sim`](../internal/sim) + `configs/app.yaml` 默认 / defaults | IMSI 必填，其余可选 / `IMSI` required, others optional |
 | `user_db.csv[1738:]` 魔数切片 / magic-number slicing | CSV 解析 + `ueN` 自增 / parsing + auto-increment | 并发追加安全 / Safe concurrent appends |
 | `/home/workspace/log` 硬路径 / hard-coded path | `LTE_DATA_DIR`(`/data`) | compose 卷持久化 / Persisted via compose volume |
 | srsLTE（停更） / srsLTE (discontinued) | srsRAN_4G `release_23_11` | 二进制名不变（`srsenb`/`srsepc`），日志关键字不变 / Binary names unchanged (`srsenb`/`srsepc`), log keywords unchanged |
@@ -28,9 +28,9 @@ v1.x implementation lives under `legacy-python-workspace/` (read-only archive: H
 
 When files are missing, `getfile` in v1.x wrongly returned `message_id 2`; v2.x returns `3` as documented (the only intentional behavior fix).
 
-旧资产对应位置：`legacy-python-workspace/`（v1.x 实现全文 + 原始多用户种子，线上种子已精简为 `configs/user_db.csv.example` 的单示例卡）、`docs/legacy/`（早期中文文档存档）、`docs/samples/`（成功入网日志样本 + 白卡 ATR）。
+旧资产对应位置：`legacy-python-workspace/`（v1.x 实现全文 + 原始多用户种子，线上种子已精简为 [`configs/user_db.csv.example`](../configs/user_db.csv.example) 的单示例卡）、[`docs/legacy/`](legacy)（早期中文文档存档）、[`docs/samples/`](samples)（成功入网日志样本 + 白卡 ATR）。
 
-Legacy asset locations: `legacy-python-workspace/` (full v1.x implementation + original multi-user seeds; the live seed has been trimmed to the single example card in `configs/user_db.csv.example`), `docs/legacy/` (early Chinese doc archive), `docs/samples/` (successful attach log samples + test SIM ATR).
+Legacy asset locations: `legacy-python-workspace/` (full v1.x implementation + original multi-user seeds; the live seed has been trimmed to the single example card in [`configs/user_db.csv.example`](../configs/user_db.csv.example)), [`docs/legacy/`](legacy) (early Chinese doc archive), [`docs/samples/`](samples) (successful attach log samples + test SIM ATR).
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)

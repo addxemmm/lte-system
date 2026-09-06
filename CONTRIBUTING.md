@@ -17,10 +17,10 @@ Thanks for stopping by. This is a lab tool (SDR LTE cell + SIM tooling), so revi
 
 ## 规则 Rules
 
-- **API 兼容 API compatibility**：`message` 文本与 `message_id` 是契约。改动它们需要大版本升级并在 `docs/MIGRATION.md` 中记录。 / **API compatibility**: `message` text and `message_id` are a contract. Changing them requires a major version bump and a `docs/MIGRATION.md` entry.
-- **文档即代码 Docs are code**：`docs/API.md`（与 `server.go` 逐字节一致）及相关的 `QUICKSTART`/`SIM`/`SDR`/`RULES` 章节必须在同一 PR 内修改。 / **Docs are code**: `docs/API.md` (byte-exact with `server.go`), plus the relevant `QUICKSTART`/`SIM`/`SDR`/`RULES` section, must change in the same PR.
+- **API 兼容 API compatibility**：`message` 文本与 `message_id` 是契约。改动它们需要大版本升级并在 [`docs/MIGRATION.md`](docs/MIGRATION.md) 中记录。 / **API compatibility**: `message` text and `message_id` are a contract. Changing them requires a major version bump and a [`docs/MIGRATION.md`](docs/MIGRATION.md) entry.
+- **文档即代码 Docs are code**：[`docs/API.md`](docs/API.md)（与 `server.go` 逐字节一致）及相关的 `QUICKSTART`/`SIM`/`SDR`/`RULES` 章节必须在同一 PR 内修改。 / **Docs are code**: [`docs/API.md`](docs/API.md) (byte-exact with `server.go`), plus the relevant `QUICKSTART`/`SIM`/`SDR`/`RULES` section, must change in the same PR.
 - **无密钥 No secrets**：只用测试密钥。真实 Ki/OPc、密码、token 永不入库。 / **No secrets**: test keys only. Real Ki/OPc, passwords, tokens never enter git.
-- **无运行产物 No runtime artifacts**：`*.log`/`*.pcap`/`bin`/crash 永不入库；代表性样本放到 `docs/samples/`。 / **No runtime artifacts**: `*.log`/`*.pcap`/`bin/`/crashes never enter git; representative samples go to `docs/samples/`.
+- **无运行产物 No runtime artifacts**：`*.log`/`*.pcap`/`bin`/crash 永不入库；代表性样本放到 [`docs/samples/`](docs/samples)。 / **No runtime artifacts**: `*.log`/`*.pcap`/`bin/`/crashes never enter git; representative samples go to [`docs/samples/`](docs/samples).
 - **提交信息 Commit messages**：提交信息双语格式 `<scope>: <中文> / <English>`，如 `api: 修复 getfile 缺 id / fix getfile missing id`、`docs: 补全 API 参考 / expand API reference`、`deploy: 升级 srsRAN 到 release_24_xx / bump srsRAN to release_24_xx`。 / **Commit messages** are bilingual `<scope>: <中文> / <English>`, e.g. `api: 修复 getfile 缺 id / fix getfile missing id`, `docs: 补全 API 参考 / expand API reference`, `deploy: 升级 srsRAN 到 release_24_xx / bump srsRAN to release_24_xx`.
 - Go 风格：动过的文件 `gofmt` 干净；标准库优先，不经讨论不加新依赖。 / Go style: `gofmt` clean for files you touch; stdlib-first, no new dependencies without discussion.
 

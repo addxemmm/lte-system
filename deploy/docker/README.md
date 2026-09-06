@@ -1,16 +1,16 @@
 # Docker 指南 Docker Guide（Dockerfile · Compose · 镜像版本 / Dockerfile · Compose · Image Versions）
 
-运行位置：**SDR 服务器**（开发机只改代码，不跑 docker）。日常部署看 `docs/DEPLOY.md`，这里讲镜像本身是怎么构成、怎么迭代的。
-Runs on: **the SDR server** (dev machines only edit code, never run docker). For daily deploy see `docs/DEPLOY.md`; this doc covers how the image itself is built and iterated.
+运行位置：**SDR 服务器**（开发机只改代码，不跑 docker）。日常部署看 [`docs/DEPLOY.md`](../../docs/DEPLOY.md)，这里讲镜像本身是怎么构成、怎么迭代的。
+Runs on: **the SDR server** (dev machines only edit code, never run docker). For daily deploy see [`docs/DEPLOY.md`](../../docs/DEPLOY.md); this doc covers how the image itself is built and iterated.
 
 ## 1. 文件一览 Files at a Glance
 
 | 文件 File | 作用 Purpose |
 |---|---|
-| `deploy/docker/Dockerfile` | 三段构建，产出 `ltesystem-dep:<VERSION>` / Three-stage build producing `ltesystem-dep:<VERSION>` |
-| `deploy/docker/docker-compose.yml` | 正式启动编排（host 网络 + privileged + USB + 数据卷） / Production orchestration (host network + privileged + USB + data volume) |
-| `deploy/docker/entrypoint.sh` | 容器启动流程：选 FPGA → seeding `/data` → 起 pcscd → exec Go 服务 / Container boot flow: pick FPGA → seed `/data` → start pcscd → exec Go service |
-| `deploy/docker/select-uhd-fpga.sh` | `stock`/`compat` FPGA 切换（见 `docs/SDR.md`） / `stock`/`compat` FPGA switching (see `docs/SDR.md`) |
+| [`deploy/docker/Dockerfile`](Dockerfile) | 三段构建，产出 `ltesystem-dep:<VERSION>` / Three-stage build producing `ltesystem-dep:<VERSION>` |
+| [`deploy/docker/docker-compose.yml`](docker-compose.yml) | 正式启动编排（host 网络 + privileged + USB + 数据卷） / Production orchestration (host network + privileged + USB + data volume) |
+| [`deploy/docker/entrypoint.sh`](entrypoint.sh) | 容器启动流程：选 FPGA → seeding `/data` → 起 pcscd → exec Go 服务 / Container boot flow: pick FPGA → seed `/data` → start pcscd → exec Go service |
+| [`deploy/docker/select-uhd-fpga.sh`](select-uhd-fpga.sh) | `stock`/`compat` FPGA 切换（见 [`docs/SDR.md`](../../docs/SDR.md)） / `stock`/`compat` FPGA switching (see [`docs/SDR.md`](../../docs/SDR.md)) |
 | `VERSION`（仓库根） / `VERSION` (repo root) | 镜像版本号，当前 `2.0`（从旧 `ltesystem-dep:1.0` 迭代而来） / Image version, currently `2.0` (iterated from old `ltesystem-dep:1.0`) |
 
 ## 2. Dockerfile 三段在干什么 What the Three Dockerfile Stages Do
@@ -27,8 +27,8 @@ ubuntu:22.04 (runtime)      →  运行镜像（1.53GB，旧 1.0 镜像的一半
 - **srs-builder**：装编译依赖（含 UHD/bladeRF 可选），`git clone --branch ${SRSRAN_VERSION}` 后 `cmake Release && make && make install`。换 srsRAN 版本只改顶部 `ARG SRSRAN_VERSION`（tag 形如 `release_23_11`）。 / **srs-builder**: installs build deps (incl. optional UHD/bladeRF), then `git clone --branch ${SRSRAN_VERSION}` followed by `cmake Release && make && make install`. To change the srsRAN version only edit the top `ARG SRSRAN_VERSION` (tags look like `release_23_11`).
   - 基座必须是 **22.04**：srsRAN_4G 在 gcc-13（24.04 默认）下编不过；22.04 自带 gcc-11 正好。 / The base must be **22.04**: srsRAN_4G fails to build under gcc-13 (24.04 default); 22.04 ships gcc-11 which fits.
   - 曾踩过的坑（已修，升级依赖时注意）：运行时包名是 `libmbedtls14` 不是 `libmbedtls7`；srsRAN 还要 `libboost-system/thread/test-dev`；runtime 层要装 `git`（给 pysim 用）。 / Past pitfalls (fixed, watch out when upgrading deps): the runtime package name is `libmbedtls14` not `libmbedtls7`; srsRAN also needs `libboost-system/thread/test-dev`; the runtime layer must install `git` (for pysim).
-- **go-builder**：`CGO_ENABLED=0` 静态编译 `cmd/server`。改 Go 代码只会重跑这一段及之后（约 1–2 分钟），srsRAN 层走缓存。 / **go-builder**: statically builds `cmd/server` with `CGO_ENABLED=0`. Go-only changes re-run just this and later stages (about 1–2 min); the srsRAN layer hits cache.
-- **runtime**：只装运行库 + 工具（`srsepc/srsenb` 从 builder 拷、`tcpdump/tshark/hashcat/pcscd`、UHD 镜像下载 + 兼容板 FPGA 覆盖、`pysim` 全量 clone、Go 二进制、`configs/`、`entrypoint.sh`）。 / **runtime**: runtime libs + tools only (`srsepc/srsenb` copied from builder, `tcpdump/tshark/hashcat/pcscd`, UHD image download + compatible board FPGA overlay, full `pysim` clone, Go binary, `configs/`, `entrypoint.sh`).
+- **go-builder**：`CGO_ENABLED=0` 静态编译 [`cmd/server`](../../cmd/server)。改 Go 代码只会重跑这一段及之后（约 1–2 分钟），srsRAN 层走缓存。 / **go-builder**: statically builds [`cmd/server`](../../cmd/server) with `CGO_ENABLED=0`. Go-only changes re-run just this and later stages (about 1–2 min); the srsRAN layer hits cache.
+- **runtime**：只装运行库 + 工具（`srsepc/srsenb` 从 builder 拷、`tcpdump/tshark/hashcat/pcscd`、UHD 镜像下载 + 兼容板 FPGA 覆盖、`pysim` 全量 clone、Go 二进制、[`configs/`](../../configs)、`entrypoint.sh`）。 / **runtime**: runtime libs + tools only (`srsepc/srsenb` copied from builder, `tcpdump/tshark/hashcat/pcscd`, UHD image download + compatible board FPGA overlay, full `pysim` clone, Go binary, [`configs/`](../../configs), `entrypoint.sh`).
   - `ENV LTE_CONFIG=/app/configs/app.yaml`：构建时由 `app.yaml.example` 物化，**改配置改仓库里的 example 文件**，直接改容器内文件重建即丢。 / `ENV LTE_CONFIG=/app/configs/app.yaml`: materialized from `app.yaml.example` at build time; **edit the example file in the repo to change config** — edits inside the container are lost on rebuild.
   - `EXPOSE 8081` 只是声明，实际靠 host 网络对外。 / `EXPOSE 8081` is declarative only; external access actually relies on host networking.
 

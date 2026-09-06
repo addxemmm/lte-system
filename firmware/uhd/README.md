@@ -19,7 +19,7 @@ cd firmware/uhd/ettus-B210-stock && sha256sum -c SHA256SUMS
 cd ../blacksdr-B210mini-clone && sha256sum -c SHA256SUMS
 ```
 
-运行时选择（二选一，见 `docs/SDR.md`）/ Runtime selection:
+运行时选择（二选一，见 [`docs/SDR.md`](../../docs/SDR.md)）/ Runtime selection:
 ```bash
 UHD_FPGA=compat docker compose up -d   # 兼容板 clone board
 UHD_FPGA=stock  docker compose up -d   # 正版 genuine board

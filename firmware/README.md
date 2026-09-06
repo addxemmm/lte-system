@@ -13,8 +13,8 @@ SDR radio firmware (tracked binaries).
   `uhd/README.md` has the comparison table (size/SHA256 prefix/source/selection).
 - `bladerf/` — bladeRF FPGA（`hosted*.rbf`）预留位，有硬件后再放入 / bladeRF FPGA (`hosted*.rbf`) placeholder, add files once hardware is available.
 
-容器内通过 `UHD_FPGA=stock|compat|auto`（compose 默认 `compat`）选择，详见 `docs/SDR.md`。
-Select inside the container via `UHD_FPGA=stock|compat|auto` (compose defaults to `compat`); see `docs/SDR.md` for details.
+容器内通过 `UHD_FPGA=stock|compat|auto`（compose 默认 `compat`）选择，详见 [`docs/SDR.md`](../docs/SDR.md)。
+Select inside the container via `UHD_FPGA=stock|compat|auto` (compose defaults to `compat`); see [`docs/SDR.md`](../docs/SDR.md) for details.
 
 大体积厂商包（`B210mini.zip` 约 1GB）**不入库**，留本地存档。
 Large vendor bundles (`B210mini.zip`, about 1GB) are **not committed**; keep a local copy.

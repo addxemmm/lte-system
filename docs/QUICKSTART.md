@@ -58,10 +58,10 @@ curl -X POST http://127.0.0.1:8081/basicinfo -H 'Content-Type: application/json'
 #  "apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2"}
 ```
 
-对照金样本 `docs/samples/epc-ue-attached.log`：你的实时日志
+对照金样本 [`docs/samples/epc-ue-attached.log`](samples/epc-ue-attached.log)：你的实时日志
 `sudo docker exec ltesystem tail /data/log/srsLTE_epc.log` 应出现同样的
 `ESM Info: APN` → `Found User 001010123456789` → `pool ip addr` 三连。
-Compare with the golden sample `docs/samples/epc-ue-attached.log`: your live log from
+Compare with the golden sample [`docs/samples/epc-ue-attached.log`](samples/epc-ue-attached.log): your live log from
 `sudo docker exec ltesystem tail /data/log/srsLTE_epc.log` should show the same
 `ESM Info: APN` → `Found User 001010123456789` → `pool ip addr` triple.
 

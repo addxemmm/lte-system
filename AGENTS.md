@@ -11,7 +11,7 @@
 
 ## 2. 交接 Handoff
 
-- 跨会话交接只认三样：`git log --oneline -10`、本文件、`docs/MIGRATION.md`。新会话先读这三样再动手。 / Cross-session handoff recognizes only three things: `git log --oneline -10`, this file, and `docs/MIGRATION.md`. New sessions read these three first before acting.
+- 跨会话交接只认三样：`git log --oneline -10`、本文件、[`docs/MIGRATION.md`](docs/MIGRATION.md)。新会话先读这三样再动手。 / Cross-session handoff recognizes only three things: `git log --oneline -10`, this file, and [`docs/MIGRATION.md`](docs/MIGRATION.md). New sessions read these three first before acting.
 - 中断前必须留下：当前分支、`git status --short`、未完成 todo、下一步命令（如 `go test ./...`）。 / Before interrupting, always leave: current branch, `git status --short`, unfinished todos, and next commands (e.g. `go test ./...`).
 - 交接信息写进 commit message 或 docs 注释，不写聊天黑话。 / Write handoff info into commit messages or docs comments, not chat slang.
 
@@ -25,16 +25,16 @@
 
 - 开发机可执行：`go test ./...`、`go vet ./...`、`go build`（含 `GOOS=linux` 交叉编译）、文档编辑、`git` 操作。不可执行：`docker build/run`、`./bin/lte-system` 常驻、`uhd_find_devices` 结论性判断（本机无硬件）。 / Dev machines may run: `go test ./...`, `go vet ./...`, `go build` (incl. `GOOS=linux` cross-compile), docs edits, and `git` ops. Never run: `docker build/run`, long-lived `./bin/lte-system`, or conclusive `uhd_find_devices` judgments (no hardware here).
 - 读文件用 Read，查内容用 Grep/Glob，改文件用 Edit（先 Read），跑命令用 Bash（`workdir` 指到仓库根，不 `cd`）。 / Read files with Read, search with Grep/Glob, edit with Edit (Read first), run commands with Bash (`workdir` pointed at the repo root, no `cd`).
-- 每个 Edit 保持最小 diff；改 API 必须同步改 `docs/API.md`（v1 优先）+ `docs/api/openapi.yaml` + 对应 `*_test.go`。 / Keep each Edit minimal; API changes must also update `docs/API.md` (v1 first) + `docs/api/openapi.yaml` + the matching `*_test.go`.
+- 每个 Edit 保持最小 diff；改 API 必须同步改 [`docs/API.md`](docs/API.md)（v1 优先）+ [`docs/api/openapi.yaml`](docs/api/openapi.yaml) + 对应 `*_test.go`。 / Keep each Edit minimal; API changes must also update [`docs/API.md`](docs/API.md) (v1 first) + [`docs/api/openapi.yaml`](docs/api/openapi.yaml) + the matching `*_test.go`.
 - 新端点一律进 `/api/v1`（标准包络+状态码）；根路径旧版已冻结，只修严重 bug 不加功能。 / All new endpoints go under `/api/v1` (standard envelope + status codes); legacy root paths are frozen — fix severe bugs only, add no features.
 - 保密：`wordlist.list`、真实 Ki/OPc、服务器密码不进 git（只提交 `.example`）；`firmware/uhd/*.bin` 例外允许跟踪。 / Confidentiality: `wordlist.list`, real Ki/OPc, and server passwords never enter git (commit `.example` only); `firmware/uhd/*.bin` firmware is the allowed exception.
-- 仓库瘦身：运行产物（`*.log`/`*.pcap`/`bin/`/`__pycache__`/crash/生成的 `*_run.conf`）永不入库；代表性样本只收 `docs/samples/`；厂商大包不入库。 / Keep the repo slim: runtime artifacts (`*.log`/`*.pcap`/`bin/`/`__pycache__`/crashes/generated `*_run.conf`) never enter git; representative samples go to `docs/samples/` only; vendor blobs stay out.
+- 仓库瘦身：运行产物（`*.log`/`*.pcap`/`bin/`/`__pycache__`/crash/生成的 `*_run.conf`）永不入库；代表性样本只收 [`docs/samples/`](docs/samples)；厂商大包不入库。 / Keep the repo slim: runtime artifacts (`*.log`/`*.pcap`/`bin/`/`__pycache__`/crashes/generated `*_run.conf`) never enter git; representative samples go to [`docs/samples/`](docs/samples) only; vendor blobs stay out.
 
 ## 5. 提交与发布 Commits and Releases
 
 - 提交信息双语格式 `<scope>: <中文> / <English>`（如 `api: 修复 getfile 缺 id / fix getfile missing id`），一个提交只做一件事。 / Commit messages are bilingual `<scope>: <中文> / <English>` (e.g. `api: 修复 getfile 缺 id / fix getfile missing id`); one commit does one thing.
 - 推远端前必跑：`go test ./...` 全绿 + `go vet ./...` + `git status` 无多余文件。 / Before pushing: `go test ./...` all green + `go vet ./...` + `git status` shows no extra files.
-- 服务器发布走 `scripts/deploy_to_ubuntu.sh`，先在服务器 `git pull` 再 `docker compose up -d --build`，回滚用 `docker compose` 上一个 image tag。 / Server deploy goes through `scripts/deploy_to_ubuntu.sh`: `git pull` on the server first, then `docker compose up -d --build`; rollback uses the previous image tag with `docker compose`.
+- 服务器发布走 [`scripts/deploy_to_ubuntu.sh`](scripts/deploy_to_ubuntu.sh)，先在服务器 `git pull` 再 `docker compose up -d --build`，回滚用 `docker compose` 上一个 image tag。 / Server deploy goes through [`scripts/deploy_to_ubuntu.sh`](scripts/deploy_to_ubuntu.sh): `git pull` on the server first, then `docker compose up -d --build`; rollback uses the previous image tag with `docker compose`.
 - 需要新会话接手时，把本文件链接发给对方即可。 / When a new session needs to take over, just send the other party a link to this file.
 
 ---

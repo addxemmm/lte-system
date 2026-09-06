@@ -10,9 +10,9 @@ If you already have a programmed test SIM (card parameters match `user_db.csv`),
 ue0,mil,001010123456789,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
 ```
 
-- 上面是 `configs/user_db.csv.example` 首行的格式示例，首次 `/start` 时自动 seeding 到 `/data/conf/user_db.csv` / The line above shows the format of the first row in `configs/user_db.csv.example`, automatically seeded to `/data/conf/user_db.csv` on the first `/start`
+- 上面是 [`configs/user_db.csv.example`](../configs/user_db.csv.example) 首行的格式示例，首次 `/start` 时自动 seeding 到 `/data/conf/user_db.csv` / The line above shows the format of the first row in [`configs/user_db.csv.example`](../configs/user_db.csv.example), automatically seeded to `/data/conf/user_db.csv` on the first `/start`
 - 无读卡器时调 `/writesim` 固定返回 `message_id 2`（读卡器未连），**属正常现象，不是故障** / Calling `/writesim` without a card reader always returns `message_id 2` (card reader not connected), **which is normal, not a fault**
-- 直接按 `docs/QUICKSTART.md` 启动基站、终端入网即可；下面章节是有写卡器后才用的 / Just follow `docs/QUICKSTART.md` to start the eNodeB and attach the UE; the sections below only apply when you have a card reader
+- 直接按 [`docs/QUICKSTART.md`](QUICKSTART.md) 启动基站、终端入网即可；下面章节是有写卡器后才用的 / Just follow [`docs/QUICKSTART.md`](QUICKSTART.md) to start the eNodeB and attach the UE; the sections below only apply when you have a card reader
 
 ## 1. 旧硬编码问题 Legacy Hard-Coding Issues
 

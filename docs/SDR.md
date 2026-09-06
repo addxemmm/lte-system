@@ -7,14 +7,14 @@ Genuine Ettus B210 and BlackSDR clone use different FPGAs; images are NOT interc
 
 | 镜像 Image | 大小 Size | 位置 Location | 适用 Hardware | SHA256 头 Prefix |
 |---|---|---|---|---|
-| `usrp_b210_fpga.bin`（`ettus-B210-stock/` 下） | 4,224,632 B | `firmware/uhd/ettus-B210-stock/` | 正版 B210 / genuine | `4ab68af9…` |
-| `usrp_b210_fpga.bin`（`blacksdr-B210mini-clone/` 下） | 3,825,788 B | `firmware/uhd/blacksdr-B210mini-clone/` | BlackSDR 兼容板 / clone | `8e2acce1…` |
+| `usrp_b210_fpga.bin`（`ettus-B210-stock/` 下） | 4,224,632 B | [`firmware/uhd/ettus-B210-stock/`](../firmware/uhd/ettus-B210-stock) | 正版 B210 / genuine | `4ab68af9…` |
+| `usrp_b210_fpga.bin`（`blacksdr-B210mini-clone/` 下） | 3,825,788 B | [`firmware/uhd/blacksdr-B210mini-clone/`](../firmware/uhd/blacksdr-B210mini-clone) | BlackSDR 兼容板 / clone | `8e2acce1…` |
 
-两文件同名，**只看目录名 + `SHA256SUMS` 认身份**（`sha256sum -c`），详见 `firmware/uhd/README.md`。
-Same filename in both dirs — identify by **directory name + `SHA256SUMS`** (`sha256sum -c`), see `firmware/uhd/README.md`.
+两文件同名，**只看目录名 + `SHA256SUMS` 认身份**（`sha256sum -c`），详见 [`firmware/uhd/README.md`](../firmware/uhd/README.md)。
+Same filename in both dirs — identify by **directory name + `SHA256SUMS`** (`sha256sum -c`), see [`firmware/uhd/README.md`](../firmware/uhd/README.md).
 
-切换由 `deploy/docker/select-uhd-fpga.sh` 完成，本质是覆盖 `UHD_IMAGES_DIR` 下的 `usrp_b210_fpga.bin`：
-Switching is done by `deploy/docker/select-uhd-fpga.sh`, essentially overwriting `usrp_b210_fpga.bin` under `UHD_IMAGES_DIR`:
+切换由 [`deploy/docker/select-uhd-fpga.sh`](../deploy/docker/select-uhd-fpga.sh) 完成，本质是覆盖 `UHD_IMAGES_DIR` 下的 `usrp_b210_fpga.bin`：
+Switching is done by [`deploy/docker/select-uhd-fpga.sh`](../deploy/docker/select-uhd-fpga.sh), essentially overwriting `usrp_b210_fpga.bin` under `UHD_IMAGES_DIR`:
 
 ```bash
 UHD_FPGA=compat sudo docker compose -f deploy/docker/docker-compose.yml up -d
@@ -51,8 +51,8 @@ Supports x40 / xA4 / 2.0 micro with `device_name=bladerf`:
 sudo docker exec ltesystem bladeRF-cli -e info
 ```
 
-需根据型号将 `hostedx40.rbf` / `hostedxA4.rbf` / `hosted2.0micro.rbf` 放入 `firmware/bladerf/`（当前仅占位 `README.md`，有硬件后再 bake 到 `/etc/Nuand/bladeRF/`）。
-Per your model, place the `hostedx40.rbf` / `hostedxA4.rbf` / `hosted2.0micro.rbf` firmware into `firmware/bladerf/` (currently only a placeholder `README.md`; bake into `/etc/Nuand/bladeRF/` once hardware is available).
+需根据型号将 `hostedx40.rbf` / `hostedxA4.rbf` / `hosted2.0micro.rbf` 放入 [`firmware/bladerf/`](../firmware/bladerf)（当前仅占位 `README.md`，有硬件后再 bake 到 `/etc/Nuand/bladeRF/`）。
+Per your model, place the `hostedx40.rbf` / `hostedxA4.rbf` / `hosted2.0micro.rbf` firmware into [`firmware/bladerf/`](../firmware/bladerf) (currently only a placeholder `README.md`; bake into `/etc/Nuand/bladeRF/` once hardware is available).
 
 ## 3. `/start` 射频参数 `/start` Radio Parameters
 
@@ -62,7 +62,7 @@ curl -s -X POST http://192.0.2.10:8081/start \
   -d '{"band":"41","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","device_args":"auto","tx_gain":80,"rx_gain":40}' ; echo
 ```
 
-- `sdr`：`uhd`（B210）| `bladerf`（`device_name=bladerf`）| `zmq`（仿真）| `auto`（有 bladeRF 且无 B210 则选 bladeRF，否则按 `configs/app.yaml.example` 的 `default_sdr`）。 / `sdr`: `uhd` (B210) | `bladerf` (`device_name=bladerf`) | `zmq` (simulation) | `auto` (if bladeRF is present and no B210, choose bladeRF; otherwise follow `default_sdr` in `configs/app.yaml.example`).
+- `sdr`：`uhd`（B210）| `bladerf`（`device_name=bladerf`）| `zmq`（仿真）| `auto`（有 bladeRF 且无 B210 则选 bladeRF，否则按 [`configs/app.yaml.example`](../configs/app.yaml.example) 的 `default_sdr`）。 / `sdr`: `uhd` (B210) | `bladerf` (`device_name=bladerf`) | `zmq` (simulation) | `auto` (if bladeRF is present and no B210, choose bladeRF; otherwise follow `default_sdr` in [`configs/app.yaml.example`](../configs/app.yaml.example)).
 - `device_args`：透传到 `enb.conf [rf] device_args`。`auto` + 检测到 B210 时服务端自动注入 VM-USB 稳定参数（`recv/send_frame_size=9232`，`num_recv/send_frames=64`）；显式传参永远优先；bladeRF/ZMQ 不受影响。 / `device_args`: passed through to `enb.conf [rf] device_args`. With `auto` + detected B210, the server auto-injects VM-USB stabilizing params (`recv/send_frame_size=9232`, `num_recv/send_frames=64`); explicit params always win; bladeRF/ZMQ are unaffected.
 - `tx_gain/rx_gain`：覆盖 `default_tx_gain: 80` / `default_rx_gain: 40`，B210 建议从默认值起调，勿直接拉满。 / `tx_gain/rx_gain`: override `default_tx_gain: 80` / `default_rx_gain: 40`; for B210 start from the defaults, don't max out directly.
 - `n_prb`：默认 `25`（5MHz）。虚拟机 USB 吞吐有限，10MHz（`50`）易出现 `Tx while waiting for EOB, timed out` 导致信号断续、手机搜不到网；裸金属可提到 `50`/`100`。 / `n_prb`: default `25` (5MHz). VM USB throughput is limited; 10MHz (`50`) easily hits `Tx while waiting for EOB, timed out`, causing choppy signal and phones finding no network; bare metal may raise to `50`/`100`.
@@ -90,7 +90,7 @@ srsRAN creates the `srs_spgw_sgi` NIC and needs the host uplink interface name, 
 |---|---|
 | `No UHD Devices Found` | USB2/供电/线材；换 USB3，`lsusb` 确认，`docker logs ltesystem` 看启动探测 / USB2/power/cable issue; switch to USB3, confirm with `lsusb`, check the boot probe via `docker logs ltesystem` |
 | `FPGA mismatch / failed to load` | 选错镜像；`select-uhd-fpga compat`（BlackSDR）或 `stock`（正版）后重启 / Wrong image; restart after `select-uhd-fpga compat` (BlackSDR compatible board) or `stock` (genuine) |
-| `bladeRF-cli: No devices` | 未挂 USB / rbf 缺失；检查映射，`firmware/bladerf` 放入对应 `hosted*.rbf` / USB not passed through / rbf missing; check the mapping, place the matching `hosted*.rbf` into `firmware/bladerf` |
+| `bladeRF-cli: No devices` | 未挂 USB / rbf 缺失；检查映射，[`firmware/bladerf`](../firmware/bladerf) 放入对应 `hosted*.rbf` / USB not passed through / rbf missing; check the mapping, place the matching `hosted*.rbf` into [`firmware/bladerf`](../firmware/bladerf) |
 | `pcsc_scan: No readers` | `privileged`/USB 映射缺失；`service pcscd start`，`lsusb \| grep ACR128` / Missing `privileged`/USB mapping; `service pcscd start`, `lsusb \| grep ACR128` |
 | `8081 connection refused` | 容器未起/端口占用；`docker ps`，`docker logs --tail 200 ltesystem` / Container down / port taken; `docker ps`, `docker logs --tail 200 ltesystem` |
 | 手机搜不到网 / Phone finds no network | 先看 TX 稳定性（上条）；再确认频段手机支持、天线在 TX/RX 口、距离 1 米内、手动搜网多等几分钟 / Check TX stability first (previous rows); then confirm the phone supports the band, antennas are on TX/RX, distance is within 1 m, and wait minutes on manual search |

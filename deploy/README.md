@@ -11,8 +11,8 @@ Server deploy artifacts.
 - `docker/entrypoint.sh` — 容器启动：选 FPGA → 种子seed/seeding `/data`（`sib,rb.conf` 跟随镜像覆盖，`rr.conf` 每次 `/start` 按频段渲染；`user_db.csv`/`wordlist` 仅缺失时复制）→ 起 `pcscd` → exec Go 服务 / Container startup: select FPGA → seed/seeding `/data` (`sib,rb.conf` overwritten with image, `rr.conf` rendered per band on each `/start`; `user_db.csv`/`wordlist` copied only when missing) → start `pcscd` → exec Go service
 - `docker/select-uhd-fpga.sh` — `stock`（正版 B210）/`compat`（兼容板compatible board）镜像切换 / `stock` (genuine B210) / `compat` (compatible board) image switching
 
-部署步骤见 `docs/DEPLOY.md`，日常同步代码到服务器见 `scripts/README.md`。
-For deploy steps see `docs/DEPLOY.md`; for daily code sync to server see `scripts/README.md`.
+部署步骤见 [`docs/DEPLOY.md`](../docs/DEPLOY.md)，日常同步代码到服务器见 [`scripts/README.md`](../scripts/README.md)。
+For deploy steps see [`docs/DEPLOY.md`](../docs/DEPLOY.md); for daily code sync to server see [`scripts/README.md`](../scripts/README.md).
 
 ---
 **导航 Navigation:** [仓库根 Repo Root](../README.md) · [文档索引 Docs](../docs/README.md) · [Docker 详解 Docker Guide](docker/README.md)

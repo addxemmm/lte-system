@@ -3,8 +3,8 @@
 开发机（Windows/macOS/Linux 均可）只负责代码编辑与 git 管理；一切构建、运行、射频验证都在 SDR 服务器上执行。
 Dev machines (Windows/macOS/Linux) only handle code editing and git; all builds, runs, and radio validation execute on the SDR server.
 
-想了解镜像内部构造/版本迭代见 **`deploy/docker/README.md`**。
-For image internals/version iteration see **`deploy/docker/README.md`**.
+想了解镜像内部构造/版本迭代见 **[`deploy/docker/README.md`](../deploy/docker/README.md)**。
+For image internals/version iteration see **[`deploy/docker/README.md`](../deploy/docker/README.md)**.
 
 ## 1. 前置条件 Prerequisites
 
@@ -31,8 +31,8 @@ sudo docker ps --filter name=ltesystem
 curl -s http://127.0.0.1:8081/healthz; echo
 ```
 
-`deploy/docker/docker-compose.yml` 已设 `network_mode: host`、`privileged: true`、`UHD_FPGA: compat`、`UHD_IMAGES_DIR: /usr/share/uhd/images`。
-`deploy/docker/docker-compose.yml` already sets `network_mode: host`, `privileged: true`, `UHD_FPGA: compat`, `UHD_IMAGES_DIR: /usr/share/uhd/images`.
+[`deploy/docker/docker-compose.yml`](../deploy/docker/docker-compose.yml) 已设 `network_mode: host`、`privileged: true`、`UHD_FPGA: compat`、`UHD_IMAGES_DIR: /usr/share/uhd/images`。
+[`deploy/docker/docker-compose.yml`](../deploy/docker/docker-compose.yml) already sets `network_mode: host`, `privileged: true`, `UHD_FPGA: compat`, `UHD_IMAGES_DIR: /usr/share/uhd/images`.
 
 ### 方式 B：docker run Method B: docker run
 
@@ -88,7 +88,7 @@ sudo docker exec ltesystem md5sum /usr/share/uhd/images/usrp_b210_fpga*.bin
 Files come from two places (idempotent; existing files never overwrite your data):
 
 - `entrypoint.sh`（容器启动时）：`sib/rb.conf` 跟随镜像覆盖（保证修复能生效）；`wordlist.list` 字典缺失才复制 / `entrypoint.sh` (at container boot): `sib/rb.conf` is overwritten following the image (so fixes take effect); `wordlist.list` wordlist is copied only when missing
-- `/start`（首次调用时，`internal/lte`）：`user_db.csv` 缺失才从 example 播种；`rr.conf` 每次按频段重新渲染 / `/start` (on first call, `internal/lte`): `user_db.csv` is seeded from the example only when missing; `rr.conf` is re-rendered per band every time
+- `/start`（首次调用时，[`internal/lte`](../internal/lte)）：`user_db.csv` 缺失才从 example 播种；`rr.conf` 每次按频段重新渲染 / `/start` (on first call, [`internal/lte`](../internal/lte)): `user_db.csv` is seeded from the example only when missing; `rr.conf` is re-rendered per band every time
 
 ```bash
 sudo docker exec ltesystem ls -l /data/conf /data/wordlist.list

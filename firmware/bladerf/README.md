@@ -6,7 +6,7 @@ directory; the Dockerfile copies them to `/etc/Nuand/bladeRF/` (TBD when a
 bladeRF is available for validation).
 
 Until then this directory intentionally only holds this README so the layout
-is stable. See `docs/SDR.md` for `bladeRF-cli -e info` verification steps.
+is stable. See [`docs/SDR.md`](../../docs/SDR.md) for `bladeRF-cli -e info` verification steps.
 
 ---
 **导航 Navigation:** [固件 Firmware](../README.md) · [SDR](../../docs/SDR.md)

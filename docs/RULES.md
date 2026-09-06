@@ -47,8 +47,8 @@ Check status / saved profile: `curl http://127.0.0.1:8081/status` for runtime; `
 
 ## 3. 配置从哪来、优先级 Where Config Comes From, Priority
 
-`/start` 参数（最高）→ 存档 `last_start.json`（空字段继承）→ 服务端默认（`configs/app.yaml.example`）。
-`/start` params (highest) → saved profile `last_start.json` (empty fields inherit) → server defaults (`configs/app.yaml.example`).
+`/start` 参数（最高）→ 存档 `last_start.json`（空字段继承）→ 服务端默认（[`configs/app.yaml.example`](../configs/app.yaml.example)）。
+`/start` params (highest) → saved profile `last_start.json` (empty fields inherit) → server defaults ([`configs/app.yaml.example`](../configs/app.yaml.example)).
 
 `sib/rb.conf` 跟随镜像，`rr.conf` 每次按频段渲染，`user_db.csv`/`wordlist` 只有缺失才 seeding——**你的卡库永远不会被升级覆盖**。
 `sib/rb.conf` follows the image, `rr.conf` is re-rendered per band each time, and `user_db.csv`/`wordlist` are seeded only when missing — **your SIM database is never overwritten by upgrades**.
@@ -67,8 +67,8 @@ sudo docker compose -f deploy/docker/docker-compose.yml up -d --build
 # 回滚：旧镜像 ltesystem-dep:1.0 与容器 ltesystem-v1-backup 一直保留在宿主机
 ```
 
-升级不丢 `/data` 卷（配置/卡库/抓包都在）。大版本镜像另有 tarball 备份（见 `docs/DEPLOY.md`）。
-Upgrades keep the `/data` volume (config/SIM database/packet capture all stay). Major images also have tarball backups (see `docs/DEPLOY.md`).
+升级不丢 `/data` 卷（配置/卡库/抓包都在）。大版本镜像另有 tarball 备份（见 [`docs/DEPLOY.md`](DEPLOY.md)）。
+Upgrades keep the `/data` volume (config/SIM database/packet capture all stay). Major images also have tarball backups (see [`docs/DEPLOY.md`](DEPLOY.md)).
 
 回滚：旧镜像 `ltesystem-dep:1.0` 与容器 `ltesystem-v1-backup` 一直保留在宿主机。
 Rollback: the old image `ltesystem-dep:1.0` and container `ltesystem-v1-backup` stay on the host.
@@ -76,7 +76,7 @@ Rollback: the old image `ltesystem-dep:1.0` and container `ltesystem-v1-backup` 
 ## 6. 射频纪律 Radio Discipline
 
 - 无线发射前确认频段、天线（TX/RX 口必接），人体远离天线。 / Before transmitting, confirm the band and antennas (TX/RX port required); keep bodies away from antennas.
-- 虚拟机 USB 下默认 `n_prb 25`（5MHz）；切 `50/100` 前先看 CPU 与 `timed out` 计数（见 `docs/SDR.md`）。 / Under VM USB, default `n_prb 25` (5MHz); before switching to `50/100`, check CPU and the `timed out` count (see `docs/SDR.md`).
+- 虚拟机 USB 下默认 `n_prb 25`（5MHz）；切 `50/100` 前先看 CPU 与 `timed out` 计数（见 [`docs/SDR.md`](SDR.md)）。 / Under VM USB, default `n_prb 25` (5MHz); before switching to `50/100`, check CPU and the `timed out` count (see [`docs/SDR.md`](SDR.md)).
 - 长期无人值守不要开着发射：测完 `/stop`。 / Do not leave the transmitter on unattended for long: `/stop` when testing is done.
 
 ---
