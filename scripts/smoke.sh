@@ -1,16 +1,14 @@
 #!/bin/bash
-# scripts/smoke.sh — API smoke test against a running container (default 127.0.0.1:8081).
-# Usage: BASE=http://192.0.2.10:8081 bash scripts/smoke.sh
-set -u
+# Read-only API smoke checks; no radio, SIM, uploads, captures or stop calls.
+# Usage: BASE=http://127.0.0.1:8081 LTE_API_TOKEN=TOKEN bash scripts/smoke.sh
+set -euo pipefail
 BASE="${BASE:-http://127.0.0.1:8081}"
-
-post() { curl -s -m 15 -X POST "$BASE$1" -H 'Content-Type: application/json' -d "${2:-{}}"; echo; }
-
-echo "== /healthz =="; curl -s -m 10 "$BASE/healthz"; echo
-echo "== /status ==";  curl -s -m 10 "$BASE/status"; echo
-echo "== /stop ==";    post /stop '{}'
-echo "== /basicinfo =="; post /basicinfo '{}'
-echo "== /getfile bad id =="; post /getfile '{"fileid":99}'
-echo "== uploads dry-run (expect no-file message when empty) =="
-curl -s -m 10 -X POST "$BASE/userupload"; echo
-echo "SMOKE DONE (start/crack/writesim need SDR hardware; see docs/API.md)"
+AUTH=()
+if [[ -n "${LTE_API_TOKEN:-}" ]]; then
+  AUTH=(-H "Authorization: Bearer $LTE_API_TOKEN")
+fi
+for path in /api/v1/cell /api/v1/health; do
+  curl --fail --silent --show-error --max-time 30 "${AUTH[@]}" "$BASE$path" |
+    python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["code"] == 0 and d["request_id"]; assert isinstance(d["data"],dict); print(json.dumps(d))'
+done
+echo "SMOKE PASSED (read-only; RF/SIM operation not tested)"

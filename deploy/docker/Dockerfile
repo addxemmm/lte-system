@@ -36,8 +36,9 @@ RUN grep -E "UHD|BLADERF|SOAPY|ZEROMQ" CMakeCache.txt || true
 FROM golang:1.22-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download || true
-COPY . .
+RUN go mod download
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
 
 # ---------- stage 3: runtime ----------
@@ -89,7 +90,7 @@ RUN python3 -c "import ast; t=open('/opt/pysim/pySim/cards.py').read(); assert '
 # app.yaml is materialized from the example so LTE_CONFIG always exists
 # (server also runs on pure defaults if the file is absent).
 COPY --from=go-builder /out/lte-system /usr/local/bin/lte-system
-COPY configs/ /app/configs/
+COPY configs/*.example configs/sib.conf configs/rb.conf configs/rr.conf configs/sim_profiles.yaml /app/configs/
 RUN cp /app/configs/app.yaml.example /app/configs/app.yaml
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh \

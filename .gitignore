@@ -21,3 +21,18 @@ firmware/**/*.zip
 Thumbs.db
 .idea/
 .vscode/
+
+# Local secrets and generated state (examples remain tracked)
+.env
+.env.*
+configs/app.yaml
+**/user_db.csv
+**/wordlist.list
+**/*_run.conf
+**/last_start.json
+**/__pycache__/
+*.pyc
+*.log
+!docs/samples/*.log
+
+/.codex-go-cache*/

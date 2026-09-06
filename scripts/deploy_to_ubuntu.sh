@@ -1,12 +1,15 @@
 #!/bin/bash
-# scripts/deploy_to_ubuntu.sh — build & (re)start lte-system on the SDR host.
-# Usage: ./scripts/deploy_to_ubuntu.sh user@host [iface]
-# Example: ./scripts/deploy_to_ubuntu.sh addx@192.0.2.10
-set -e
-HOST="${1:?usage: deploy_to_ubuntu.sh user@host}"
+# Export tracked working-tree source and build on the SDR host; NEVER restart the cell.
+# Usage: scripts/deploy_to_ubuntu.sh user@TARGET
+# New source files must be git-added first. Requires remote Docker group membership.
+set -euo pipefail
+HOST="${1:?usage: deploy_to_ubuntu.sh user@TARGET}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ssh "$HOST" 'sudo docker --version && mkdir -p ~/lte-system' || true
-rsync -avz --delete \
-  --exclude 'bin/' --exclude '.git/' --exclude 'var/' \
-  "$REPO_DIR/" "$HOST:~/lte-system/"
-ssh "$HOST" 'cd ~/lte-system && sudo docker compose -f deploy/docker/docker-compose.yml build && sudo docker compose -f deploy/docker/docker-compose.yml up -d && sleep 3 && sudo docker ps --filter name=ltesystem && curl -s -m 10 -X POST 127.0.0.1:8081/stop; echo'
+ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/lte-source-XXXXXXXX.tgz")"
+trap 'rm -f -- "$ARCHIVE"' EXIT
+python3 "$REPO_DIR/scripts/package_source.py" --root "$REPO_DIR" --output "$ARCHIVE"
+SHA="$(sha256sum "$ARCHIVE" | cut -d ' ' -f 1)"
+NAME="$(basename "$ARCHIVE")"
+RELEASE_DIR="lte-releases/${NAME%.tgz}"
+scp -o BatchMode=yes "$ARCHIVE" "$HOST:$NAME"
+ssh -o BatchMode=yes "$HOST" "set -eu; cd; printf '%s  %s\n' '$SHA' '$NAME' | sha256sum -c -; mkdir -p lte-releases; mkdir '$RELEASE_DIR'; tar --no-same-owner --no-same-permissions -xzf '$NAME' -C '$RELEASE_DIR'; rm -f -- '$NAME'; echo RELEASE_DIR=\$HOME/$RELEASE_DIR; cd '$RELEASE_DIR'; docker compose -p docker -f deploy/docker/docker-compose.yml build"
