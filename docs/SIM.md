@@ -72,7 +72,7 @@ grep -A3 'type:' configs/sim_profiles.yaml
 Flow: write the card with `pySim-prog.py` → read it back with `pySim-read.py -p 0` to verify the IMSI → return 4 if it already exists, otherwise append to the csv:
 
 ```bash
-sudo docker exec ltesystem python3 /opt/pysim/pySim-read.py -p 0 | grep IMSI
+sudo docker exec ltesystem bash -c "cd /opt/pysim && python3 pySim-read.py -p 0" | grep IMSI
 sudo docker exec ltesystem tail -n 2 /data/conf/user_db.csv
 ```
 
@@ -80,13 +80,34 @@ ACR1281U 排障： / ACR1281U troubleshooting:
 
 ```bash
 sudo docker exec ltesystem service pcscd restart
-sudo docker exec ltesystem lsusb | grep -i acr128
-sudo docker exec ltesystem pcsc_scan
+sudo docker exec ltesystem lsusb | grep -iE "acr128|072f"
+sudo docker exec ltesystem timeout 6 pcsc_scan -n
 ```
 
-无 `ACR128`先查 USB 映射与供电，有设备无卡则报 5，无读卡器报 2。
+读卡器检测三层递进（见 `internal/sim/sim.go:checkReader`）：
+Reader detection runs in three layers (see `internal/sim/sim.go:checkReader`):
+1. USB 层：`lsusb` 含 `ACR128` 或 ACS 厂商号 `072f` 即认定有读卡器；
+   USB layer: an `ACR128` string or ACS vendor ID `072f` in `lsusb` means present;
+2. PCSC 层：`pcsc_scan -n` 有 `Reader` 行即认定有读卡器，`Card inserted` 即有卡；
+   PCSC layer: any `Reader` line means present, `Card inserted` means card;
+3. 只有两层都不可用才用 pySim 直探，且**任何 Python 报错都判无设备**
+   （以前 traceback 被误判成“卡未插入”，id 5 报成 id 2 的 bug 已修）。
+   pySim direct probe is the last resort only, and **any Python error counts
+   as no reader** (previously a traceback was misreported as id 5 instead of id 2).
 
-Without `ACR128`, check the USB mapping and power first; a device with no card returns 5, and no card reader returns 2.
+无读卡器报 id 2，有设备无卡报 id 5——两者不会再混淆。
+No reader returns id 2, device-without-card returns id 5; the two are never confused.
+
+pysim 版本锁定：镜像用 2023-08 的 osmocom/pysim（`ARG PYSIM_COMMIT`，见
+[`deploy/docker/Dockerfile`](../deploy/docker/Dockerfile)）+ 本仓
+[`third_party/pysim/cards.py`](../third_party/pysim/cards.py) 覆盖的定制
+`testsim` 卡逻辑。master 版 pysim 已重构，`pySim-prog.py` 参数和卡注册
+方式都对不上，不要轻易升级。
+pysim is pinned to 2023-08 (`ARG PYSIM_COMMIT` in the
+[`Dockerfile`](../deploy/docker/Dockerfile)) with the custom `testsim`
+logic overlaid from [`third_party/pysim/cards.py`](../third_party/pysim/cards.py).
+Do not upgrade to pysim master: its rewritten CLI and card registry are
+incompatible.
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)

@@ -49,9 +49,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzmq5 iproute2 iptables iputils-ping dnsutils curl \
     tcpdump tshark hashcat pcscd pcsc-tools libccid \
     python3 python3-pip python3-pyscard python3-serial python3-yaml \
+    python3-cupshelpers \
     usbutils kmod net-tools \
     ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
+# era-pinned pysim python deps (pySim-prog/read import chain).
+# No --break-system-packages: Ubuntu 22.04 pip predates PEP 668.
+RUN pip install --no-cache-dir pytlv cmd2 jsonpath-ng construct bidict \
+    gsm0338 termcolor colorlog pycryptodomex packaging
 
 # srsRAN binaries + configs from builder
 COPY --from=srs-builder /usr/local/bin/srsenb /usr/local/bin/srsepc /usr/local/bin/
@@ -68,8 +73,16 @@ COPY firmware/uhd/ettus-B210-stock/usrp_b210_fpga.bin /usr/share/uhd/images/usrp
 COPY deploy/docker/select-uhd-fpga.sh /usr/local/bin/select-uhd-fpga
 RUN chmod +x /usr/local/bin/select-uhd-fpga
 
-# pysim (full upstream clone at build time)
-RUN git clone --depth 1 https://github.com/osmocom/pysim.git /opt/pysim
+# pysim pinned to the era our custom cards.py was proven against
+# (2023-08, pySim/legacy layout, prog supports -t/-A/--acc/-o/-k).
+# Overlay: custom testsim card logic (see third_party/pysim/).
+ARG PYSIM_COMMIT=7d13845285ccdd2f8a310c19bdbeb685fd1a205e
+RUN git clone https://github.com/osmocom/pysim.git /opt/pysim \
+ && git -C /opt/pysim checkout ${PYSIM_COMMIT}
+COPY third_party/pysim/cards.py /opt/pysim/pySim/legacy/cards.py
+# Fail the build early if the overlay target moved upstream.
+RUN python3 -c "import ast; t=open('/opt/pysim/pySim/legacy/cards.py').read(); assert '_cards_classes' in t and 'testsim' in t" \
+ && python3 /opt/pysim/pySim-prog.py --help >/dev/null
 
 # Go server + bundled configs.
 # app.yaml is materialized from the example so LTE_CONFIG always exists

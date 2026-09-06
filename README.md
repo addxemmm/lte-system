@@ -46,6 +46,7 @@ deploy/docker/        Dockerfile、docker-compose.yml、entrypoint.sh、select-u
 firmware/uhd|bladerf  B210 FPGA（stock/compat）与 bladeRF 说明
 docs/                 QUICKSTART / API / DEPLOY / SIM / SDR / MIGRATION + images/samples/legacy
 scripts/              smoke.sh、deploy 脚本 / smoke.sh and deploy scripts
+third_party/pysim   定制 testsim 卡逻辑（GPL，随 era-pinned pysim 使用）/ custom testsim logic
 ```
 
 ## 快速开始（服务器端） Quick Start (Server Side)

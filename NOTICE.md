@@ -16,6 +16,6 @@ The Docker image built from [`deploy/docker/Dockerfile`](deploy/docker/Dockerfil
 | Go 工具链 + 标准库 / Go toolchain + stdlib | BSD-3-Clause | https://go.dev |
 | gopkg.in/yaml.v3 | MIT/Apache-2.0 | https://gopkg.in/yaml.v3 |
 | Ubuntu 22.04 基础 + apt 包 / Ubuntu 22.04 base + apt packages | various (mostly GPL/LGPL/Apache/MIT, see `/usr/share/doc/*/copyright` in the image) | https://ubuntu.com |
-`pysim/cards.py` from the pysim project (GPL-2.0) was referenced by v1.x;
-the v1.x tree is preserved under git tag `archive/v1-python`.
-The running image clones upstream pysim at build time (see `Dockerfile`).
+| Custom `testsim` card logic 定制 `testsim` 卡逻辑 | GPL-2.0 (see `third_party/pysim/`) | https://github.com/osmocom/pysim |
+`third_party/pysim/cards.py` (GPL-2.0, rescued from the proven 2023 setup) overlays era-pinned upstream pysim in the image (see [`Dockerfile`](deploy/docker/Dockerfile)).
+定制 `testsim` 卡逻辑（GPL-2.0，源自 2023 年实测环境）覆盖 era 版上游 pysim，见 [`Dockerfile`](deploy/docker/Dockerfile)。

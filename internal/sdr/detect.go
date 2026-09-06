@@ -53,10 +53,10 @@ func Detect() Info {
 	defer cancel3()
 	if out, err := exec.CommandContext(ctx3, "lsusb").CombinedOutput(); err == nil {
 		s := string(out)
-		if strings.Contains(s, "ACR128") {
+		if isReaderLsusb(s) {
 			in.ACR1281 = true
 			for _, line := range strings.Split(s, "\n") {
-				if strings.Contains(line, "ACR128") {
+				if isReaderLsusb(line) {
 					in.USBACRRaw = line
 					break
 				}
@@ -64,6 +64,13 @@ func Detect() Info {
 		}
 	}
 	return in
+}
+
+// isReaderLsusb matches ACS smartcard readers (ACR128* and any 072f VID
+// device: ACR122U/ACR125x/ACR1281U...). Case-insensitive.
+func isReaderLsusb(s string) bool {
+	up := strings.ToUpper(s)
+	return strings.Contains(up, "ACR128") || strings.Contains(up, "072F")
 }
 
 // B210AutoArgs are proven USB-stable UHD args for B210 on a VM host

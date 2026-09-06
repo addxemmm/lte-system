@@ -200,11 +200,13 @@ func Program(ctx context.Context, cfg config.Config, req WriteRequest) (msgID in
 	if !hasCard {
 		return 5, "SIM card is not inserted.", fmt.Errorf("no card")
 	}
-	// 2. program
+	// 2. program (run inside PySimDir so bundled imports resolve)
 	ctx2, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	argv := r.ProgArgs(cfg.PySimDir)
-	out, err := exec.CommandContext(ctx2, "python3", argv...).CombinedOutput()
+	progCmd := exec.CommandContext(ctx2, "python3", argv...)
+	progCmd.Dir = cfg.PySimDir
+	out, err := progCmd.CombinedOutput()
 	sout := string(out)
 	if err != nil || !strings.Contains(sout, "Programming successful") {
 		return 0, "Failed.", fmt.Errorf("program failed: %v %.500s", err, sout)
@@ -212,8 +214,10 @@ func Program(ctx context.Context, cfg config.Config, req WriteRequest) (msgID in
 	// 3. read-back verify
 	ctx3, cancel3 := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel3()
-	readOut, err := exec.CommandContext(ctx3, "python3",
-		filepath.Join(cfg.PySimDir, "pySim-read.py"), "-p", "0").CombinedOutput()
+	readCmd := exec.CommandContext(ctx3, "python3",
+		filepath.Join(cfg.PySimDir, "pySim-read.py"), "-p", "0")
+	readCmd.Dir = cfg.PySimDir
+	readOut, err := readCmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(readOut), r.IMSI) {
 		return 0, "Failed.", fmt.Errorf("verify failed: %v %.500s", err, string(readOut))
 	}
@@ -235,39 +239,94 @@ func restartPCSCD(ctx context.Context) error {
 }
 
 func checkReader(ctx context.Context, cfg config.Config) (present, hasCard bool) {
-	ctx2, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	out, _ := exec.CommandContext(ctx2, "lsusb").CombinedOutput()
-	if !strings.Contains(string(out), "ACR128") {
-		// Fall back: pcsc_scan-less probe via pySim-read (some readers don't match lsusb string).
-		return probeViaPySim(ctx, cfg)
+	// Layer 1: USB level (fast, no side effects). Matches ACR128* readers
+	// and any Advanced Card Systems device (VID 072f: ACR122U/ACR125x/...).
+	ctx1, cancel1 := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel1()
+	if out, err := exec.CommandContext(ctx1, "lsusb").CombinedOutput(); err == nil {
+		if readerPresentLsusb(string(out)) {
+			return true, probeCard(ctx, cfg)
+		}
 	}
-	present = true
-	return present, probeCard(ctx, cfg)
-}
-
-func probeViaPySim(ctx context.Context, cfg config.Config) (bool, bool) {
-	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx2, "python3",
-		filepath.Join(cfg.PySimDir, "pySim-read.py"), "-p", "0").CombinedOutput()
+	// Layer 2: PCSC level (authoritative). pcsc_scan -n blocks while no
+	// reader exists, hence the hard timeout; spinner output without any
+	// "Reader" line conclusively means no reader.
+	ctx2, cancel2 := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel2()
+	out, _ := exec.CommandContext(ctx2, "pcsc_scan", "-n").CombinedOutput()
 	s := string(out)
-	if err != nil && s == "" {
+	if present, card := parsePcscScan(s); present {
+		return present, card
+	}
+	if strings.Contains(s, "Waiting for the first reader") ||
+		strings.Contains(s, "Scanning present readers") {
 		return false, false
 	}
-	if strings.Contains(s, "Reading") || strings.Contains(s, "ATR") || strings.Contains(s, "IMSI") {
-		return true, true
-	}
-	return true, false
+	// Layer 3: last resort for broken lsusb/pcsc stacks — direct pySim
+	// probe with strict semantics (any error counts as no reader, so a
+	// Python traceback can never again masquerade as "card missing").
+	return probeCardStrict(ctx, cfg)
 }
 
-func probeCard(ctx context.Context, cfg config.Config) bool {
-	ctx2, cancel := context.WithTimeout(ctx, 15*time.Second)
+// readerPresentLsusb reports an ACS smartcard reader in lsusb output.
+func readerPresentLsusb(out string) bool {
+	up := strings.ToUpper(out)
+	return strings.Contains(up, "ACR128") || strings.Contains(up, "072F")
+}
+
+// parsePcscScan interprets `pcsc_scan -n` output: present when any
+// "Reader N: ..." line exists; card when a "Card inserted" state shows.
+func parsePcscScan(out string) (present, card bool) {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Reader ") {
+			present = true
+		}
+	}
+	if strings.Contains(out, "Card inserted") {
+		card = true
+	}
+	return present, card
+}
+
+// cardEvidence is true for a genuine successful card read: expected
+// keywords present and no Python traceback (tracebacks must never count
+// as evidence — that bug once reported every reader-less host as
+// "SIM card is not inserted").
+func cardEvidence(out string) bool {
+	if strings.Contains(out, "Traceback") {
+		return false
+	}
+	return strings.Contains(out, "Reading") ||
+		strings.Contains(out, "ATR") ||
+		strings.Contains(out, "IMSI")
+}
+
+func pySimRead(ctx context.Context, cfg config.Config, timeout time.Duration) (string, error) {
+	c, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx2, "python3",
-		filepath.Join(cfg.PySimDir, "pySim-read.py"), "-p", "0").CombinedOutput()
-	s := string(out)
-	return strings.Contains(s, "Reading") || strings.Contains(s, "IMSI") || strings.Contains(s, "ATR")
+	cmd := exec.CommandContext(c, "python3",
+		filepath.Join(cfg.PySimDir, "pySim-read.py"), "-p", "0")
+	cmd.Dir = cfg.PySimDir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// probeCard checks for a card when a reader is already established
+// (USB or PCSC level). Lenient on exit code (some readers exit nonzero
+// on warnings) but strict on evidence content.
+func probeCard(ctx context.Context, cfg config.Config) bool {
+	out, _ := pySimRead(ctx, cfg, 15*time.Second)
+	return cardEvidence(out)
+}
+
+// probeCardStrict is the last-resort probe with no other evidence:
+// requires a clean exit AND read evidence.
+func probeCardStrict(ctx context.Context, cfg config.Config) (bool, bool) {
+	out, err := pySimRead(ctx, cfg, 15*time.Second)
+	if err != nil || !cardEvidence(out) {
+		return false, false
+	}
+	return true, true
 }
 
 // AddUser appends "Name,Auth,IMSI,Key,OP_Type,OP,AMF,SQN,QCI,IP_alloc" to user_db.csv.
