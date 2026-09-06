@@ -12,9 +12,9 @@
   白卡 ATR），见 `configs/sim_profiles.yaml`。
   Provides the `testsim` card type on the pinned pysim.
 - 配对版本 Pinned against：osmocom/pysim
-  `7d13845285ccdd2f8a310c19bdbeb685fd1a205e`（2023-08，
-  `pySim/legacy/` 布局 + `pySim-prog.py` 支持 `-t/-A/--acc/-o/-k`），
-  由 `Dockerfile` 覆盖到 `/opt/pysim/pySim/legacy/cards.py`。
-  Overlaid onto `/opt/pysim/pySim/legacy/cards.py` by the `Dockerfile`.
+  `263fb0871c0c8b6b3cb58eaa1ca1779ce1adf6c4`（2023-07-09，
+  legacy 拆分前的统一 `pySim/` 布局 + `pySim-prog.py` 支持 `-t/-A/--acc/-o/-k`），
+  由 `Dockerfile` 覆盖到 `/opt/pysim/pySim/cards.py`。
+  Overlaid onto `/opt/pysim/pySim/cards.py` by the `Dockerfile`.
 - 校验 Verify：`sha256sum third_party/pysim/cards.py` 应为
   `51f103e98b002f9ba44320593eac6b1063c9e8657ee67505f79cb73d239415ca`。

@@ -74,14 +74,15 @@ COPY deploy/docker/select-uhd-fpga.sh /usr/local/bin/select-uhd-fpga
 RUN chmod +x /usr/local/bin/select-uhd-fpga
 
 # pysim pinned to the era our custom cards.py was proven against
-# (2023-08, pySim/legacy layout, prog supports -t/-A/--acc/-o/-k).
+# (2023-07-09, pre-legacy-split unified pySim/ layout; prog supports
+# -t/-A/--acc/-o/-k and prints "Programming successful").
 # Overlay: custom testsim card logic (see third_party/pysim/).
-ARG PYSIM_COMMIT=7d13845285ccdd2f8a310c19bdbeb685fd1a205e
+ARG PYSIM_COMMIT=263fb0871c0c8b6b3cb58eaa1ca1779ce1adf6c4
 RUN git clone https://github.com/osmocom/pysim.git /opt/pysim \
  && git -C /opt/pysim checkout ${PYSIM_COMMIT}
-COPY third_party/pysim/cards.py /opt/pysim/pySim/legacy/cards.py
+COPY third_party/pysim/cards.py /opt/pysim/pySim/cards.py
 # Fail the build early if the overlay target moved upstream.
-RUN python3 -c "import ast; t=open('/opt/pysim/pySim/legacy/cards.py').read(); assert '_cards_classes' in t and 'testsim' in t" \
+RUN python3 -c "import ast; t=open('/opt/pysim/pySim/cards.py').read(); assert '_cards_classes' in t and 'testsim' in t" \
  && python3 /opt/pysim/pySim-prog.py --help >/dev/null
 
 # Go server + bundled configs.
