@@ -48,68 +48,102 @@ func ExtractCHAP(ctx context.Context, cfg config.Config) (username, hash string,
 }
 
 // chapLine patterns in `tshark -V` output for "PPP Challenge Handshake Authentication Protocol".
+// reHex matches a long hex run, with or without 0x prefix. `tshark -V`
+// prints FT_BYTES both ways depending on field ("0x0102…" or "01:02:…").
 var (
-	reIdent = regexp.MustCompile(`(?i)identifier\s*:\s*0x?([0-9a-f]{1,2})`)
-	reHex   = regexp.MustCompile(`0x([0-9a-fA-F ]{8,})`)
+	reIdent  = regexp.MustCompile(`(?i)identifier\s*:\s*0x?([0-9a-f]{1,2})`)
+	reHex    = regexp.MustCompile(`0x([0-9a-fA-F ]{8,})`)
+	reHexCol = regexp.MustCompile(`([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){3,})`)
 )
 
 // ParseCHAPText is the pure, unit-testable part: find identifier/challenge/response/username.
-// Legacy indexed whitespace-split tokens ([9]/[17]/[38]/[19]); here we use regexes over the
-// "-A 7 PPP Challenge Handshake" block so tshark version drift hurts less.
+// Packets are grouped by CHAP identifier so a capture holding several
+// exchanges (or retransmissions) yields the LAST complete handshake instead
+// of mixing a challenge from one exchange with the response of another.
 func ParseCHAPText(tsharkOut string) (username, hash string, err error) {
-	blocks := strings.Split(tsharkOut, "PPP Challenge Handshake")
-	var challenge, response, ident, user string
-	for _, b := range blocks[1:] {
-		lines := strings.Split(b, "\n")
-		window := strings.Join(lines[:min(12, len(lines))], "\n")
-		if challenge == "" {
-			if m := reHex.FindStringSubmatch(window); m != nil {
-				// First long hex in a Challenge block; disambiguate below by keywords.
-				_ = m
-			}
-		}
-		_ = window
+	type exchange struct {
+		challenge string
+		response  string
+		user      string
 	}
-	// Simpler robust approach: scan line-wise with state.
-	var lastIdent string
+	byID := map[string]*exchange{}
+	order := []string{}
+	current := ""
+
+	commit := func(id string) *exchange {
+		if id == "" {
+			id = "\x00unpaired"
+		}
+		e, ok := byID[id]
+		if !ok {
+			e = &exchange{}
+			byID[id] = e
+			order = append(order, id)
+		}
+		return e
+	}
+
 	for _, line := range strings.Split(tsharkOut, "\n") {
 		l := strings.TrimSpace(line)
 		if m := reIdent.FindStringSubmatch(l); m != nil {
-			lastIdent = normalizeHexByte(m[1])
+			current = normalizeHexByte(m[1])
+			commit(current)
+			continue
 		}
 		low := strings.ToLower(l)
 		switch {
 		case strings.Contains(low, "challenge") && strings.Contains(l, ":"):
-			if h := firstLongHex(l); h != "" && challenge == "" {
-				challenge = h
-				if lastIdent != "" && ident == "" {
-					ident = lastIdent
+			if h := firstLongHex(l); h != "" {
+				e := commit(current)
+				if e.challenge == "" {
+					e.challenge = h
 				}
 			}
 		case strings.Contains(low, "response") && strings.Contains(l, ":"):
-			if h := firstLongHex(l); h != "" && response == "" {
-				response = h
+			if h := firstLongHex(l); h != "" {
+				e := commit(current)
+				if e.response == "" {
+					e.response = h
+				}
 			}
 		case strings.Contains(low, "name") || strings.Contains(low, "username") || strings.Contains(low, "peer"):
-			if u := lastToken(l); u != "" && !strings.Contains(u, ":") && len(u) >= 2 && user == "" {
+			if u := lastToken(l); u != "" && !strings.Contains(u, ":") && len(u) >= 2 {
 				// Avoid hex blobs; usernames are usually printable non-hex-mixed.
 				if !isHexBlob(u) {
-					user = u
+					e := commit(current)
+					if e.user == "" {
+						e.user = u
+					}
 				}
 			}
 		}
-		_ = blocks
 	}
-	if response == "" || challenge == "" || ident == "" {
-		return "", "", fmt.Errorf("can not get username and password")
+	// Prefer the last complete handshake (freshest credentials).
+	for i := len(order) - 1; i >= 0; i-- {
+		e := byID[order[i]]
+		id := order[i]
+		if id == "\x00unpaired" || e.challenge == "" || e.response == "" {
+			continue
+		}
+		user := e.user
+		if user == "" {
+			// username is nice-to-have for display; hashcat only needs the hash.
+			user = "unknown"
+		}
+		hash = fmt.Sprintf("%s:%s:%s",
+			strings.ToLower(e.response), strings.ToLower(e.challenge), strings.ToLower(id))
+		return user, hash, nil
 	}
-	if user == "" {
-		// username is nice-to-have for display; hashcat only needs the hash.
-		user = "unknown"
-	}
-	hash = fmt.Sprintf("%s:%s:%s", strings.ToLower(response), strings.ToLower(challenge), strings.ToLower(ident))
-	return user, hash, nil
+	return "", "", fmt.Errorf("can not get username and password")
 }
+
+// potfileName keeps hashcat progress + cracked passwords on the /data
+// volume so results survive container recreates (default ~/.hashcat
+// would be lost with the container filesystem).
+const potfileName = "hashcat.potfile"
+
+// potfile returns the persistent potfile path for cfg.
+func potfile(cfg config.Config) string { return cfg.LogPath(potfileName) }
 
 // StartAsync launches `hashcat -m 4800 -a 0 <hash> <wordlist> --force` in background,
 // appending to log/hashcat.log. Caller must check HashcatRunning()/Show().
@@ -119,7 +153,8 @@ func StartAsync(cfg config.Config, hash string) error {
 	}
 	logPath := cfg.LogPath("hashcat.log")
 	// #nosec G204 -- binary path from config, args are validated hex + known file.
-	cmd := exec.Command(cfg.HashcatBin, "-m", "4800", "-a", "0", hash, cfg.WordlistPath(), "--force")
+	cmd := exec.Command(cfg.HashcatBin, "-m", "4800", "-a", "0", hash, cfg.WordlistPath(),
+		"--force", "--potfile-path", potfile(cfg))
 	f, err := openAppend(logPath)
 	if err != nil {
 		return err
@@ -138,7 +173,9 @@ func StartAsync(cfg config.Config, hash string) error {
 func Show(ctx context.Context, cfg config.Config, hash string) (string, error) {
 	ctx2, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx2, cfg.HashcatBin, "-m", "4800", "-a", "0", hash, cfg.WordlistPath(), "--show").CombinedOutput()
+	out, err := exec.CommandContext(ctx2, cfg.HashcatBin, "-m", "4800", "-a", "0",
+		hash, cfg.WordlistPath(), "--show",
+		"--potfile-path", potfile(cfg)).CombinedOutput()
 	if err != nil && len(out) == 0 {
 		return "", fmt.Errorf("hashcat --show: %w", err)
 	}
@@ -187,11 +224,20 @@ func normalizeHexByte(s string) string {
 }
 
 func firstLongHex(line string) string {
-	m := reHex.FindStringSubmatch(line)
-	if m == nil {
-		return ""
+	if m := reHex.FindStringSubmatch(line); m != nil {
+		if h := cleanHex(m[0]); h != "" {
+			return h
+		}
 	}
-	h := strings.ReplaceAll(strings.TrimSpace(strings.TrimPrefix(m[0], "0x")), " ", "")
+	// Fall back to bare colon-separated bytes ("01:23:45:67:…").
+	if m := reHexCol.FindStringSubmatch(line); m != nil {
+		return cleanHex(m[0])
+	}
+	return ""
+}
+
+func cleanHex(raw string) string {
+	h := strings.ReplaceAll(strings.TrimSpace(strings.TrimPrefix(raw, "0x")), " ", "")
 	h = strings.ReplaceAll(h, ":", "")
 	if len(h) < 8 {
 		return ""
@@ -218,11 +264,4 @@ func isHexBlob(s string) bool {
 		}
 	}
 	return float64(hex)/float64(len(s)) > 0.8
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

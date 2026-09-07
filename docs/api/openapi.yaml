@@ -332,16 +332,17 @@ paths:
         '429': { description: diagnostic_busy }
   /api/v1/crack/jobs:
     post:
-      summary: Start a job from an already captured CHAP exchange; stops the cell
+      summary: Audit APN password strength (PAP instant verdict, else CHAP hashcat job; stops the cell only for CHAP)
       responses:
-        '202': { description: Accepted }
+        '200': { description: PAP plaintext recovered (no cracking needed, cell untouched) }
+        '202': { description: CHAP job accepted }
         '409': { description: Job conflict }
         '412': { description: No suitable observed handshake/capture }
         '422': { description: Capture cannot be interpreted }
         '503': { description: Decoder unavailable }
   /api/v1/crack/result:
     get:
-      summary: Poll crack job result
+      summary: Poll crack job result (PAP verdict or CHAP password when weak)
       responses:
         '200': { description: running or ready }
         '404': { description: Result not found }

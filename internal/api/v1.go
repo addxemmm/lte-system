@@ -206,6 +206,14 @@ func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
 		writeV1(w, r, CodeConflict, "a crack job is already running", nil)
 		return
 	}
+	// PAP first: plaintext credentials need no cracking and no cell stop.
+	if cred, err := crack.ExtractPAP(r.Context(), s.cfg); err == nil {
+		writeV1(w, r, CodeOK, "weak password recovered (PAP plaintext)", map[string]any{
+			"auth": "pap", "username": cred.Username,
+			"password": cred.Password, "weak": true,
+		})
+		return
+	}
 	_, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
 	if err != nil || hash == "" {
 		s.writeV1CHAPFailure(w, r)
@@ -223,7 +231,7 @@ func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeV1Status(w, r, http.StatusAccepted, CodeOK, "crack job running",
-		map[string]any{"state": "running", "poll": "/api/v1/crack/result"})
+		map[string]any{"state": "running", "auth": "chap", "poll": "/api/v1/crack/result"})
 }
 
 // ---- GET /api/v1/crack/result ----
@@ -231,6 +239,14 @@ func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 	if crack.HashcatRunning() {
 		writeV1(w, r, CodeOK, "ok", map[string]any{"state": "running"})
+		return
+	}
+	// PAP first: no cracking was ever needed.
+	if cred, err := crack.ExtractPAP(r.Context(), s.cfg); err == nil {
+		writeV1(w, r, CodeOK, "ok", map[string]any{
+			"state": "ready", "auth": "pap", "username": cred.Username,
+			"password": cred.Password, "weak": true,
+		})
 		return
 	}
 	username, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
@@ -245,11 +261,12 @@ func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 	}
 	if password == "" {
 		writeV1(w, r, CodeNotFound, "password not in dictionary",
-			map[string]any{"state": "no_password", "username": username})
+			map[string]any{"state": "no_password", "auth": "chap", "username": username})
 		return
 	}
 	writeV1(w, r, CodeOK, "ok", map[string]any{
-		"state": "ready", "username": username, "password": password,
+		"state": "ready", "auth": "chap", "username": username,
+		"password": password, "weak": true,
 	})
 }
 

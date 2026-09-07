@@ -155,8 +155,8 @@ The new UE-presence scheme remains a design, not a released change to UE/subscri
 
 ## 5. 其他标准接口 Other Standard Endpoints
 
-- `POST /api/v1/crack/jobs`：从已有 S1AP capture 启动作业并停止小区，成功 202；不要用它查看 UE/网络状态。
-- `GET /api/v1/crack/result`：`running|ready` 或 404。CHAP 未采集/未观察、工具缺失及 capture 解码失败分别返回明确 reason。
+- `POST /api/v1/crack/jobs`：先查 PAP（明文直返，不停小区），无 PAP 再从已有 S1AP capture 提 CHAP 启动作业并停止小区，成功 202；不要用它查看 UE/网络状态。
+- `GET /api/v1/crack/result`：PAP 直接 `ready`；CHAP 为 `running|ready` 或 404。CHAP 未采集/未观察、工具缺失及 capture 解码失败分别返回明确 reason。成功载荷带 `auth`（`pap|chap`）、`username`、`password`、`weak:true`（字典命中即弱口令）。
 - `POST /api/v1/config/wordlist`：multipart `wordlist`，原子替换，下次作业使用。
 - `GET /api/v1/captures/{id}`：`lte-data|s1ap|enb|epc`；成功为文件，未知/未就绪 404。
 - `POST /api/v1/simcards`：最长约 180 秒；整个写卡及入库事务只允许停站并与 Start 原子互斥，运行中 409。无读卡器 503，无卡 412。

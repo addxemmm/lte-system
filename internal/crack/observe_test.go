@@ -249,6 +249,9 @@ func TestObservationCommandWaitDelayHelper(t *testing.T) {
 }
 
 func TestRunObservationCommandBoundsInheritedPipes(t *testing.T) {
+	// The synthetic descendant is selected via env (inherited by exec);
+	// without it the helper exits immediately and nothing holds the pipes.
+	t.Setenv("LTE_OBSERVATION_WAIT_HELPER", "parent")
 	start := time.Now()
 	result := runObservationCommand(context.Background(), os.Args[0],
 		"-test.run=^TestObservationCommandWaitDelayHelper$")

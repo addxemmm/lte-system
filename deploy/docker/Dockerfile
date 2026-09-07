@@ -73,7 +73,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-program-options1.74.0 libconfig++9v5 libfftw3-single3 \
     libmbedtls14 libsctp1 libuhd4.1.0 uhd-host \
     libzmq5 iproute2 iptables iputils-ping dnsutils curl \
-    tcpdump tshark hashcat pcscd pcsc-tools libccid \
+    tcpdump tshark hashcat intel-opencl-icd pcscd pcsc-tools libccid \
+    # intel-opencl-icd: CPU OpenCL backend — without it hashcat exits
+    # ("No OpenCL installation found") and the whole crack flow is dead.
     python3 python3-pip python3-pyscard python3-serial python3-yaml \
     python3-cupshelpers \
     usbutils kmod net-tools \
