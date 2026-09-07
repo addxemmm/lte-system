@@ -126,6 +126,93 @@ func TestRenderAll_NetName(t *testing.T) {
 	}
 }
 
+func TestRenderAll_ENBLoggingReducesDataPlaneLoadOnly(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ConfDir = filepath.Join(cfg.DataDir, "conf")
+	cfg.LogDir = filepath.Join(cfg.DataDir, "log")
+	if err := cfg.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	m := New(cfg)
+	band, _ := Lookup("40")
+	p := StartParams{
+		Band: "40", APN: "corp-lab", MCC: "001", MNC: "01", Network: "eth0",
+		DNS: "192.168.100.1", UESubnet: "10.20.30.0/24", UEAccess: "isolated",
+	}
+	if err := m.renderAll(p, band, "uhd", "type=b200", 73, 29, 50); err != nil {
+		t.Fatal(err)
+	}
+	read := func(name string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(cfg.ConfDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	section := func(contents, name string) string {
+		t.Helper()
+		startMarker := "[" + name + "]\n"
+		start := strings.Index(contents, startMarker)
+		if start < 0 {
+			t.Fatalf("missing [%s] section", name)
+		}
+		rest := contents[start+len(startMarker):]
+		if end := strings.Index(rest, "\n["); end >= 0 {
+			rest = rest[:end]
+		}
+		return strings.TrimSpace(rest)
+	}
+
+	enb := read("enb_run.conf")
+	wantENBLog := strings.Join([]string{
+		"all_level = warning",
+		"all_hex_limit = 0",
+		"phy_hex_limit = 0",
+		"rf_level = info",
+		"rrc_level = info",
+		"s1ap_level = info",
+		"filename = " + cfg.LogPath(cfg.ENBLogName),
+		"file_max_size = -1",
+	}, "\n")
+	if got := section(enb, "log"); got != wantENBLog {
+		t.Fatalf("unexpected eNB log policy:\n%s\nwant:\n%s", got, wantENBLog)
+	}
+	for _, unwanted := range []string{"phy_level = info", "mac_level = info", "all_hex_limit = 32"} {
+		if strings.Contains(enb, unwanted) {
+			t.Fatalf("eNB data-plane logging unexpectedly enabled by %q", unwanted)
+		}
+	}
+	for _, want := range []string{
+		"mme_addr = 127.0.1.100", "gtp_bind_addr = 127.0.1.1", "s1c_bind_addr = 127.0.1.1", "n_prb = 50",
+		"dl_earfcn = 39150", "tx_gain = 73", "rx_gain = 29", "device_name = uhd", "device_args = type=b200",
+		"enable = true", "filename = " + cfg.LogPath(cfg.PcapENB), "s1ap_enable = true", "s1ap_filename = " + cfg.LogPath(cfg.PcapS1AP),
+	} {
+		if !strings.Contains(enb, want) {
+			t.Fatalf("eNB RF/network/PCAP setting changed; missing %q:\n%s", want, enb)
+		}
+	}
+
+	epc := read("epc_run.conf")
+	wantEPCLog := strings.Join([]string{
+		"all_level = info",
+		"all_hex_limit = 32",
+		"filename = " + cfg.LogPath(cfg.EPCLogName),
+	}, "\n")
+	if got := section(epc, "log"); got != wantEPCLog {
+		t.Fatalf("EPC diagnostic logging changed:\n%s\nwant:\n%s", got, wantEPCLog)
+	}
+	for _, want := range []string{
+		"apn = corp-lab", "dns_addr = 192.168.100.1", "sgi_if_addr      = 10.20.30.1",
+		"mme_bind_addr = 127.0.1.100", "gtpu_bind_addr   = 127.0.1.100", "enable   = true", "filename = " + cfg.LogPath(cfg.PcapEPC),
+	} {
+		if !strings.Contains(epc, want) {
+			t.Fatalf("EPC network/PCAP setting changed; missing %q:\n%s", want, epc)
+		}
+	}
+}
+
 func TestRenderAll_CustomUESubnet(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()

@@ -859,8 +859,12 @@ filename = {{.ENBPcap}}
 s1ap_enable = true
 s1ap_filename = {{.S1APPcap}}
 [log]
-all_level = info
-all_hex_limit = 32
+all_level = warning
+all_hex_limit = 0
+phy_hex_limit = 0
+rf_level = info
+rrc_level = info
+s1ap_level = info
 filename = {{.ENBLog}}
 file_max_size = -1
 
