@@ -53,7 +53,7 @@ third_party/pysim   定制 testsim 卡逻辑（GPL，随 era-pinned pysim 使用
 
 ```bash
 cd ~/lte-system
-sudo docker compose -f deploy/docker/docker-compose.yml up -d --build
+sudo docker compose -f deploy/docker/docker-compose.bridge.yml up -d --build
 curl -s -X POST http://127.0.0.1:8081/stop; echo
 curl -s http://127.0.0.1:8081/healthz; echo
 BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
@@ -65,12 +65,15 @@ Example cell startup (mcc `001`, mnc `01`; apn must match the UE/terminal device
 
 ```bash
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
+  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"auto","sdr":"auto","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
 ```
 
 完整入网流程见 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)。
 
 See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) for the full network attach flow.
+
+bridge 快速开始需要 Compose >= 2.36.0；已有 host 实例先按 [DEPLOY](docs/DEPLOY.md#7-bridge-迁移--bridge-migration) 备份迁移，不要直接照抄全参数覆盖当前频段/APN/DNS。确认 DNS 在实际网络可达，容器 DNS 和手机 PCO DNS 是不同配置。
+The bridge quick start requires Compose >= 2.36.0. For an existing host deployment, first follow [DEPLOY](docs/DEPLOY.md#7-bridge-迁移--bridge-migration); do not overwrite current band/APN/DNS using a full example request. Validate DNS reachability; container DNS and handset PCO DNS are separate settings.
 
 本地编译验证（如 Windows PowerShell）：
 

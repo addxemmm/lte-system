@@ -1,5 +1,6 @@
 # lte-system compose (Ubuntu SDR host with USRP/bladeRF + ACR1281U attached)
-# Host networking is REQUIRED (srsRAN creates srs_spgw_sgi + needs the uplink iface name).
+# Host-network compatibility/rollback option. For isolated eth0 networking use
+# docker-compose.bridge.yml by itself (do not merge the two files).
 # USB passthrough is REQUIRED for USRP + smartcard reader.
 services:
   lte-system:

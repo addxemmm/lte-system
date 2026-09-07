@@ -56,6 +56,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+# Keep deployment contracts available to CPU-only go-builder regression tests.
+COPY deploy/docker/*.yml ./deploy/docker/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
 
 # ---------- stage 3: runtime ----------

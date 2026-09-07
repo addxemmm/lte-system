@@ -27,17 +27,17 @@ sudo docker exec ltesystem grep -v '^#' /data/conf/user_db.csv
 
 ```bash
 curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
+  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"auto","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
 # {"status":true,"message_id":1,"message":"Start successfully"}
 ```
 
 - `band` 按当地空闲频段和终端支持选（`1/3/5/7/8/34/39/40/41`）。本机（虚拟机 USB）实测推荐 `7`（FDD，射频最稳定）；TDD（`39/40/41`）eNB 能起来但上行有上游推导问题，手机先能用 7 就用 7
   Select `band` by the local free band and UE/terminal device support (`1/3/5/7/8/34/39/40/41`). On this machine (VM USB) `7` is recommended (FDD, most stable radio/RF); TDD (`39/40/41`) eNB can start but uplink has an upstream derivation issue, so use 7 on the phone if it works
-- `network` 是服务器 uplink 网卡名（`ip route get 8.8.8.8` 看 `dev` 后面的名字，如 `eth0`），不是家用 Wi-Fi 接口名
-  `network` is the server uplink NIC name (check the name after `dev` in `ip route get 8.8.8.8`, e.g. `eth0`), not the home Wi-Fi interface name
+- `network: "auto"` 按当前容器 namespace 默认 IPv4 路由选择出口；bridge 编排固定 `eth0`，无需填写宿主物理网卡名。旧 profile 有显式接口时，迁移须明确覆盖为 auto。
+  `network: "auto"` selects the current container namespace's default IPv4 uplink. Bridge fixes `eth0`, independent of the host NIC name. Explicitly override an old profile's host interface with auto when migrating.
 - `apn` 必须和终端 APN 设置一致（如 `srsapn`） / `apn` must match the APN setting on the UE/terminal device (e.g. `srsapn`)
-- 终端 DNS 经 PCO 下发，默认 `8.8.8.8`；若上行网络过滤公网 DNS（IP 通、域名不通），`/start` 加 `"dns":"<网关或内网DNS>"`（本机用 `"dns":"192.0.2.1"`）
-  UE/terminal device DNS is delivered via PCO, default `8.8.8.8`; if the uplink network filters public DNS (IP works but domains fail), add `"dns":"<网关或内网DNS>"` to `/start` (on this machine use `"dns":"192.0.2.1"`)
+- 终端 DNS 经 PCO 下发，缺省配置为 `8.8.8.8`，但实际网络可能过滤它。IP 通、域名不通时，先验证 resolver，再显式设置 `dns` 为可达 IPv4 地址（`192.0.2.1` 仅为占位示例，不能直接使用）；不要填 Docker 的 loopback DNS。更改后手机重新接入。
+  UE DNS is delivered via PCO and defaults to `8.8.8.8`, which may be filtered. If IP access works but domains fail, validate a resolver and explicitly set `dns` to its reachable IPv4 address (`192.0.2.1` is only a documentation placeholder). Do not advertise Docker's loopback DNS. Reattach the handset after changing it.
 - 自定义终端显示的运营商名：加 `"full_net_name":"MyLTE","short_net_name":"MyLTE"`（默认 `srsRAN`，不传也行）
   Carrier name shown on the UE/terminal device: add `"full_net_name":"MyLTE","short_net_name":"MyLTE"` (default `srsRAN`, optional)
 

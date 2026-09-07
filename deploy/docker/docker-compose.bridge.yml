@@ -1,0 +1,45 @@
+# Isolated all-in-one EPC/eNB; requires Docker Compose >= 2.36.0.
+# Use this file alone, not as an override of docker-compose.yml.
+services:
+  lte-system:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: ${LTE_IMAGE:-ltesystem-dep:2.0}
+    container_name: ltesystem
+    privileged: true
+    restart: "no"
+    stop_grace_period: 210s
+    networks:
+      lte-uplink:
+        interface_name: eth0
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    ports:
+      - "${LTE_BIND_ADDR:-0.0.0.0}:${LTE_API_PORT:-8081}:8081/tcp"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - lte-data:/data
+    environment:
+      LTE_CONFIG: /app/configs/app.yaml
+      # Container listener is fixed; restrict host publishing using LTE_BIND_ADDR.
+      LTE_LISTEN: 0.0.0.0:8081
+      LTE_API_TOKEN: ${LTE_API_TOKEN:-}
+      UHD_FPGA: compat
+      UHD_IMAGES_DIR: /usr/share/uhd/images
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+networks:
+  lte-uplink:
+    driver: bridge
+    ipam:
+      config:
+        # Must not overlap the UE pool (172.16.0.0/24), LAN, VPN or other bridges.
+        - subnet: ${LTE_BRIDGE_SUBNET:-172.30.8.0/24}
+
+volumes:
+  lte-data:

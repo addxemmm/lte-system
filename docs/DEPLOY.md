@@ -33,7 +33,8 @@ Compose 默认监听 `0.0.0.0:8081`，支持直接通过服务器 IP 访问。�
 Compose defaults to `0.0.0.0:8081` for direct access using the server IP. Clients use `http://HOST:8081`; `0.0.0.0` is a bind address, not the client destination.
 
 ```bash
-# Optional SSH access; set LTE_LISTEN=127.0.0.1:8081 if loopback-only access is desired.
+# Optional SSH access. For loopback-only publishing:
+# host: LTE_LISTEN=127.0.0.1:8081; bridge: LTE_BIND_ADDR=127.0.0.1
 ssh -L 8081:127.0.0.1:8081 addx@TARGET
 ```
 
@@ -46,11 +47,14 @@ LTE_API_TOKEN=TOKEN
 LTE_IMAGE=ltesystem-dep:RELEASE
 ```
 
-`TOKEN` 启用时必须替换为随机强令牌；启用后所有 API 请求均携带 `Authorization: Bearer TOKEN`。host 网络不受 Docker 端口映射限制；使用主机防火墙限制管理网来源，跨不可信网络使用 TLS 代理或 SSH。
-When enabling authentication, replace `TOKEN` with a strong random token. Every API request then needs `Authorization: Bearer TOKEN`. Host networking bypasses Docker port mappings; restrict management sources with the host firewall and use TLS or SSH across untrusted networks.
+`TOKEN` 启用时必须替换为随机强令牌；启用后所有 API 请求均携带 `Authorization: Bearer TOKEN`。host 网络不受 Docker 端口映射限制；bridge 使用 `LTE_BIND_ADDR`/`LTE_API_PORT` 控制发布，容器内部保持 `0.0.0.0:8081`。使用主机防火墙限制管理网来源，跨不可信网络使用 TLS 代理或 SSH。
+When enabling authentication, replace `TOKEN` with a strong random token. Every API request then needs `Authorization: Bearer TOKEN`. Host networking bypasses Docker port mappings; bridge publishing uses `LTE_BIND_ADDR`/`LTE_API_PORT`, with `0.0.0.0:8081` inside the container. Restrict management sources with the host firewall and use TLS or SSH across untrusted networks.
 
 此监听变更保留已有鉴权配置，不自动增加令牌。空令牌表示 API 未启用鉴权；建议设置令牌并限制管理网来源。普通 `docker run` 需显式设置 `LTE_LISTEN` 以确保预期监听。
 This listener change preserves existing authentication and does not automatically add a token. An empty token means authentication is disabled; a token and management-network restrictions are recommended. Set `LTE_LISTEN` explicitly with plain `docker run` to ensure the intended binding.
+
+bridge 发布端口走 Docker 转发路径，旧 host 的 INPUT/ufw 限制不一定生效。迁移前验证发布地址和 Docker 转发路径访问控制；`LTE_LISTEN` 不能限制 bridge 的宿主发布地址。
+Bridge published ports use Docker's forwarding path; existing host INPUT/ufw restrictions may not apply. Validate the published address and forwarding-path access controls before migration. `LTE_LISTEN` does not restrict bridge host publishing. [Docker firewall guidance](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)
 
 ## 3. 识别现有卷并备份 / Identify and back up the existing volume
 
@@ -133,6 +137,48 @@ Keep the same data volume on image rollback. Restore data only when necessary an
   Subscriber changes require a cell restart for EPC to load them. Edit while the cell is stopped: process-local locks do not coordinate external EPC file writes.
 - Ubuntu 基础镜像、系统/Python 依赖尚非完全内容寻址锁定；本轮保留原 srsRAN 与 pySIM 版本，完整供应链升级应另做兼容性验证。
   Base images and system/Python dependencies are not fully content-pinned. This audit retains the existing srsRAN and pySIM versions; a complete supply-chain upgrade needs separate compatibility validation.
+
+## 7. Bridge 迁移 / Bridge migration
+
+本项目 EPC/eNB 在同一容器，内部 S1AP/GTP 无需对外发布。选择 **单独** 的 `deploy/docker/docker-compose.bridge.yml`；不要以多个 `-f` 将它和 host 文件合并。Compose >= 2.36.0 支持固定 `eth0`。保留原 host 编排与原镜像作为一起回滚的组合。
+EPC/eNB share a container; internal S1AP/GTP need no published ports. Select **only** `deploy/docker/docker-compose.bridge.yml`, never merge it with the host file using multiple `-f` options. Compose >= 2.36.0 supports fixed `eth0`. Keep the original host orchestration and image together for rollback.
+
+1. 按第 3 节备份原 profile、数据卷、镜像；保留原项目名及 `/data` 实际卷。先构建后停机，GSM 容器不变。
+   Back up the profile, volume and image as in section 3; retain the project and actual `/data` volume. Build before downtime, leaving GSM unchanged.
+2. 检查 `ip -4 route` 与 `docker network inspect`；默认 bridge 为 `172.30.8.0/24`，与 UE 池 `172.16.0.0/24`、LAN/VPN/其它 Docker 网络不得重叠。需要时设置 `LTE_BRIDGE_SUBNET`。
+   Check `ip -4 route` and `docker network inspect`; the default bridge `172.30.8.0/24` must not overlap the UE pool `172.16.0.0/24`, LAN/VPN or other Docker networks. Set `LTE_BRIDGE_SUBNET` when needed.
+3. 使用原项目名执行 bridge 文件的 `config --quiet`、`up -d --no-build --force-recreate`。不要 `down -v`。API 默认仍从 `http://HOST:8081` 访问；重建只启动 API，不启动小区。
+   Use the original project with the bridge file for `config --quiet` and `up -d --no-build --force-recreate`. Never use `down -v`. The API remains at `http://HOST:8081`; recreation starts the API, not the cell.
+4. 下一次明确启动时覆盖 `network: "auto"`，不要继承旧宿主网卡名。auto 持久化为策略，每次启动解析当前命名空间的默认出口；状态中的 `resolved_network` 显示实际网卡。其它频段、功率、SIM 和 FPGA 参数不变。
+   On the next explicit cell start, override `network: "auto"` instead of inheriting a host interface name. Auto is persisted as policy and resolved for each start; `resolved_network` reports the actual interface. Preserve band, gain, SIM and FPGA settings.
+5. DNS 仍是**单独配置项**：Docker 的容器 DNS 不等于下发给 UE 的 PCO DNS，不能把 `127.0.0.11`/`127.0.0.53` 下发给手机。使用经过服务器实际查询验证的 IPv4 resolver，并通过 `dns` 字段显式设置。更改需要重新接入才生效。
+   DNS remains **separate**: Docker's resolver is not UE PCO DNS; never advertise `127.0.0.11`/`127.0.0.53` to handsets. Explicitly set `dns` to an IPv4 resolver validated from the server. Reattach after changes.
+
+```bash
+# SDR server, after backup/build; reuse the original private environment/token.
+# Add --env-file /absolute/path/.env to BOTH compose commands if applicable.
+COMPOSE=deploy/docker/docker-compose.bridge.yml
+docker compose -p "$PROJECT" -f "$COMPOSE" config --quiet
+docker compose -p "$PROJECT" -f "$COMPOSE" up -d --no-build --force-recreate
+docker exec ltesystem ip -4 route
+docker exec ltesystem cat /proc/sys/net/ipv4/ip_forward
+BASE=${BASE:-http://127.0.0.1:8081}  # Set to the actual published IP/port.
+AUTH=()
+if [ -n "${LTE_API_TOKEN:-}" ]; then AUTH=(-H "Authorization: Bearer $LTE_API_TOKEN"); fi
+curl -fsS "${AUTH[@]}" "$BASE/api/v1/diagnostics/connectivity"
+```
+
+转发在容器 namespace 中按 SGi、UE 子网、出口与 conntrack 精确放行；宿主继续由 Docker 管理 bridge NAT。不要清空宿主 iptables 或将全局 FORWARD 策略改为 ACCEPT。host 回滚时必须同时恢复原编排和原 profile 的网络/DNS字段；只换回旧镜像而保留 bridge 会失败。恢复原 profile 时不要覆盖最新订户/SQN数据。
+Forwarding is narrowly scoped to SGi, the UE subnet, uplink and conntrack in the container namespace; Docker manages bridge NAT on the host. Do not flush host iptables or globally set FORWARD to ACCEPT. A host rollback must restore the original orchestration and profile network/DNS fields together; reverting only the image while retaining bridge will fail. Do not overwrite updated subscriber/SQN data when restoring the profile.
+
+### 诊断解释 / Interpreting diagnostics
+
+- 已分配 UE IP、NAT 命中或 TCP 下行，只能分别证明对应阶段，不能单独证明手机能正常打开网页。DNS 超时、上游代理、无线重传可独立存在。
+  A UE IP, NAT hits or TCP downlink each proves only its own stage, not full handset Internet access. DNS timeouts, upstream proxy issues and radio retransmissions can coexist.
+- `POST /api/v1/crack/jobs` 是专用有副作用接口，不是联网测试。没有 CHAP 不等于注册失败；先读 `GET /api/v1/diagnostics/connectivity`，无需停基站。
+  `POST /api/v1/crack/jobs` is a specialized side-effecting endpoint, not a connectivity test. Missing CHAP does not mean registration failed; first read `GET /api/v1/diagnostics/connectivity`, without stopping the cell.
+
+参考 / References: [Docker bridge](https://docs.docker.com/engine/network/drivers/bridge/), [Compose interface_name](https://docs.docker.com/reference/compose-file/services/#interface_name).
 
 ---
 **导航 Navigation:** [文档索引 Docs](README.md) · [API](API.md) · [Docker](../deploy/docker/README.md) · [MIGRATION](MIGRATION.md)
