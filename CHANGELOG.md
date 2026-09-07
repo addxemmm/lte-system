@@ -1,5 +1,15 @@
 # 更新日志 Changelog
 
+## [3.0] - 2026-09-07
+
+- 标准接口收敛：删除根路径旧接口和单条 `/api/v1/ue`；提供 `/api/v1/ues`、按 IMSI 查询、订户管理与网络规划；同步 OpenAPI、Postman 和迁移文档。 / Standard-only API: remove legacy root routes and singleton UE lookup; add UE collections, IMSI lookup, subscriber management and network planning, with updated OpenAPI, Postman and migration docs.
+- 多终端状态来自 EPC 当前上下文原子快照，绑定进程和启动代次；区分缺失、过期、停止、注册与无线连接状态，不再拼接不同终端的历史日志。 / Current EPC snapshots are atomic and tied to process/start generation; distinguish missing, stale, stopped, registered and radio-connected states instead of combining historical logs from different devices.
+- 严格校验实际 APN，显式错误 APN 不再回落放行；省略 APN 使用配置的默认值，匹配不区分大小写。 / Enforce the actual APN: explicitly incorrect values no longer silently fall back; omission selects the configured default and matching is case-insensitive.
+- 修复动态 IP 回收、地址池耗尽处理和 GTP 会话关联；保持 ECM idle 地址并验证上行 TEID 与源 IPv4 的绑定。 / Fix dynamic IP reclamation, exhausted pools and GTP session correlation; retain addresses during ECM idle and validate uplink TEID/source-IPv4 bindings.
+- 可配置私网 `/24` UE 地址池和终端间隔离/互访；规则限定当前网络命名空间并由启动生命周期管理。保留 bridge 和仅发布 API 端口。 / Configure a private /24 UE pool and peer isolation/access, with namespace-scoped lifecycle-owned rules. Keep bridge networking and API-only publishing.
+- 订户与写卡变更必须停站，原子卡库写入保留已有 SQN，响应不返回密钥；Postman 默认空启动请求继承已验证的 DNS 和上行配置。 / Subscriber and SIM mutations require a stopped cell; atomic database updates preserve existing SQNs and redact secrets. Postman defaults to empty startup requests that retain verified DNS/uplink settings.
+- 本次不引入多 APN、多 VLAN 或按组路由；编译容量不是 BlackSDR/虚拟机现场并发性能保证。详见 [多终端迁移与验证](docs/MULTI_UE_2026-09-07.md)。 / This release does not introduce multiple APNs, VLANs or group routing; compiled capacity is not a BlackSDR/VM concurrency guarantee. See the [multi-UE migration and validation report](docs/MULTI_UE_2026-09-07.md).
+
 ## 2026-09-06 局域网访问修正 / LAN access correction
 
 - 按用户要求将 Compose 默认监听恢复为 `0.0.0.0:8081`，可直接通过服务器 IP 访问；保留现有鉴权配置及 `LTE_LISTEN` 覆盖能力。 / Restore the requested `0.0.0.0:8081` Compose default for direct server-IP access; preserve existing authentication and the `LTE_LISTEN` override.

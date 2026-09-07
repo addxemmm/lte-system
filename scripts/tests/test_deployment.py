@@ -14,6 +14,13 @@ spec.loader.exec_module(source)
 
 
 class ComposeListenerTests(unittest.TestCase):
+    def test_smoke_does_not_probe_sdr_or_mutate_state(self):
+        smoke = (SCRIPTS / "smoke.sh").read_text(encoding="utf-8")
+        self.assertIn("for path in /api/v1/cell /api/v1/profile; do", smoke)
+        self.assertNotIn("/api/v1/health", smoke)
+        self.assertNotIn("-X POST", smoke)
+        self.assertNotIn("-X DELETE", smoke)
+
     def test_lan_listener_default_keeps_token_and_data_volume(self):
         compose = (SCRIPTS.parent / "deploy/docker/docker-compose.yml").read_text(encoding="utf-8")
         self.assertIn("LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}", compose)
@@ -41,6 +48,7 @@ class SourcePackageTests(unittest.TestCase):
             "configs/user_db.csv": "PRIVATE\n",
             ".env": "TOKEN=PRIVATE\n",
             "data/wordlist.list": "PRIVATE\n",
+            "log/ue-sessions.json": "PRIVATE SESSION IDENTITIES\n",
             "docs/samples/example.log": "example\n",
             "scripts/test.sh": "#!/bin/bash\nexit 0\n",
         }.items():
@@ -64,7 +72,7 @@ class SourcePackageTests(unittest.TestCase):
         with tarfile.open(self.archive) as archive:
             names = archive.getnames()
             for private in ("configs/app.yaml", "configs/user_db.csv", ".env",
-                            "data/wordlist.list", "untracked.txt", "sibling-secret.txt"):
+                            "data/wordlist.list", "log/ue-sessions.json", "untracked.txt", "sibling-secret.txt"):
                 self.assertNotIn(private, names)
             self.assertIn("configs/user_db.csv.example", names)
             self.assertIn("docs/samples/example.log", names)

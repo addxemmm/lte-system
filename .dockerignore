@@ -15,6 +15,7 @@ data/
 **/*.crash
 **/*_run.conf
 **/last_start.json
+**/ue-sessions.json
 **/wordlist.list
 **/user_db.csv
 configs/app.yaml

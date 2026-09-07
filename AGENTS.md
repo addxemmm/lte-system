@@ -26,7 +26,7 @@
 - 开发机可执行：`go test ./...`、`go vet ./...`、`go build`（含 `GOOS=linux` 交叉编译）、文档编辑、`git` 操作。不可执行：`docker build/run`、`./bin/lte-system` 常驻、`uhd_find_devices` 结论性判断（本机无硬件）。 / Dev machines may run: `go test ./...`, `go vet ./...`, `go build` (incl. `GOOS=linux` cross-compile), docs edits, and `git` ops. Never run: `docker build/run`, long-lived `./bin/lte-system`, or conclusive `uhd_find_devices` judgments (no hardware here).
 - 读文件用 Read，查内容用 Grep/Glob，改文件用 Edit（先 Read），跑命令用 Bash（`workdir` 指到仓库根，不 `cd`）。 / Read files with Read, search with Grep/Glob, edit with Edit (Read first), run commands with Bash (`workdir` pointed at the repo root, no `cd`).
 - 每个 Edit 保持最小 diff；改 API 必须同步改 [`docs/API.md`](docs/API.md)（v1 优先）+ [`docs/api/openapi.yaml`](docs/api/openapi.yaml) + 对应 `*_test.go`。 / Keep each Edit minimal; API changes must also update [`docs/API.md`](docs/API.md) (v1 first) + [`docs/api/openapi.yaml`](docs/api/openapi.yaml) + the matching `*_test.go`.
-- 新端点一律进 `/api/v1`（标准包络+状态码）；根路径旧版已冻结，只修严重 bug 不加功能。 / All new endpoints go under `/api/v1` (standard envelope + status codes); legacy root paths are frozen — fix severe bugs only, add no features.
+- 端点一律进 `/api/v1`（标准包络+状态码）；3.0 已按用户要求删除根路径旧接口及单条 `/api/v1/ue`，不得重新添加兼容 alias。 / All endpoints use `/api/v1` (standard envelope + status codes); 3.0 removes legacy root routes and singleton `/api/v1/ue` at the user's request. Do not reintroduce compatibility aliases.
 - 保密：`wordlist.list`、真实 Ki/OPc、服务器密码不进 git（只提交 `.example`）；`firmware/uhd/*.bin` 例外允许跟踪。 / Confidentiality: `wordlist.list`, real Ki/OPc, and server passwords never enter git (commit `.example` only); `firmware/uhd/*.bin` firmware is the allowed exception.
 - 仓库瘦身：运行产物（`*.log`/`*.pcap`/`bin/`/`__pycache__`/crash/生成的 `*_run.conf`）永不入库；代表性样本只收 [`docs/samples/`](docs/samples)；厂商大包不入库。 / Keep the repo slim: runtime artifacts (`*.log`/`*.pcap`/`bin/`/`__pycache__`/crashes/generated `*_run.conf`) never enter git; representative samples go to [`docs/samples/`](docs/samples) only; vendor blobs stay out.
 
@@ -34,7 +34,7 @@
 
 - 提交信息双语格式 `<scope>: <中文> / <English>`（如 `api: 修复 getfile 缺 id / fix getfile missing id`），一个提交只做一件事。 / Commit messages are bilingual `<scope>: <中文> / <English>` (e.g. `api: 修复 getfile 缺 id / fix getfile missing id`); one commit does one thing.
 - 推远端前必跑：`go test ./...` 全绿 + `go vet ./...` + `git status` 无多余文件。 / Before pushing: `go test ./...` all green + `go vet ./...` + `git status` shows no extra files.
-- 服务器发布走 [`scripts/deploy_to_ubuntu.sh`](scripts/deploy_to_ubuntu.sh)，先在服务器 `git pull` 再 `docker compose up -d --build`，回滚用 `docker compose` 上一个 image tag。 / Server deploy goes through [`scripts/deploy_to_ubuntu.sh`](scripts/deploy_to_ubuntu.sh): `git pull` on the server first, then `docker compose up -d --build`; rollback uses the previous image tag with `docker compose`.
+- 服务器发布先同步独立源快照并构建，再按 [`docs/DEPLOY.md`](docs/DEPLOY.md) 备份实际数据卷、保留旧镜像、替换并验证。部署脚本不自动重启或发射；默认独立 bridge 编排，仅发布 API。 / Sync an isolated source snapshot and build first, then follow [`docs/DEPLOY.md`](docs/DEPLOY.md) to back up the actual data volume, retain the old image, replace and verify. Deployment scripts do not restart or transmit automatically; use standalone bridge orchestration with API-only publishing.
 - 需要新会话接手时，把本文件链接发给对方即可。 / When a new session needs to take over, just send the other party a link to this file.
 
 ---

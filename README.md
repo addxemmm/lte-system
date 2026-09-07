@@ -17,10 +17,10 @@ Stateless, database-free LTE self-hosted base station toolkit: a single Go binar
 
 - 标准 REST：`/api/v1`（正确状态码 + `{"code","message","data","request_id"}` 包络 + OpenAPI，见 [`docs/API.md`](docs/API.md)）
   Standard REST: `/api/v1` (correct status codes + `{"code","message","data","request_id"}` envelope + OpenAPI, see [`docs/API.md`](docs/API.md))
-- 9 个稳定的根路径工具接口（已冻结，见 [`docs/API_LEGACY.md`](docs/API_LEGACY.md)）
-  9 stable root-path utility endpoints (frozen, see [`docs/API_LEGACY.md`](docs/API_LEGACY.md))
-- 新增 `GET /healthz`、`GET /status`、`GET /profile`；`/start` 空 body 复用上次配置（持久化见 [`docs/RULES.md`](docs/RULES.md)）
-  New `GET /healthz`, `GET /status` and `GET /profile`; `/start` with an empty body reuses the last saved configuration (persistence, see [`docs/RULES.md`](docs/RULES.md))
+- 多 UE 会话集合、订户管理、APN 校验和 UE 网络策略；旧根路径接口与单条 `/api/v1/ue` 已移除。
+  Multi-UE sessions, subscriber management, APN validation and UE network policies; legacy root routes and singleton `/api/v1/ue` are removed.
+- `GET /api/v1/cell`、`GET /api/v1/profile`；`POST /api/v1/cell` 的 `{}` 请求复用上次配置（见 [`docs/RULES.md`](docs/RULES.md)）。
+  `GET /api/v1/cell`, `GET /api/v1/profile`; `POST /api/v1/cell` with `{}` reuses the saved profile (see [`docs/RULES.md`](docs/RULES.md)).
 - 灵活写卡（有写卡器时）：`imsi` 必填，`ki/op/opc/auth/amf/acc/adm/spn/sqn/qci/card/mcc/mnc/iccid` 全可选（见 [`docs/SIM.md`](docs/SIM.md)）；无写卡器时该接口不可用，不影响入网
   Flexible SIM programming (when a card reader is present): `imsi` is required, `ki/op/opc/auth/amf/acc/adm/spn/sqn/qci/card/mcc/mnc/iccid` are all optional (see [`docs/SIM.md`](docs/SIM.md)); without a card reader this endpoint is unavailable, network attach is unaffected
 - SDR：USRP B210（正版 + BlackSDR 兼容板 FPGA 可切换）与 bladeRF（见 [`docs/SDR.md`](docs/SDR.md)）
@@ -32,8 +32,8 @@ Stateless, database-free LTE self-hosted base station toolkit: a single Go binar
 
 ```text
 cmd/server            Go 入口
-internal/api          v1 标准接口 + 旧版兼容 + 中间件（鉴权/审计/request-id）
-postman/              Postman 集合（26 个请求 + 断言，开箱即测）
+internal/api          v1 标准接口 + 中间件（鉴权/审计/request-id）
+postman/              仅标准接口 Postman 集合 + 断言
 internal/lte          srsRAN 启停 + conf 模板渲染 + band 表
 internal/sdr          UHD/bladeRF/ACR1281 探测
 internal/sim          灵活写卡 + user_db.csv
@@ -54,8 +54,8 @@ third_party/pysim   定制 testsim 卡逻辑（GPL，随 era-pinned pysim 使用
 ```bash
 cd ~/lte-system
 sudo docker compose -f deploy/docker/docker-compose.bridge.yml up -d --build
-curl -s -X POST http://127.0.0.1:8081/stop; echo
-curl -s http://127.0.0.1:8081/healthz; echo
+curl --fail http://127.0.0.1:8081/api/v1/cell; echo
+curl --fail http://127.0.0.1:8081/api/v1/profile; echo
 BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
 ```
 
@@ -64,7 +64,7 @@ BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
 Example cell startup (mcc `001`, mnc `01`; apn must match the UE/terminal device):
 
 ```bash
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8081/api/v1/cell -H 'Content-Type: application/json' \
   -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"auto","sdr":"auto","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
 ```
 
@@ -89,7 +89,7 @@ Remove-Item Env:\GOOS; Remove-Item Env:\GOARCH
 
 - [docs/QUICKSTART.md](docs/QUICKSTART.md) — 无写卡器 + 已写卡，直接入网（先看这个） / No card reader + programmed SIM, direct network attach (start here)
 - [docs/RULES.md](docs/RULES.md) — 使用规则：无状态定义、配置持久化、操作流、多终端、升级回滚、射频纪律 / Usage rules: stateless definition, config persistence, operation flow, multi-UE, upgrade and rollback, RF discipline
-- [docs/API.md](docs/API.md) — v1 标准接口 + 旧版对照 / Standard v1 API + legacy mapping ([OpenAPI](docs/api/openapi.yaml))
+- [docs/API.md](docs/API.md) — 标准接口完整参考 / Standard API reference ([OpenAPI](docs/api/openapi.yaml))
 - [docs/DEPLOY.md](docs/DEPLOY.md) — 服务器部署/升级/备份/排障 / Server deployment, upgrade, backup and troubleshooting
 - [deploy/docker/README.md](deploy/docker/README.md) — Docker 专讲：镜像三段构建、compose 逐项解释、版本迭代、构建排障 / Docker deep dive
 - [docs/SIM.md](docs/SIM.md) — 灵活写卡与卡型 / Flexible SIM programming and card types

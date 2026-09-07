@@ -15,7 +15,7 @@ Runs on: **the SDR server** (dev machines only edit code, never run docker). For
 | [`deploy/docker/docker-compose.bridge.yml`](docker-compose.bridge.yml) | 单容器 EPC/eNB 的独立 bridge 编排，固定 eth0 / Isolated all-in-one EPC/eNB bridge orchestration, fixed eth0 |
 | [`deploy/docker/entrypoint.sh`](entrypoint.sh) | 容器启动流程：选 FPGA → seeding `/data` → 起 pcscd → exec Go 服务 / Container boot flow: pick FPGA → seed `/data` → start pcscd → exec Go service |
 | [`deploy/docker/select-uhd-fpga.sh`](select-uhd-fpga.sh) | `stock`/`compat` FPGA 切换（见 [`docs/SDR.md`](../../docs/SDR.md)） / `stock`/`compat` FPGA switching (see [`docs/SDR.md`](../../docs/SDR.md)) |
-| `VERSION`（仓库根） / `VERSION` (repo root) | 镜像版本号，当前 `2.0`（从旧 `ltesystem-dep:1.0` 迭代而来） / Image version, currently `2.0` (iterated from old `ltesystem-dep:1.0`) |
+| `VERSION`（仓库根） / `VERSION` (repo root) | 镜像版本号，当前 `3.0`（从旧 `ltesystem-dep:1.0` 迭代而来） / Image version, currently `3.0` (iterated from old `ltesystem-dep:1.0`) |
 
 ## 2. Dockerfile 三段在干什么 What the Three Dockerfile Stages Do
 
@@ -28,9 +28,9 @@ ubuntu:22.04 (runtime)      →  运行镜像（1.53GB，旧 1.0 镜像的一半
 `ubuntu:22.04 (srs-builder)` → srsRAN_4G `release_23_11` 源码编译；`golang:1.22-bookworm (go-builder)` → Go tool API 二进制；`ubuntu:22.04 (runtime)` → 运行镜像（1.53GB，不到旧 1.0 镜像的一半）。
 `ubuntu:22.04 (srs-builder)` → srsRAN_4G `release_23_11` source build; `golang:1.22-bookworm (go-builder)` → Go tool API binary; `ubuntu:22.04 (runtime)` → runtime image (1.53GB, less than half of the old 1.0 image).
 
-- **srs-builder**：装编译依赖（含 UHD/bladeRF 可选），`git clone --branch ${SRSRAN_VERSION}` 后 `cmake Release && make && make install`。换 srsRAN 版本只改顶部 `ARG SRSRAN_VERSION`（tag 形如 `release_23_11`）。 / **srs-builder**: installs build deps (incl. optional UHD/bladeRF), then `git clone --branch ${SRSRAN_VERSION}` followed by `cmake Release && make && make install`. To change the srsRAN version only edit the top `ARG SRSRAN_VERSION` (tags look like `release_23_11`).
+- **srs-builder**：装编译依赖（含 UHD/bladeRF 可选），`git clone --branch ${SRSRAN_VERSION}` 后 `cmake Release && make && make install`。上游版本受固定提交与本地补丁测试约束，升级须重新验证补丁，而非只改版本标签。 / **srs-builder**: installs build deps (incl. optional UHD/bladeRF), then `git clone --branch ${SRSRAN_VERSION}` followed by `cmake Release && make && make install`. The upstream revision is pinned and tested with local patches; upgrades require patch revalidation, not only a tag change.
   - 基座必须是 **22.04**：srsRAN_4G 在 gcc-13（24.04 默认）下编不过；22.04 自带 gcc-11 正好。 / The base must be **22.04**: srsRAN_4G fails to build under gcc-13 (24.04 default); 22.04 ships gcc-11 which fits.
-  - 曾踩过的坑（已修，升级依赖时注意）：运行时包名是 `libmbedtls14` 不是 `libmbedtls7`；srsRAN 还要 `libboost-system/thread/test-dev`；runtime 层要装 `git`（给 pysim 用）；**pysim 必须 pin 在 `ARG PYSIM_COMMIT`（2023-08），master 已重构不兼容，且 `testsim` 卡逻辑来自 [`third_party/pysim/`](../../third_party/pysim) 覆盖**。 / Past pitfalls (fixed, watch out when upgrading deps): the runtime package name is `libmbedtls14` not `libmbedtls7`; srsRAN also needs `libboost-system/thread/test-dev`; the runtime layer must install `git` (for pysim); **pysim must stay pinned at `ARG PYSIM_COMMIT` (2023-08) — master was rewritten and is incompatible, and the `testsim` card logic comes from the [`third_party/pysim/`](../../third_party/pysim) overlay**.
+  - 曾踩过的坑（已修，升级依赖时注意）：运行时包名是 `libmbedtls14` 不是 `libmbedtls7`；srsRAN 还要 `libboost-system/thread/test-dev`；runtime 层要装 `git`（给 pysim 用）；**pysim 必须 pin 在 `ARG PYSIM_COMMIT`（2023-07-09），master 已重构不兼容，且 `testsim` 卡逻辑来自 [`third_party/pysim/`](../../third_party/pysim) 覆盖**。 / Past pitfalls (fixed, watch out when upgrading deps): the runtime package name is `libmbedtls14` not `libmbedtls7`; srsRAN also needs `libboost-system/thread/test-dev`; the runtime layer must install `git` (for pysim); **pysim must stay pinned at `ARG PYSIM_COMMIT` (2023-07-09) — master was rewritten and is incompatible, and the `testsim` card logic comes from the [`third_party/pysim/`](../../third_party/pysim) overlay**.
 - **go-builder**：`CGO_ENABLED=0` 静态编译 [`cmd/server`](../../cmd/server)。改 Go 代码只会重跑这一段及之后（约 1–2 分钟），srsRAN 层走缓存。 / **go-builder**: statically builds [`cmd/server`](../../cmd/server) with `CGO_ENABLED=0`. Go-only changes re-run just this and later stages (about 1–2 min); the srsRAN layer hits cache.
 - **runtime**：只装运行库 + 工具（`srsepc/srsenb` 从 builder 拷、`tcpdump/tshark/hashcat/pcscd`、UHD 镜像下载 + 兼容板 FPGA 覆盖、**era-pinned pysim + 定制卡逻辑覆盖**、Go 二进制、[`configs/`](../../configs)、`entrypoint.sh`）。 / **runtime**: runtime libs + tools only (`srsepc/srsenb` copied from builder, `tcpdump/tshark/hashcat/pcscd`, UHD image download + compatible board FPGA overlay, **era-pinned pysim + custom card overlay**, Go binary, [`configs/`](../../configs), `entrypoint.sh`).
   - `ENV LTE_CONFIG=/app/configs/app.yaml`：构建时由 `app.yaml.example` 物化，**改配置改仓库里的 example 文件**，直接改容器内文件重建即丢。 / `ENV LTE_CONFIG=/app/configs/app.yaml`: materialized from `app.yaml.example` at build time; **edit the example file in the repo to change config** — edits inside the container are lost on rebuild.
@@ -40,7 +40,7 @@ ubuntu:22.04 (runtime)      →  运行镜像（1.53GB，旧 1.0 镜像的一半
 
 ```yaml
 build: { context: ../.., dockerfile: deploy/docker/Dockerfile }  # 相对本文件的仓库根
-image: ${LTE_IMAGE:-ltesystem-dep:2.0}  # 支持唯一发布/回滚标签 / unique release/rollback tag
+image: ${LTE_IMAGE:-ltesystem-dep:3.0}  # 支持唯一发布/回滚标签 / unique release/rollback tag
 container_name: ltesystem
 network_mode: host              # 兼容选项；隔离网络另用 docker-compose.bridge.yml
 privileged: true                # 必需：建网卡、实时线程、访问 USB
@@ -98,7 +98,7 @@ sudo docker exec ltesystem <cmd>   # 进容器执行，如 uhd_find_devices
 ## 5. entrypoint 启动流程 entrypoint Boot Flow
 
 1. `select-uhd-fpga $UHD_FPGA`（默认 `auto`=不动当前镜像） / `select-uhd-fpga $UHD_FPGA` (default `auto` = leave the current image alone)
-2. `mkdir -p /data/conf /data/log`；`sib/rb.conf` **每次跟随镜像覆盖**；`user_db.csv`/`wordlist.list` **缺失才复制**（你的卡库永不被覆盖）；`rr.conf` 不由这里管（每次 `/start` 按频段渲染） / `mkdir -p /data/conf /data/log`; `sib/rb.conf` is **overwritten following the image every time**; `user_db.csv`/`wordlist.list` wordlist are **copied only when missing** (your SIM database is never overwritten); `rr.conf` is not handled here (re-rendered per band on each `/start`)
+2. `mkdir -p /data/conf /data/log`；`sib/rb.conf` **每次跟随镜像覆盖**；`user_db.csv`/`wordlist.list` **缺失才复制**（你的卡库永不被覆盖）；`rr.conf` 不由这里管（每次 `/api/v1/cell` 按频段渲染） / `mkdir -p /data/conf /data/log`; `sib/rb.conf` is **overwritten following the image every time**; `user_db.csv`/`wordlist.list` wordlist are **copied only when missing** (your SIM database is never overwritten); `rr.conf` is not handled here (re-rendered per band on each `/api/v1/cell`)
 3. `service pcscd start`（无读卡器时失败也继续） / `service pcscd start` (continues even if it fails with no reader)
 4. 打印 `uhd_find_devices` / `bladeRF-cli info` 供排障 / Prints `uhd_find_devices` / `bladeRF-cli info` for troubleshooting
 5. `exec lte-system`（PID 1，接管信号，`docker stop` 优雅退出） / `exec lte-system` (PID 1, takes over signals, `docker stop` exits gracefully)

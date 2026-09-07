@@ -23,7 +23,7 @@ def included(name):
         return False
     if any(p in {".git", ".agents", ".ssh", "data", "var", "bin", "__pycache__"} or p.startswith(".codex") for p in path.parts):
         return False
-    if path.name in {"user_db.csv", "wordlist.list", "last_start.json"}:
+    if path.name in {"user_db.csv", "wordlist.list", "last_start.json", "ue-sessions.json"}:
         return False
     if path.name == ".env" or path.name.startswith(".env."):
         return False

@@ -20,7 +20,7 @@ try {
     $command = "set -eu; cd; printf '%s  %s\n' '$sha' '$remoteName' | sha256sum -c -; mkdir -p lte-releases; mkdir '$releaseDir'; tar --no-same-owner --no-same-permissions -xzf '$remoteName' -C '$releaseDir'; rm -f -- '$remoteName'; echo RELEASE_DIR=`$HOME/$releaseDir"
     Invoke-Checked ssh @("-o", "BatchMode=yes", $HostAlias, $command)
     if ($Build) {
-        Invoke-Checked ssh @("-o", "BatchMode=yes", $HostAlias, "set -eu; cd ~/$releaseDir; docker compose -p docker -f deploy/docker/docker-compose.yml build")
+        Invoke-Checked ssh @("-o", "BatchMode=yes", $HostAlias, "set -eu; cd ~/$releaseDir; docker compose -p docker -f deploy/docker/docker-compose.bridge.yml build")
     }
 } finally {
     if (Test-Path -LiteralPath $tgz) { Remove-Item -LiteralPath $tgz }

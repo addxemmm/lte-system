@@ -17,7 +17,7 @@ Same filename in both dirs — identify by **directory name + `SHA256SUMS`** (`s
 Switching is done by [`deploy/docker/select-uhd-fpga.sh`](../deploy/docker/select-uhd-fpga.sh), essentially overwriting `usrp_b210_fpga.bin` under `UHD_IMAGES_DIR`:
 
 ```bash
-UHD_FPGA=compat sudo docker compose -f deploy/docker/docker-compose.yml up -d
+UHD_FPGA=compat sudo docker compose -f deploy/docker/docker-compose.bridge.yml up -d
 sudo docker exec ltesystem select-uhd-fpga compat
 sudo docker exec ltesystem select-uhd-fpga stock
 sudo docker exec ltesystem md5sum /usr/share/uhd/images/usrp_b210_fpga*.bin
@@ -54,10 +54,10 @@ sudo docker exec ltesystem bladeRF-cli -e info
 需根据型号将 `hostedx40.rbf` / `hostedxA4.rbf` / `hosted2.0micro.rbf` 放入 [`firmware/bladerf/`](../firmware/bladerf)（当前仅占位 `README.md`，有硬件后再 bake 到 `/etc/Nuand/bladeRF/`）。
 Per your model, place the `hostedx40.rbf` / `hostedxA4.rbf` / `hosted2.0micro.rbf` firmware into [`firmware/bladerf/`](../firmware/bladerf) (currently only a placeholder `README.md`; bake into `/etc/Nuand/bladeRF/` once hardware is available).
 
-## 3. `/start` 射频参数 `/start` Radio Parameters
+## 3. `/api/v1/cell` 射频参数 `/api/v1/cell` Radio Parameters
 
 ```bash
-curl -s -X POST http://192.0.2.10:8081/start \
+curl -s -X POST http://192.0.2.10:8081/api/v1/cell \
   -H 'Content-Type: application/json' \
   -d '{"band":"41","apn":"srsapn","mcc":"001","mnc":"01","network":"eth0","sdr":"auto","device_args":"auto","tx_gain":80,"rx_gain":40}' ; echo
 ```
@@ -73,16 +73,17 @@ curl -s -X POST http://192.0.2.10:8081/start \
 > `network` 是服务器 uplink 网卡名（如 `eth0`/`enpXsY`），不是 `wlo1`（旧文档的笔记本 Wi-Fi 名）。用 `ip route get 8.8.8.8` 确认。
 > `network` is the server uplink NIC name (e.g. `eth0`/`enpXsY`), not `wlo1` (the laptop Wi-Fi name from old docs). Confirm with `ip route get 8.8.8.8`.
 
-## 4. 为何必须 host + privileged + USB 映射 Why host + privileged + USB Mapping Is Required
+## 4. bridge、权限与 USB / Bridge, privileges and USB
 
 ```yaml
-network_mode: host
+# Standalone deploy/docker/docker-compose.bridge.yml
+networks: [lte-uplink]
 privileged: true
 volumes: [/dev/bus/usb:/dev/bus/usb]
 ```
 
-srsRAN 会创建 `srs_spgw_sgi` 网卡并需要宿主 uplink 接口名，bridge 网络拿不到；USRP/ACR1281U 经 `/dev/bus/usb` + `pcscd` 访问，无 `privileged` 会权限不足。开发机仅做编译，不跑射频。
-srsRAN creates the `srs_spgw_sgi` NIC and needs the host uplink interface name, which bridge networking can't provide; USRP/ACR1281U are accessed via `/dev/bus/usb` + `pcscd`, and lack of `privileged` causes permission errors. Dev machines only compile, never run radio/RF.
+本项目 EPC/eNB 在同一容器，SGi 可以创建在容器网络命名空间；使用独立 bridge 编排，出口固定 `eth0`，只发布 API TCP 8081。`network: "auto"` 在启动时解析该命名空间默认路由，不依赖宿主网卡名称。当前保留 `privileged` 和 USB 映射以兼容 TUN、实时线程及 USRP/ACR1281U；最小权限需要单独验证，host 不是 srsRAN 的硬性要求。开发机不跑射频。
+The integrated EPC/eNB creates SGi inside the container network namespace. Standalone bridge orchestration fixes the uplink to `eth0` and publishes only API TCP 8081. `network: "auto"` resolves that namespace's default route, independent of host interface names. Privileged mode and USB mapping remain for existing TUN, realtime and USRP/ACR1281U compatibility; least-privilege operation needs separate validation. Host networking is not a srsRAN requirement. Never run RF on the development machine.
 
 ## 5. 常见错误 Common Errors
 
@@ -97,4 +98,4 @@ srsRAN creates the `srs_spgw_sgi` NIC and needs the host uplink interface name, 
 | 无信号/增益异常 / No signal / abnormal gain | `tx_gain/rx_gain` 过高/低；先用 80/40，天线接 TX/RX 口 / `tx_gain/rx_gain` too high/low; start with 80/40, antennas on the TX/RX port |
 
 ---
-**导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
+**导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)

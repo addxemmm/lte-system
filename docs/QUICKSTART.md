@@ -1,95 +1,63 @@
-# 无写卡器 + 已写卡，直接入网 QUICKSTART — No Card Reader + Programmed Test SIM, Direct Network Attach
+# 快速入网 / Quick start
 
-> 本页命令用旧版根路径（最短）。新集成请用 `/api/v1` 等价接口，对照表见 `API.md §9`
-> Commands on this page use the legacy root path (shortest). For new integrations, use the equivalent `/api/v1` interfaces; see the mapping table in `API.md §9`.
-> （如 `POST /start` ↔ `POST /api/v1/cell`，`POST /basicinfo` ↔ `GET /api/v1/ue`）。
-> (e.g. `POST /start` ↔ `POST /api/v1/cell`, `POST /basicinfo` ↔ `GET /api/v1/ue`).
+只使用 `/api/v1` 标准接口。以下命令在 SDR 服务器执行；已写好的 SIM 不需要再次写卡。
+Use only the `/api/v1` standard API. Run these commands on the SDR server; an already programmed SIM does not need programming again.
 
-前提：服务器已部署（见 `DEPLOY.md`），手头白卡已写好，主配置行：
-Prerequisite: the server is already deployed (see `DEPLOY.md`), and your test SIM is already programmed. The primary configuration line is:
-
-```csv
-ue0,mil,001010123456789,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8001,000000001234,7,dynamic
-```
-
-该卡 IMSI `001010123456789` → MCC `001`、MNC `01`。**全程不需要 `/writesim`**（无读卡器时它固定返回 `message_id 2`，属正常现象）。
-The IMSI of this card `001010123456789` maps to MCC `001` and MNC `01`. **No `/writesim` is needed in the whole flow** (without a card reader it always returns `message_id 2`, which is normal).
-
-## 1. 确认种子配置已就位 Confirm Seed Configuration Is Ready（服务器上 / On Server）
+## 1. 先看现状 / Inspect first
 
 ```bash
-sudo docker exec ltesystem grep -v '^#' /data/conf/user_db.csv
-# 应看到 ue0/ue1/ue3 等多行测试用户；文件在首次 /start 时自动 seeding，
-# 若缺失则检查 lte-data 卷是否被删（docker volume ls / inspect）
+BASE=http://127.0.0.1:8081
+curl --fail "$BASE/api/v1/cell"
+curl --fail "$BASE/api/v1/profile"
+curl --fail "$BASE/api/v1/subscribers"
 ```
 
-## 2. 启动基站 Start the Self-hosted Base Station
+订户清单表示允许接入的卡，不表示当前在线。不要打印完整 `user_db.csv`，其中含认证密钥。
+The subscriber inventory lists provisioned SIMs, not current connections. Do not print the full `user_db.csv`: it contains authentication keys.
+
+## 2. 复用配置启动 / Start using the saved profile
+
+仅在小区停止时执行。`{}` 继承保存的频段、APN、DNS、增益和网络设置，避免示例覆盖已验证配置。
+Run only while the cell is stopped. `{}` inherits the saved band, APN, DNS, gains and network settings instead of overwriting a working configuration.
 
 ```bash
-curl -X POST http://127.0.0.1:8081/start -H 'Content-Type: application/json' \
-  -d '{"band":"7","apn":"srsapn","mcc":"001","mnc":"01","network":"auto","full_net_name":"MyLTE","short_net_name":"MyLTE"}'
-# {"status":true,"message_id":1,"message":"Start successfully"}
+curl --fail -X POST "$BASE/api/v1/cell" \
+  -H 'Content-Type: application/json' -d '{}'
 ```
 
-- `band` 按当地空闲频段和终端支持选（`1/3/5/7/8/34/39/40/41`）。本机（虚拟机 USB）实测推荐 `7`（FDD，射频最稳定）；TDD（`39/40/41`）eNB 能起来但上行有上游推导问题，手机先能用 7 就用 7
-  Select `band` by the local free band and UE/terminal device support (`1/3/5/7/8/34/39/40/41`). On this machine (VM USB) `7` is recommended (FDD, most stable radio/RF); TDD (`39/40/41`) eNB can start but uplink has an upstream derivation issue, so use 7 on the phone if it works
-- `network: "auto"` 按当前容器 namespace 默认 IPv4 路由选择出口；bridge 编排固定 `eth0`，无需填写宿主物理网卡名。旧 profile 有显式接口时，迁移须明确覆盖为 auto。
-  `network: "auto"` selects the current container namespace's default IPv4 uplink. Bridge fixes `eth0`, independent of the host NIC name. Explicitly override an old profile's host interface with auto when migrating.
-- `apn` 必须和终端 APN 设置一致（如 `srsapn`） / `apn` must match the APN setting on the UE/terminal device (e.g. `srsapn`)
-- 终端 DNS 经 PCO 下发，缺省配置为 `8.8.8.8`，但实际网络可能过滤它。IP 通、域名不通时，先验证 resolver，再显式设置 `dns` 为可达 IPv4 地址（`192.0.2.1` 仅为占位示例，不能直接使用）；不要填 Docker 的 loopback DNS。更改后手机重新接入。
-  UE DNS is delivered via PCO and defaults to `8.8.8.8`, which may be filtered. If IP access works but domains fail, validate a resolver and explicitly set `dns` to its reachable IPv4 address (`192.0.2.1` is only a documentation placeholder). Do not advertise Docker's loopback DNS. Reattach the handset after changing it.
-- 自定义终端显示的运营商名：加 `"full_net_name":"MyLTE","short_net_name":"MyLTE"`（默认 `srsRAN`，不传也行）
-  Carrier name shown on the UE/terminal device: add `"full_net_name":"MyLTE","short_net_name":"MyLTE"` (default `srsRAN`, optional)
+首次部署没有 profile 时，在 [API](API.md) 中填写完整启动参数。`network: "auto"` 选择当前容器的默认 IPv4 出口；bridge 内固定为 `eth0`。先验证实际 DNS 可达再配置 `dns`，不要把 Docker loopback resolver 下发给手机。
+For a first deployment without a profile, supply the initial parameters documented in [API](API.md). `network: "auto"` selects the container's default IPv4 uplink, fixed to `eth0` in bridge mode. Validate DNS reachability before setting `dns`; never advertise Docker's loopback resolver to a handset.
 
-## 3. 手机入网设置 UE Network Attach Setup
+## 3. 手机设置 / Handset setup
 
-1. 白卡插入终端，手动搜网，选中 MCC `001` MNC `01` 的网络（会显示运营商名，即你设的 `full_net_name`）
-   Insert the test SIM into the UE/terminal device, search networks manually, and select the network with MCC `001` MNC `01` (it shows the carrier name, i.e. your `full_net_name`)
-2. APN 新建：名称任意，APN 栏填与基站一致的值（如 `srsapn`），保存并选中
-   Create a new APN: any name, fill the APN field with the same value as the base station (e.g. `srsapn`), save and select it
-3. 打开数据，等待附着（一般 10–60 秒） / Turn on mobile data and wait for attach (usually 10–60 seconds)
+1. 各 SIM 使用独立 IMSI，且认证材料与订户库一致；两台设备使用同一 IMSI 会发生上下文替换，不是两个独立用户。
+   Use a distinct IMSI for each SIM with matching subscriber credentials. Reusing one IMSI on two devices replaces the subscriber context rather than creating two independent users.
+2. 选择本项目配置的测试网络。Android APN 的“名称”只是本地显示标签，可任意填写；“APN”栏才是网络标识，必须匹配服务端配置。
+   Select the configured test network. Android's APN **Name** is a local display label; the **APN** field is the network identifier that must match the server.
+3. 修改 APN 后保存并选中，关闭 Wi-Fi、开启蜂窝数据，再开关一次飞行模式，重新建立默认承载。已有承载不会因编辑 UI 字段立即改变。
+   Save/select the APN, disable Wi-Fi, enable cellular data and toggle airplane mode to establish a new default bearer. Editing a UI field does not immediately change an existing bearer.
 
-## 4. 确认入网成功 Confirm Successful Network Attach
+显式错误 APN 会被拒绝；没有发送 APN 与发送错误 APN 是不同情况，前者使用默认 APN。APN 不是用户认证密码，SIM AKA 认证仍然独立进行。该核心网提供 IPv4 数据，不提供 IMS/VoLTE 服务。
+An explicitly incorrect APN is rejected. An omitted APN selects the default and is distinct from a wrong APN. APN selection is separate from SIM AKA authentication. This core provides IPv4 data, not IMS/VoLTE.
+
+## 4. 检查多 UE 与联网 / Check multiple UEs and connectivity
 
 ```bash
-curl -X POST http://127.0.0.1:8081/basicinfo -H 'Content-Type: application/json' -d '{}'
-# 成功示例：
-# {"status":true,"message_id":1,"message":"Getting information success.",
-#  "apn":"srsapn","imsi":"001010123456789","ip":"172.16.0.2"}
+curl --fail "$BASE/api/v1/ues"
+curl --fail "$BASE/api/v1/diagnostics/connectivity"
 ```
 
-对照金样本 [`docs/samples/epc-ue-attached.log`](samples/epc-ue-attached.log)：你的实时日志
-`sudo docker exec ltesystem tail /data/log/srsLTE_epc.log` 应出现同样的
-`ESM Info: APN` → `Found User 001010123456789` → `pool ip addr` 三连。
-Compare with the golden sample [`docs/samples/epc-ue-attached.log`](samples/epc-ue-attached.log): your live log from
-`sudo docker exec ltesystem tail /data/log/srsLTE_epc.log` should show the same
-`ESM Info: APN` → `Found User 001010123456789` → `pool ip addr` triple.
+使用会话集合核对每个 IMSI 的独立 IP 和状态。配置的订户数、核心网会话数、无线连接数与实际可上网设备数不等价；历史 Attach 日志也不代表当前在线。两部手机同时通过域名打开网页，才是端到端多终端验证。
+Use the session collection to inspect each IMSI's IP and state. Provisioned subscribers, core sessions, radio connections and working Internet connections are different counts. Historical Attach logs do not prove current connectivity. Open websites by domain simultaneously on both handsets for an end-to-end multi-UE test.
 
-## 5. 抓包下载 Download Packet Capture
+若 IP 可达而域名失败，优先查 PCO DNS 和解析器；若无线掉线，查 eNB HARQ、射频时序和信号，而不是盲目扩大 PRB 或改 SIM 密钥。
+If IP connectivity works but domains fail, inspect PCO DNS and resolver reachability. For radio drops, inspect eNB HARQ, RF timing and signal quality rather than blindly increasing PRBs or changing SIM credentials.
+
+## 5. 停止 / Stop
 
 ```bash
-curl -X POST http://127.0.0.1:8081/getfile -H 'Content-Type: application/json' \
-  -d '{"fileid":0}' -o lte_data.pcap
-# fileid: 0 业务流量 / 1 S1AP / 2 eNB / 3 EPC
+curl --fail -X DELETE "$BASE/api/v1/cell"
 ```
 
-## 6. 结束 Stop
-
-```bash
-curl -X POST http://127.0.0.1:8081/stop -H 'Content-Type: application/json' -d '{}'
-```
-
-## 失败速查 Troubleshooting Quick Reference
-
-| 现象 / Symptom | 查哪里 / Where to Check |
-|---|---|
-| `/basicinfo` 返回 `3 no UE connected` / `/basicinfo` returns `3 no UE connected` | 终端没附着：检查频段/APN/搜网是否选对；`tail /data/log/srsLTE_enb.log` 看小区是否起来 / UE/terminal device not attached: check band/APN/network selection; use `tail /data/log/srsLTE_enb.log` to see if the cell is up |
-| 手机搜不到 `00101` / Phone cannot find `00101` | 按序排查：1)确认 TX 稳定（grep timed out 计数接近 0）2)手动搜网等足 3-5 分钟找数字网号 3)**优先用原厂系统手机测**（第三方 ROM 射频/搜网行为不可靠）4)换 band 3 再试 5)贴天线 0 距离还搜不到则与信号强度无关 6)iPhone 对测试卡挑剔，优先安卓/CPE / Check in order: 1) confirm TX is stable (grep timed out count near 0) 2) manual network search, wait a full 3-5 minutes for the numeric network ID 3) **prefer a phone with stock ROM for testing** (third-party ROM radio/RF/network-search behavior is unreliable) 4) retry with band 3 5) if it is still not found with the antenna at 0 distance, it is not about signal strength 6) iPhone is picky with test SIMs, prefer Android/CPE |
-| 日志 `UE Authentication Rejected` / Log shows `UE Authentication Rejected` | `user_db.csv` 的 Key/OPc 与卡内不一致，核对 ue0 行 / Key/OPc in `user_db.csv` does not match the card, check the ue0 line |
-| 反复 attach 失败 / Repeated attach failures | `SQN` 过期：把 ue0 行 `SQN` 改大一点（如 `000000001235`），重启容器再试 / `SQN` expired: increase `SQN` in the ue0 line (e.g. `000000001235`) and restart the container |
-| 能附着但不能上网 / Attached but no internet | 按顺序查：①终端 ping 网关 `172.16.0.1` ②ping `8.8.8.8` 看延迟/丢包（上行 SNR 差会导致 TCP 瘫痪，先看 `PUSCH snr`）③`nslookup` 查 DNS（上行过滤公网 DNS 时 `/start` 加 `"dns"` 参数）④仍不行看 `RULES.md` 转发链自查 / Check in order: 1) from the UE/terminal device ping the gateway `172.16.0.1` 2) ping `8.8.8.8` for latency/loss (poor uplink SNR stalls TCP, check `PUSCH snr` first) 3) `nslookup` for DNS (if uplink filters public DNS, add `"dns"` to `/start`) 4) if still failing, see the forwarding-chain self-check in `RULES.md` |
-| `/start` 返回 `4` / `/start` returns `4` | USRP 没识别：`sudo docker exec ltesystem uhd_find_devices`，见 `SDR.md` / USRP not detected: `sudo docker exec ltesystem uhd_find_devices`, see `SDR.md` |
-| 启动后 `status` 全 false / status all false right after start | eNB 初始化失败会直接报错（看 `/data/log/enb_run.log` 尾）；`lsusb` 无 B210 则重插 USB 查供电换口 / eNB init failure fails fast with the log tail; B210 missing from `lsusb` means re-plug USB and check power/port |
-
----
-**导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
+修改订户或写卡前先停止小区，防止与 EPC 的 SQN 写回竞争。升级保留数据卷和回滚镜像，详见 [DEPLOY](DEPLOY.md)。
+Stop the cell before subscriber changes or SIM programming to avoid racing EPC SQN writes. Preserve the data volume and rollback image during upgrades; see [DEPLOY](DEPLOY.md).

@@ -2,8 +2,8 @@
 
 ## Checklist
 - [ ] `go test ./...` + `go vet ./...` green
-- [ ] `docs/API.md` updated byte-exact (if API changed)
+- [ ] Standard API, `docs/API.md`, OpenAPI and Postman contracts agree
 - [ ] Related docs updated (QUICKSTART/SIM/SDR/RULES/MIGRATION as needed)
 - [ ] Server validation logs attached (required for RF/SIM changes)
 - [ ] No secrets, no `*.log`/`*.pcap`/`bin/` artifacts
-- [ ] Single concern; commit message `<scope>: <what>`
+- [ ] Scoped bilingual commits: `<scope>: <中文> / <English>`

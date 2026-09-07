@@ -14,7 +14,7 @@ labels: bug
 ## What happened
 ## Expected
 ## Logs
-- `GET /status` + `GET /healthz` output:
+- `GET /api/v1/cell` + `GET /api/v1/profile` output:
 - `docker logs ltesystem` tail (redact keys):
 - Relevant `/data/log` lines:
 

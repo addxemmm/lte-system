@@ -100,18 +100,18 @@ To minimize downtime, build before the stopped backup in section 3. Use a unique
 # If this is a Git checkout, update only with: git pull --ff-only
 # Snapshot deployments do not require a remote Git checkout.
 export LTE_IMAGE="ltesystem-dep:$RELEASE"
-docker compose -p "$PROJECT" -f deploy/docker/docker-compose.yml config --quiet
-docker compose -p "$PROJECT" -f deploy/docker/docker-compose.yml build
+docker compose -p "$PROJECT" -f deploy/docker/docker-compose.bridge.yml config --quiet
+docker compose -p "$PROJECT" -f deploy/docker/docker-compose.bridge.yml build
 # Add --env-file .env to each compose command when using private configuration.
-docker compose -p "$PROJECT" -f deploy/docker/docker-compose.yml up -d --no-build --force-recreate
+docker compose -p "$PROJECT" -f deploy/docker/docker-compose.bridge.yml up -d --no-build --force-recreate
 ACTUAL_VOLUME=$(docker inspect ltesystem --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}')
 test "$ACTUAL_VOLUME" = "$DATA_VOLUME"
 BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
 docker logs --tail 30 ltesystem
 ```
 
-冒烟仅读取 `/api/v1/cell`、`/api/v1/health` 并断言 HTTP 成功、`code=0` 和请求 ID。设置鉴权时同时给 smoke 进程设置 `LTE_API_TOKEN`。它不调用 start/stop、写卡、上传、抓包或破解。
-Smoke checks only read `/api/v1/cell` and `/api/v1/health`, asserting HTTP success, `code=0` and request IDs. Pass `LTE_API_TOKEN` to the smoke process when authentication is enabled. It never starts/stops radio, programs SIMs, uploads, captures or cracks.
+冒烟仅读取 `/api/v1/cell`、`/api/v1/profile` 并断言 HTTP 成功、`code=0` 和请求 ID。设置鉴权时同时给 smoke 进程设置 `LTE_API_TOKEN`。它不调用 start/stop、写卡、上传、抓包或破解。
+Smoke checks only read `/api/v1/cell` and `/api/v1/profile`, asserting HTTP success, `code=0` and request IDs. Pass `LTE_API_TOKEN` to the smoke process when authentication is enabled. It never starts/stops radio, programs SIMs, uploads, captures or cracks.
 
 容器启动只启动 API，不自动启动 LTE 小区；硬件入网测试另行执行。SIGTERM 时 API 最多排空 200 秒，Compose 等待 210 秒，覆盖 180 秒写卡请求。
 Container startup starts the API only, not the LTE cell. Hardware attach validation is separate. API SIGTERM draining allows 200 seconds and Compose waits 210 seconds, covering 180-second SIM requests.
@@ -120,7 +120,7 @@ Container startup starts the API only, not the LTE cell. Hardware attach validat
 
 ```bash
 export LTE_IMAGE="ltesystem-dep:rollback-$RELEASE"
-docker compose -p "$PROJECT" -f deploy/docker/docker-compose.yml up -d --no-build --force-recreate
+docker compose -p "$PROJECT" -f deploy/docker/docker-compose.bridge.yml up -d --no-build --force-recreate
 BASE=http://127.0.0.1:8081 bash scripts/smoke.sh
 ```
 

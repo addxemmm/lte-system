@@ -1,4 +1,7 @@
-# 架构说明：v1.x（Python）→ v2.x（Go + srsRAN_4G） Architecture: v1.x (Python) to v2.x (Go + srsRAN_4G)
+# 架构与迁移 / Architecture and migration
+
+> 当前版本为 3.0，只保留标准 `/api/v1`。以下 v1→v2 对照是历史记录，不代表旧接口仍可调用；最新变更见文末。
+> Version 3.0 exposes only standard `/api/v1`. The v1→v2 comparison below is historical, not an active legacy API contract; see the latest changes at the end.
 
 v1.x 实现已移出工作树，见 git 标签 `archive/v1-python`（HTTP 服务 + `run.sh`/`stop.sh` 脚本 + 守护配置），下表是两代实现的对照：
 
@@ -70,4 +73,20 @@ Additional-PDN rejection fixes message/inner-ESM decoding and response security 
 See [network diagnostics](NETWORK_DIAGNOSTICS_2026-09-07.md) for DNS evidence, limitations, validation and release records; [DEPLOY](DEPLOY.md) covers migration and coordinated rollback.
 
 ---
-**导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [旧版API Legacy](API_LEGACY.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
+**导航 Navigation:** [文档索引 Docs](README.md) · [QUICKSTART](QUICKSTART.md) · [RULES](RULES.md) · [API v1](API.md) · [DEPLOY](DEPLOY.md) · [SIM](SIM.md) · [SDR](SDR.md) · [MIGRATION](MIGRATION.md)
+
+## 3.0：多终端与标准接口 / Multi-UE and standard-only API
+
+- 根路径旧 API 和 `/api/v1/ue` 已删除；迁移到 `/api/v1/ues`、按 IMSI 查询、`/api/v1/subscribers` 和 `/api/v1/network`。删除旧 Postman 集合后导入新版。
+  Legacy root APIs and `/api/v1/ue` are removed; migrate to UE collections, IMSI lookup, subscriber management and network planning. Replace old imported Postman collections.
+- 当前会话快照取代单条日志推断，严格 APN 策略阻止显式错误值；手机实际 APN 与配置匹配，显示名称可自定义。
+  Current session snapshots replace singleton log inference. Strict APN policy rejects explicit mismatches; configure the actual APN, not merely its display label.
+- 默认 UE 互相隔离，支持配置私网 /24；保留 bridge、持久化数据和兼容 FPGA。订户/写卡变更必须停站；不强制改写认证 SQN。
+  UEs are peer-isolated by default with a configurable private /24. Keep bridge, persistent data and compatible FPGA. Subscriber/SIM mutations require a stopped cell and must not force-rewrite SQNs.
+- 接口精确字段见 [API](API.md)，边界与验证见 [多终端报告](MULTI_UE_2026-09-07.md)。
+  See [API](API.md) for schemas and the [multi-UE report](MULTI_UE_2026-09-07.md) for scope and validation.
+
+### 3.0 发布交接 / Release handoff
+
+新镜像 `ltesystem-dep:multiue-apn-20260907` 已发布，bridge/8081/BlackSDR 保持，实际同一快照观察到 2 台注册 UE 与独立地址；手机同时域名浏览的用户确认待补。当前开发分支 `folk/multi-ue-apn` 在服务器验证后合回 `master`；构建日志、私有数据备份和原始会话 JSON 仅在服务器，详见 [多终端报告](MULTI_UE_2026-09-07.md)。不自动写卡或改射频参数；后续先读 git log、本文件和 AGENTS。
+The new image is deployed with bridge/8081/BlackSDR preserved. Two real registered UEs and distinct addresses were observed in one current snapshot; user confirmation of simultaneous browsing remains pending. The tested folk branch is merged into master after server validation. Build logs/private backups/raw session evidence stay on the server; see the report. Do not automatically program SIMs or change RF settings; read git log, this file and AGENTS before continuing.

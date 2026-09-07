@@ -36,3 +36,4 @@ configs/app.yaml
 !docs/samples/*.log
 
 /.codex-go-cache*/
+ue-sessions.json

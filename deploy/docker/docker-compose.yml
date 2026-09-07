@@ -7,7 +7,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-    image: ${LTE_IMAGE:-ltesystem-dep:2.0}
+    image: ${LTE_IMAGE:-ltesystem-dep:3.0}
     container_name: ltesystem
     network_mode: host
     privileged: true
