@@ -11,6 +11,7 @@
 | [SDR.md](SDR.md) | B210（正版/兼容板 FPGA 切换）与 bladeRF / B210 (genuine/compatible board FPGA switching) and bladeRF |
 | [MIGRATION.md](MIGRATION.md) | 旧 Python 版 → Go 版对照 / Old Python vs Go version mapping |
 | [MULTI_UE_2026-09-07.md](MULTI_UE_2026-09-07.md) | 3.0 多终端、严格 APN、网络策略与发布验证 / 3.0 multi-UE, strict APN, network policy and release validation |
+| [RADIO_STABILITY_2026-09-07.md](RADIO_STABILITY_2026-09-07.md) | 小米偶发无服务、日志减负、APN 拒绝语义与只读 Postman 验证 / Intermittent Xiaomi service loss, logging load, APN rejection semantics and read-only Postman validation |
 | [UE_DIAGNOSTICS_2026-09-06.md](UE_DIAGNOSTICS_2026-09-06.md) | 手机入网、NAS 互通缺陷与射频 A–B–A 证据 / Handset registration, NAS interoperability defects and RF A–B–A evidence |
 | [images/](images/) | 架构图（`ltesystem.png` 全量 / `ltesystem-easy.png` 简版）与写卡参数图 / Architecture diagrams and SIM-writing parameter figures |
 | [samples/](samples/) | 真机样本：成功入网 EPC 日志、`atr-*.txt`（白卡 ATR） / Real-device samples: successful network-entry EPC logs, `atr-*.txt` (test-SIM ATR) |
