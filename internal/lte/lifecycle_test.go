@@ -29,6 +29,17 @@ func TestMain(m *testing.M) {
 		if mode == "absent" && slices.Contains(os.Args[1:], "-C") {
 			os.Exit(1)
 		}
+		if mode == "checkfail" && slices.Contains(os.Args[1:], "-C") {
+			os.Exit(2)
+		}
+		if fail := os.Getenv("LTE_TEST_IPTABLES_FAIL_CONTAINS"); fail != "" &&
+			slices.Contains(os.Args[1:], "-I") && strings.Contains(strings.Join(os.Args[1:], " "), fail) {
+			os.Exit(2)
+		}
+		if fail := os.Getenv("LTE_TEST_IPTABLES_FAIL_DELETE_CONTAINS"); fail != "" &&
+			slices.Contains(os.Args[1:], "-D") && strings.Contains(strings.Join(os.Args[1:], " "), fail) {
+			os.Exit(2)
+		}
 		os.Exit(0)
 	}
 	switch os.Getenv("LTE_TEST_HELPER_MODE") {
@@ -180,6 +191,7 @@ func TestStopCleansOnlyRecordedNetworkRules(t *testing.T) {
 }
 
 func TestStartCancellationRollsBack(t *testing.T) {
+	installNetworkFiles(t, fixtureRoutes(), "1\n", "eth0", "slow0")
 	epcHelper := copyHelper(t, "srsepc")
 	enbHelper := copyHelper(t, "srsenb")
 	tcpdumpHelper := copyHelper(t, "tcpdump")
@@ -210,7 +222,7 @@ func TestStartCancellationRollsBack(t *testing.T) {
 	go func() {
 		_, err := m.Start(ctx, StartParams{
 			Band: "7", APN: "test", MCC: "001", MNC: "01",
-			Network: "lo", SDR: "zmq",
+			Network: "eth0", SDR: "zmq",
 		})
 		result <- err
 	}()
@@ -252,8 +264,8 @@ func TestStartCancellationRollsBack(t *testing.T) {
 			deletes++
 		}
 	}
-	if deletes != 4 {
-		t.Fatalf("rollback should delete its NAT and 3 forwarding rules; got %d:\n%s", deletes, b)
+	if deletes != 5 {
+		t.Fatalf("rollback should delete its NAT and 4 forwarding rules; got %d:\n%s", deletes, b)
 	}
 }
 

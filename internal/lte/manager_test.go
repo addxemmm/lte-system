@@ -26,6 +26,18 @@ func TestStartParams_Validate(t *testing.T) {
 	if err := inject.Validate(); err == nil {
 		t.Fatal("expected apn injection error")
 	}
+	auto := ok
+	auto.Network = ""
+	if err := auto.Validate(); err != nil {
+		t.Fatalf("empty network should mean auto: %v", err)
+	}
+	for _, invalid := range []string{"eth 0", "../../host", "0123456789abcdef", "eth0;bad"} {
+		p := ok
+		p.Network = invalid
+		if err := p.Validate(); err == nil {
+			t.Fatalf("invalid interface %q accepted", invalid)
+		}
+	}
 }
 
 func TestStartParams_NetName(t *testing.T) {
@@ -132,19 +144,25 @@ func TestValidIPv4(t *testing.T) {
 }
 
 func TestForwardRules(t *testing.T) {
-
-	rules := forwardRules()
-	if len(rules) != 3 {
-		t.Fatalf("want 3 rules, got %d", len(rules))
+	rules := forwardRules("eth9")
+	if len(rules) != 4 {
+		t.Fatalf("want 4 rules, got %d", len(rules))
 	}
 	joined := ""
 	for _, r := range rules {
-		joined += r.chain + " " + strings.Join(r.args, " ") + "\n"
+		joined += r.table + " " + r.chain + " " + strings.Join(r.args, " ") + "\n"
 	}
-	for _, want := range []string{"DOCKER-USER", "172.16.0.0/24", "TCPMSS"} {
+	for _, want := range []string{"filter FORWARD -i srs_spgw_sgi -s 172.16.0.0/24 -o eth9 -j ACCEPT",
+		"--ctstate ESTABLISHED,RELATED", "mangle FORWARD", "TCPMSS"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("rules missing %q:\n%s", want, joined)
 		}
+	}
+	if strings.Contains(joined, "DOCKER-USER") {
+		t.Fatalf("bridge-safe rules must not depend on DOCKER-USER:\n%s", joined)
+	}
+	if got := strings.Join(rules[2].commandArgs("-I"), " "); got != "-w 5 -t mangle -I FORWARD -i srs_spgw_sgi -s 172.16.0.0/24 -o eth9 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu" {
+		t.Fatalf("wrong iptables ordering (MSS would not apply): %s", got)
 	}
 }
 
@@ -204,5 +222,10 @@ func TestProfile_SaveLoadOverlay(t *testing.T) {
 	_ = os.WriteFile(m.ProfilePath(), []byte("{nope"), 0o644)
 	if _, ok := m.LoadProfile(); ok {
 		t.Fatal("corrupt profile should be rejected")
+	}
+	legacy := `{"band":"7","apn":"addxLTE","mcc":"001","mnc":"01"}`
+	_ = os.WriteFile(m.ProfilePath(), []byte(legacy), 0o644)
+	if p, ok := m.LoadProfile(); !ok || p.Network != "auto" {
+		t.Fatalf("legacy empty network should upgrade to auto: %v %+v", ok, p)
 	}
 }

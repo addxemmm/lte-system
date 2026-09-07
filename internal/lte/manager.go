@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"text/template"
@@ -42,8 +43,7 @@ type StartParams struct {
 // Validate checks legacy "incomplete parameters" + new field formats.
 func (p StartParams) Validate() error {
 	if strings.TrimSpace(p.Band) == "" || strings.TrimSpace(p.APN) == "" ||
-		strings.TrimSpace(p.MCC) == "" || strings.TrimSpace(p.MNC) == "" ||
-		strings.TrimSpace(p.Network) == "" {
+		strings.TrimSpace(p.MCC) == "" || strings.TrimSpace(p.MNC) == "" {
 		return fmt.Errorf("incomplete parameters")
 	}
 	if len(p.MCC) != 3 || !isDigits(p.MCC) {
@@ -55,8 +55,9 @@ func (p StartParams) Validate() error {
 	if strings.ContainsAny(p.APN, " \t\n\r\"';&|<>$`\\") {
 		return fmt.Errorf("apn contains illegal characters")
 	}
-	if strings.ContainsAny(p.Network, " \t\n\r\"';&|<>$`\\") {
-		return fmt.Errorf("network contains illegal characters")
+	network := strings.TrimSpace(p.Network)
+	if network != "" && network != "auto" && !validInterfaceName(network) {
+		return fmt.Errorf("network is not a valid interface name")
 	}
 	if err := validateNetName(p.FullNetName); err != nil {
 		return fmt.Errorf("full_net_name: %w", err)
@@ -99,9 +100,15 @@ func isDigits(s string) bool {
 // checkIface verifies the uplink interface exists. Skipped where the
 // sysfs network view is absent (non-Linux dev machines running unit tests).
 func checkIface(name string) error {
-	entries, err := os.ReadDir("/sys/class/net")
-	if err != nil || len(entries) == 0 {
-		return nil
+	entries, err := os.ReadDir(netInterfaceDir)
+	if err != nil {
+		if runtime.GOOS != "linux" && os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect network interfaces: %w", err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("network interface list is empty")
 	}
 	for _, e := range entries {
 		if e.Name() == name {
@@ -151,9 +158,9 @@ type Manager struct {
 
 	startedAt time.Time
 	lastStart StartParams
-	// lastNetwork snapshots the uplink iface of the current run so Stop
-	// removes the right NAT rule even if params change later. Cleared on
-	// successful Stop.
+	// lastNetwork snapshots the resolved uplink iface of the current run so
+	// Stop removes the right rules even when the persisted policy is "auto".
+	// It is cleared on successful Stop and is never written into the profile.
 	lastNetwork     string
 	natOwned        bool
 	forwardingOwned []iptRule
@@ -173,14 +180,16 @@ func New(cfg config.Config) *Manager { return &Manager{cfg: cfg} }
 
 // Status is the machine-readable state for /status and /healthz.
 type Status struct {
-	Running   bool       `json:"running"`
-	EPC       bool       `json:"epc"`
-	ENB       bool       `json:"enb"`
-	Pcap      bool       `json:"pcap"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	Band      string     `json:"band,omitempty"`
-	APN       string     `json:"apn,omitempty"`
-	NetName   string     `json:"net_name,omitempty"`
+	Running         bool       `json:"running"`
+	EPC             bool       `json:"epc"`
+	ENB             bool       `json:"enb"`
+	Pcap            bool       `json:"pcap"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	Band            string     `json:"band,omitempty"`
+	APN             string     `json:"apn,omitempty"`
+	NetName         string     `json:"net_name,omitempty"`
+	Network         string     `json:"network,omitempty"`
+	ResolvedNetwork string     `json:"resolved_network,omitempty"`
 }
 
 // IsRunning reports live state. Only non-zombie, non-exited processes
@@ -199,13 +208,19 @@ func (m *Manager) IsRunning() Status {
 		st.Band = m.lastStart.Band
 		st.APN = m.lastStart.APN
 		st.NetName = m.lastStart.FullNetName
+		st.Network = m.lastStart.Network
+		st.ResolvedNetwork = m.lastNetwork
 	}
 	return st
 }
 
-// Start renders configs and launches srsepc -> iptables -> srsenb -> tcpdump.
+// Start renders configs and launches iptables -> srsepc -> srsenb -> tcpdump.
 // It mirrors legacy run.sh but fixes the hard-coded srsenb path and adds SDR choice.
 func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err error) {
+	p.Network = strings.TrimSpace(p.Network)
+	if p.Network == "" {
+		p.Network = "auto"
+	}
 	if err := p.Validate(); err != nil {
 		return false, err
 	}
@@ -218,13 +233,19 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	// Clear handles/rules left by a run whose children all exited naturally.
 	// Foreign same-name processes are never adopted or stopped.
 	if m.hasLifecycleLocked() {
-		m.stopLocked()
+		if !m.stopLocked() {
+			return false, fmt.Errorf("previous owned processes or network rules could not be cleaned up")
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if err := checkIface(p.Network); err != nil {
-		return false, err
+	resolvedNetwork, err := resolveNetwork(p.Network)
+	if err != nil {
+		return false, fmt.Errorf("resolve uplink network %q: %w", p.Network, err)
+	}
+	if err := requireIPv4Forwarding(); err != nil {
+		return false, fmt.Errorf("network preflight: %w", err)
 	}
 	if err := m.cfg.EnsureDirs(); err != nil {
 		return false, err
@@ -279,6 +300,26 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, err
 	}
 
+	// Network policy is established before either LTE process is started, so
+	// permissions, xtables locking and forwarding failures cannot surface only
+	// after RF transmission begins. Each helper reports exactly which rules it
+	// inserted; rollback removes those rules and leaves pre-existing host rules.
+	m.lastNetwork = resolvedNetwork
+	m.natOwned, err = ensureRule(ctx, natRule(resolvedNetwork))
+	if err != nil {
+		m.stopLocked()
+		return known, fmt.Errorf("configure UE NAT on %q: %w", resolvedNetwork, err)
+	}
+	m.forwardingOwned, err = ensureForwarding(ctx, resolvedNetwork)
+	if err != nil {
+		m.stopLocked()
+		return known, fmt.Errorf("configure UE forwarding on %q: %w", resolvedNetwork, err)
+	}
+	if err := ctx.Err(); err != nil {
+		m.stopLocked()
+		return known, err
+	}
+
 	epcConf := filepath.Join(m.cfg.ConfDir, "epc_run.conf")
 	enbConf := filepath.Join(m.cfg.ConfDir, "enb_run.conf")
 	epcRunLog := filepath.Join(m.cfg.LogDir, "epc_run.log")
@@ -287,6 +328,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	// 1. srsepc
 	epcLogF, err := os.Create(epcRunLog)
 	if err != nil {
+		m.stopLocked()
 		return known, err
 	}
 	epcCmd := exec.CommandContext(context.Background(), m.cfg.SrsEPCBin, epcConf)
@@ -297,6 +339,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	// retain its parent copy for the lifetime of the cell.
 	_ = epcLogF.Close()
 	if err != nil {
+		m.stopLocked()
 		return known, fmt.Errorf("start epc: %w", err)
 	}
 	m.epcCmd = epc
@@ -309,25 +352,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, fmt.Errorf("epc exited early, see %s", epcRunLog)
 	}
 
-	// 2. NAT for UE subnet via the uplink interface (legacy iptables rule,
-	// added once: skip when already present).
-	if exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING",
-		"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run() != nil {
-		if exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
-			"-s", "172.16.0.1/24", "-o", p.Network, "-j", "MASQUERADE").Run() == nil {
-			m.lastNetwork = p.Network
-			m.natOwned = true
-		}
-	}
-	// 2b. UE-subnet forwarding on Docker-managed hosts (FORWARD defaults
-	// to DROP) + TCP MSS clamp for the GTP path.
-	m.forwardingOwned = ensureForwarding()
-	if err := ctx.Err(); err != nil {
-		m.stopLocked()
-		return known, err
-	}
-
-	// 3. srsenb
+	// 2. srsenb
 	enbLogF, err := os.Create(enbRunLog)
 	if err != nil {
 		m.stopLocked()
@@ -354,7 +379,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, fmt.Errorf("enb exited early: %s", tailFile(enbRunLog, 5))
 	}
 
-	// 4. traffic capture on the SGi interface (best-effort).
+	// 3. traffic capture on the SGi interface (best-effort).
 	pcapPath := m.cfg.LogPath(m.cfg.PcapLTEData)
 	pcapCmd := exec.CommandContext(context.Background(), m.cfg.TcpdumpBin,
 		"-i", "srs_spgw_sgi", "-w", pcapPath)
@@ -364,7 +389,6 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 
 	m.startedAt = time.Now()
 	m.lastStart = p
-	m.lastNetwork = p.Network
 	m.lastBand = band
 	m.bandKnown = known
 	_ = m.SaveProfile(p) // best-effort: next /start {} reuses it
@@ -376,7 +400,8 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 // stateful files).
 func (m *Manager) ProfilePath() string { return filepath.Join(m.cfg.DataDir, "last_start.json") }
 
-// SaveProfile persists resolved start params (atomic tmp+rename).
+// SaveProfile persists effective start params while retaining the "auto"
+// uplink policy rather than the interface it happened to resolve to.
 func (m *Manager) SaveProfile(p StartParams) error {
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -389,8 +414,8 @@ func (m *Manager) SaveProfile(p StartParams) error {
 	return os.Rename(tmp, m.ProfilePath())
 }
 
-// LoadProfile reads the persisted launch config. ok=false when absent,
-// corrupt, or missing the five required fields.
+// LoadProfile reads the persisted launch config. Empty network values from
+// older profiles are upgraded in memory to the "auto" policy.
 func (m *Manager) LoadProfile() (p StartParams, ok bool) {
 	b, err := os.ReadFile(m.ProfilePath())
 	if err != nil {
@@ -401,9 +426,11 @@ func (m *Manager) LoadProfile() (p StartParams, ok bool) {
 		return StartParams{}, false
 	}
 	if strings.TrimSpace(v.Band) == "" || strings.TrimSpace(v.APN) == "" ||
-		strings.TrimSpace(v.MCC) == "" || strings.TrimSpace(v.MNC) == "" ||
-		strings.TrimSpace(v.Network) == "" {
+		strings.TrimSpace(v.MCC) == "" || strings.TrimSpace(v.MNC) == "" {
 		return StartParams{}, false
+	}
+	if strings.TrimSpace(v.Network) == "" {
+		v.Network = "auto"
 	}
 	return v, true
 }
@@ -469,9 +496,8 @@ func (m *Manager) Stop() bool {
 }
 
 // deleteNAT removes the single MASQUERADE rule recorded as ours.
-func deleteNAT(iface string) {
-	_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
-		"-s", "172.16.0.1/24", "-o", iface, "-j", "MASQUERADE").Run()
+func deleteNAT(iface string) error {
+	return deleteOwnedRule(natRule(iface))
 }
 
 func (m *Manager) stopLocked() bool {
@@ -488,14 +514,16 @@ func (m *Manager) stopLocked() bool {
 		m.epcCmd = nil
 	}
 	if m.natOwned && m.lastNetwork != "" {
-		deleteNAT(m.lastNetwork)
+		if deleteNAT(m.lastNetwork) == nil {
+			m.natOwned = false
+		}
 	}
-	cleanupForwarding(m.forwardingOwned)
-	m.lastNetwork = ""
-	m.natOwned = false
-	m.forwardingOwned = nil
+	m.forwardingOwned = cleanupForwarding(m.forwardingOwned)
+	if !m.natOwned && len(m.forwardingOwned) == 0 {
+		m.lastNetwork = ""
+	}
 	m.startedAt = time.Time{}
-	return !m.anyAliveLocked()
+	return !m.anyAliveLocked() && !m.natOwned && len(m.forwardingOwned) == 0
 }
 
 func (m *Manager) anyAliveLocked() bool {
@@ -565,12 +593,8 @@ func waitForInit(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-// ueSubnet is the SPGW UE pool. NAT keeps the legacy 172.16.0.1/24 spelling;
-// new rules use the canonical /24 form (same network).
-const (
-	ueSubnetLegacy = "172.16.0.1/24"
-	ueSubnet       = "172.16.0.0/24"
-)
+// ueSubnet is the canonical /24 spelling of the SPGW UE pool.
+const ueSubnet = "172.16.0.0/24"
 
 // iptRule is one iptables rule (filter table when table == "").
 type iptRule struct {
@@ -579,54 +603,106 @@ type iptRule struct {
 	args  []string
 }
 
-// forwardRules returns the UE-subnet rules every /start must ensure:
-// DOCKER-USER ACCEPTs (Docker >= 24 defaults FORWARD to DROP, which silently
-// kills UE traffic even with MASQUERADE in place) + TCP MSS clamp for TCP
-// over the GTP path.
-func forwardRules() []iptRule {
+// forwardRules returns the precise UE-subnet rules every /start must ensure:
+// forwarding is limited to SGi<->uplink, unsolicited inbound packets are not
+// accepted, and TCP MSS is clamped in both directions over the GTP path.
+func forwardRules(uplink ...string) []iptRule {
+	iface := "UPLINK"
+	if len(uplink) != 0 && uplink[0] != "" {
+		iface = uplink[0]
+	}
 	return []iptRule{
-		{"", "DOCKER-USER", []string{"-s", ueSubnet, "-j", "ACCEPT"}},
-		{"", "DOCKER-USER", []string{"-d", ueSubnet, "-j", "ACCEPT"}},
-		{"mangle", "FORWARD", []string{"-s", ueSubnet, "-p", "tcp",
+		{"filter", "FORWARD", []string{"-i", sgiInterface, "-s", ueSubnet,
+			"-o", iface, "-j", "ACCEPT"}},
+		{"filter", "FORWARD", []string{"-i", iface, "-o", sgiInterface,
+			"-d", ueSubnet, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"}},
+		{"mangle", "FORWARD", []string{"-i", sgiInterface, "-s", ueSubnet,
+			"-o", iface, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN",
+			"-j", "TCPMSS", "--clamp-mss-to-pmtu"}},
+		{"mangle", "FORWARD", []string{"-i", iface, "-o", sgiInterface,
+			"-d", ueSubnet, "-p", "tcp",
 			"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}},
 	}
 }
 
-func (r iptRule) baseArgs() []string {
-	a := []string{}
-	if r.table != "" {
-		a = append(a, "-t", r.table)
-	}
-	return append(a, r.chain)
+func natRule(iface string) iptRule {
+	return iptRule{"nat", "POSTROUTING", []string{"-s", ueSubnet,
+		"-o", iface, "-j", "MASQUERADE"}}
 }
 
-func (r iptRule) run(op string) error {
-	argv := append([]string{}, op)
-	argv = append(argv, r.baseArgs()...)
-	argv = append(argv, r.args...)
-	return exec.Command("iptables", argv...).Run()
+func (r iptRule) commandArgs(op string) []string {
+	a := []string{"-w", iptablesWaitSeconds}
+	if r.table != "" && r.table != "filter" {
+		a = append(a, "-t", r.table)
+	}
+	a = append(a, op, r.chain)
+	return append(a, r.args...)
+}
+
+func (r iptRule) run(ctx context.Context, op string) error {
+	_, err := runNetworkCommand(ctx, "iptables", r.commandArgs(op)...)
+	return err
+}
+
+// ensureRule inserts a missing rule at the head of its chain. Inserting (not
+// appending) is required because host and Docker policies may end in an early
+// DROP or RETURN. A successful -C preserves pre-existing rules as unowned.
+func ensureRule(ctx context.Context, r iptRule) (bool, error) {
+	out, err := runNetworkCommand(ctx, "iptables", r.commandArgs("-C")...)
+	if err == nil {
+		return false, nil
+	}
+	if !isMissingRule(out, err) {
+		return false, fmt.Errorf("check existing rule: %w", err)
+	}
+	if err := r.run(ctx, "-I"); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ensureForwarding adds missing rules and returns exactly the rules added by
 // this invocation. Stop must not delete a pre-existing host rule.
-func ensureForwarding() []iptRule {
+func ensureForwarding(ctx context.Context, uplink string) ([]iptRule, error) {
 	var added []iptRule
-	for _, r := range forwardRules() {
-		check := append([]string{"-C"}, r.baseArgs()...)
-		check = append(check, r.args...)
-		if exec.Command("iptables", check...).Run() != nil {
-			if r.run("-A") == nil {
-				added = append(added, r)
-			}
+	for _, r := range forwardRules(uplink) {
+		owned, err := ensureRule(ctx, r)
+		if err != nil {
+			return added, err
+		}
+		if owned {
+			added = append(added, r)
 		}
 	}
-	return added
+	return added, nil
 }
 
-// cleanupForwarding removes only rules recorded as added by this Manager.
-func cleanupForwarding(owned []iptRule) {
-	for _, r := range owned {
-		_ = r.run("-D")
+// cleanupForwarding removes only rules recorded as added by this Manager and
+// returns rules that could not be removed. Each deletion gets its own bounded
+// command so one xtables lock timeout does not discard later ownership.
+func cleanupForwarding(owned []iptRule) []iptRule {
+	var remaining []iptRule
+	for i := len(owned) - 1; i >= 0; i-- {
+		if err := deleteOwnedRule(owned[i]); err != nil {
+			remaining = append(remaining, owned[i])
+		}
+	}
+	// Preserve original insertion order for subsequent cleanup attempts.
+	for i, j := 0, len(remaining)-1; i < j; i, j = i+1, j-1 {
+		remaining[i], remaining[j] = remaining[j], remaining[i]
+	}
+	return remaining
+}
+
+func deleteOwnedRule(rule iptRule) error {
+	if err := rule.run(context.Background(), "-D"); err == nil {
+		return nil
+	} else {
+		out, checkErr := runNetworkCommand(context.Background(), "iptables", rule.commandArgs("-C")...)
+		if isMissingRule(out, checkErr) {
+			return nil
+		}
+		return err
 	}
 }
 
