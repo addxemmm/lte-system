@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -61,7 +63,8 @@ func TestV1_MethodNotAllowed(t *testing.T) {
 	}
 	probe := map[string]string{ // one path per group is enough
 		"/api/v1/cell": "PATCH", "/api/v1/ue": "POST",
-		"/api/v1/crack/jobs": "GET", "/api/v1/crack/result": "DELETE",
+		"/api/v1/diagnostics/connectivity": "POST",
+		"/api/v1/crack/jobs":               "GET", "/api/v1/crack/result": "DELETE",
 		"/api/v1/config/subscribers": "GET", "/api/v1/config/wordlist": "DELETE",
 		"/api/v1/captures/lte-data": "POST", "/api/v1/simcards": "GET",
 		"/api/v1/profile": "POST", "/api/v1/health": "POST",
@@ -76,6 +79,143 @@ func TestV1_MethodNotAllowed(t *testing.T) {
 		if rec.Code != 405 || decodeEnvelope(t, rec)["code"] != float64(40501) {
 			t.Fatalf("%s %s: want 405 got %d (%s)", method, path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestV1_ConnectivityDiagnosticsIsReadOnlyAndCredentialFree(t *testing.T) {
+	s, cfg := testServer(t)
+	logBody := "Attach request -- eNB-UE S1AP Id: 1\n" +
+		"Attach Request -- IMSI: 001019876543210\n" +
+		"UE Authentication Accepted.\n" +
+		"Security Mode Command Complete -- IMSI: 001019876543210\n" +
+		"SPGW: get_new_ue_ipv4 pool ip addr 172.16.0.2\n" +
+		"UL NAS: Received Attach Complete\n" +
+		"Activated EPS Bearer: Bearer id 5\n"
+	if err := os.WriteFile(cfg.LogPath(cfg.EPCLogName), []byte(logBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/connectivity", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diagnostics must return partial evidence as 200: %d %s", rec.Code, rec.Body.String())
+	}
+	m := decodeEnvelope(t, rec)
+	data, ok := m["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing diagnostic data: %v", m)
+	}
+	registration, _ := data["registration"].(map[string]any)
+	if registration["state"] != "attach_complete_observed" || registration["scope"] != "aggregate_only" {
+		t.Fatalf("unexpected registration evidence: %v", registration)
+	}
+	pdn, _ := data["pdn"].(map[string]any)
+	if pdn["state"] != "bearer_activation_observed" {
+		t.Fatalf("unexpected PDN evidence: %v", pdn)
+	}
+	body := rec.Body.String()
+	for _, secret := range []string{"001019876543210", `"username"`, `"hash"`, `"password"`} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("diagnostics exposed credential/subscriber data %q: %s", secret, body)
+		}
+	}
+	if s.mgr.IsRunning().Running {
+		t.Fatal("read-only diagnostics changed cell state")
+	}
+}
+
+func TestV1_CrackDistinguishesMissingCapture(t *testing.T) {
+	s, cfg := testServer(t)
+	if err := os.WriteFile(cfg.LogPath(cfg.EPCLogName), []byte("ESM Info: APN test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	m := decodeEnvelope(t, rec)
+	data, _ := m["data"].(map[string]any)
+	if rec.Code != http.StatusPreconditionFailed || m["code"] != float64(CodePrecondition) ||
+		data["reason"] != "capture_missing" {
+		t.Fatalf("missing capture must not be reported as no handshake: %d %v", rec.Code, m)
+	}
+}
+
+func TestV1_CrackDistinguishesMissingTsharkAndUndecodableCapture(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		bin        func(configDir string) string
+		wantHTTP   int
+		wantCode   int
+		wantReason string
+	}{
+		{
+			name:     "missing tshark",
+			bin:      func(dir string) string { return filepath.Join(dir, "missing-tshark") },
+			wantHTTP: http.StatusServiceUnavailable, wantCode: CodeDependency, wantReason: "tshark_missing",
+		},
+		{
+			name: "undecodable capture",
+			// The Go test binary rejects tshark flags and exits non-zero. This is
+			// a portable subprocess fixture for the decoder-failure path.
+			bin:      func(string) string { return os.Args[0] },
+			wantHTTP: http.StatusUnprocessableEntity, wantCode: CodeUnprocessable, wantReason: "capture_decode_failed",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, cfg := testServer(t)
+			s.cfg.TsharkBin = tc.bin(cfg.DataDir)
+			if err := os.WriteFile(cfg.LogPath(cfg.EPCLogName), []byte("ESM Info: APN test\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(cfg.LogPath(cfg.PcapS1AP), []byte("partial pcap"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs", nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			m := decodeEnvelope(t, rec)
+			data, _ := m["data"].(map[string]any)
+			if rec.Code != tc.wantHTTP || m["code"] != float64(tc.wantCode) || data["reason"] != tc.wantReason {
+				t.Fatalf("unexpected classification: %d %v", rec.Code, m)
+			}
+		})
+	}
+}
+
+func TestV1_ConnectivityDiagnosticsHonorsAuth(t *testing.T) {
+	t.Setenv("LTE_API_TOKEN", "diagnostic-secret")
+	s, _ := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/connectivity", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized || decodeEnvelope(t, rec)["code"] != float64(CodeUnauthorized) {
+		t.Fatalf("unauthorized diagnostic request passed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/connectivity", nil)
+	req.Header.Set("Authorization", "Bearer diagnostic-secret")
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || decodeEnvelope(t, rec)["code"] != float64(CodeOK) {
+		t.Fatalf("authorized diagnostic request failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestV1_ConnectivityDiagnosticsRejectsConcurrentRun(t *testing.T) {
+	s, _ := testServer(t)
+	// Deterministically represent one in-flight diagnostic without starting
+	// subprocesses; the non-blocking gate is the concurrency contract.
+	s.diagGate <- struct{}{}
+	defer func() { <-s.diagGate }()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/connectivity", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	m := decodeEnvelope(t, rec)
+	data, _ := m["data"].(map[string]any)
+	if rec.Code != http.StatusTooManyRequests || m["code"] != float64(CodeTooManyRequests) ||
+		data["reason"] != "diagnostic_busy" {
+		t.Fatalf("concurrent diagnostic was not rejected: %d %v", rec.Code, m)
 	}
 }
 

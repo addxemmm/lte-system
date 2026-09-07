@@ -5,15 +5,16 @@ package parser
 
 import (
 	"bufio"
+	"net/netip"
 	"os"
 	"strings"
 )
 
 // UEInfo is the first-attached UE summary (legacy only reported the first UE).
 type UEInfo struct {
-	APN  string
-	IMSI string
-	IP   string
+	APN   string
+	IMSI  string
+	IP    string
 	Found bool
 }
 
@@ -38,10 +39,6 @@ func ParseEPCLog(path string) (UEInfo, error) {
 		}
 		if strings.Contains(line, "Found User") || strings.Contains(line, "Found UE context") || strings.Contains(line, "Found previously") {
 			if v := lastField(line); v != "" && looksLikeIMSI(v) {
-				info.IMSI = v
-				info.Found = true
-			} else if v := lastField(line); v != "" && info.IMSI == "" {
-				// Fallback: keep raw token; caller decides.
 				info.IMSI = v
 				info.Found = true
 			}
@@ -89,30 +86,6 @@ func lastIPToken(line string) string {
 }
 
 func isIPv4(s string) bool {
-	var a, b, c, d int
-	var tail string
-	n, _ := splitIP(s)
-	_ = tail
-	_ = a
-	_ = b
-	_ = c
-	_ = d
-	_ = n
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
-		return false
-	}
-	for _, p := range parts {
-		if p == "" || len(p) > 3 {
-			return false
-		}
-		for _, r := range p {
-			if r < '0' || r > '9' {
-				return false
-			}
-		}
-	}
-	return true
+	ip, err := netip.ParseAddr(s)
+	return err == nil && ip.Is4()
 }
-
-func splitIP(s string) (int, string) { return 0, "" }

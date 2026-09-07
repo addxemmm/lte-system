@@ -61,3 +61,25 @@ func TestParseEPCLog_LastWins(t *testing.T) {
 		t.Fatalf("last-wins failed: %+v", info)
 	}
 }
+
+func TestParseEPCLog_DoesNotUseRawStatusTokenAsIMSI(t *testing.T) {
+	p := writeLog(t, "Found previously attached UE.\n")
+	info, err := ParseEPCLog(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Found || info.IMSI != "" {
+		t.Fatalf("status text must not become an IMSI: %+v", info)
+	}
+}
+
+func TestParseEPCLog_RejectsOutOfRangeIPv4(t *testing.T) {
+	p := writeLog(t, "SPGW: get_new_ue_ipv4 pool ip addr 999.999.999.999\n")
+	info, err := ParseEPCLog(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Found || info.IP != "" {
+		t.Fatalf("out-of-range address accepted: %+v", info)
+	}
+}

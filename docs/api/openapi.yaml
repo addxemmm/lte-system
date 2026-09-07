@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: lte-system API v1
-  version: 2.1.0
+  version: 2.2.0
   description: |
     无状态 LTE 实验小区工具的标准 REST API。
     旧版零散路由（`/start`、`/stop`…）为兼容性冻结保留；新集成必须使用 `/api/v1`。
@@ -57,7 +57,7 @@ components:
         apn: { type: string, example: srsapn }
         mcc: { type: string, example: "001", description: "3 位数字 / 3 digits" }
         mnc: { type: string, example: "01", description: "2-3 位数字 / 2-3 digits" }
-        network: { type: string, example: eth0, description: "宿主机上行网卡 / uplink iface on the host" }
+        network: { type: string, example: auto, default: auto, description: "上行策略；省略/空值/auto 按当前网络命名空间最低 metric 的可用 IPv4 默认路由解析，也可显式指定接口 / Uplink policy; omitted/empty/auto resolves the usable lowest-metric IPv4 default route in the current network namespace, or name an interface explicitly" }
         sdr: { type: string, enum: [auto, uhd, bladerf, zmq], default: auto }
         device_args: { type: string, description: "射频驱动参数，未设置时针对 B210 自动调优 / RF driver args, auto-tuned for B210 when unset" }
         tx_gain: { type: integer, minimum: 0, maximum: 90, default: 80 }
@@ -102,6 +102,41 @@ components:
         name: { type: string }
         auth: { type: string }
         imsi: { type: string }
+    ConnectivityDiagnostics:
+      type: object
+      required: [cell, log_window, registration, pdn, nas_visibility, chap, user_plane, dns, network, limitations]
+      description: 只读、有界、聚合的分层诊断；不探测外网、不停止小区、不创建抓包、不返回 IMSI 或 CHAP 凭据 / Read-only bounded aggregate layer diagnostics; does not probe the Internet, stop the cell, create captures, or return IMSI/CHAP credentials.
+      properties:
+        cell:
+          type: object
+          description: 进程状态及请求/解析后的上行接口策略 / Process state and requested/resolved uplink policy
+        log_window:
+          type: object
+          description: EPC 日志尾窗元数据，最多读取 2 MiB / EPC log-tail metadata, maximum 2 MiB read
+        registration:
+          type: object
+          description: 聚合 Attach/鉴权/Security Mode/Attach Complete 计数；不跨 UE 拼接 / Aggregate attach/authentication/security/attach-complete counts; never joined across UEs
+        pdn:
+          type: object
+          description: 聚合 PDN 请求、IP 分配、承载激活、拒绝计数 / Aggregate PDN request, IP allocation, bearer activation and reject counts
+        nas_visibility:
+          type: object
+          description: 日志窗口中的 NAS 加密可见性计数 / NAS ciphering visibility counts from the log window
+        chap:
+          type: object
+          description: CHAP 可观察性；S1AP pcap 最大 64 MiB、tshark 3 秒且输出有界；不返回握手内容 / CHAP observability; 64 MiB S1AP cap, 3-second bounded tshark output; no handshake material returned
+        user_plane:
+          type: object
+          description: 聚合 SGi 上下行 IP 与 DNS 请求/响应计数；不返回包内容或端点 / Aggregate SGi uplink/downlink IP and DNS request/response counts; no packet contents or endpoints returned
+        dns:
+          type: object
+          description: DNS 配置证据与抓包观察必须分开解释 / DNS configuration and capture observations are reported separately
+        network:
+          type: object
+          description: 当前网络命名空间内默认路由、SGi、IPv4 转发及规则的 configuration_only 证据 / configuration_only evidence for route, SGi, IPv4 forwarding and rules in the current network namespace
+        limitations:
+          type: array
+          items: { type: string }
 paths:
   /api/v1/cell:
     post:
@@ -121,7 +156,7 @@ paths:
     get:
       summary: 小区状态 / Cell status
       responses:
-        '200': { description: '小区状态 / {running,epc,enb,pcap,started_at?,band?,apn?,net_name?}' }
+        '200': { description: '小区状态 / {running,epc,enb,pcap,started_at?,band?,apn?,net_name?,network?,resolved_network?}' }
     delete:
       summary: 停止小区并清理本服务管理的孤立抓包（幂等） / Stop cell and clean up owned orphan captures (idempotent)
       responses:
@@ -134,6 +169,22 @@ paths:
         '200': { description: 终端信息 / UE }
         '404': { description: 无附着终端 / no UE attached }
         '412': { description: 小区未运行 / cell not running }
+  /api/v1/diagnostics/connectivity:
+    get:
+      summary: 只读分层连通性证据 / Read-only layered connectivity evidence
+      description: 返回独立的注册、PDN/IP、CHAP、SGi/DNS、路由/转发/NAT证据。部分证据缺失仍返回 200，并在对应 state/reason/problems/limitations 中说明。/ Returns independent registration, PDN/IP, CHAP, SGi/DNS and route/forwarding/NAT evidence. Missing evidence still returns 200 and is explained by component state/reason/problems/limitations.
+      responses:
+        '200':
+          description: 有界诊断快照（允许部分来源不可用） / Bounded diagnostic snapshot (partial sources allowed)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConnectivityDiagnostics' }
+        '429': { description: 已有诊断运行，data.reason=diagnostic_busy / another diagnostic is running; data.reason=diagnostic_busy }
   /api/v1/crack/jobs:
     post:
       summary: 开始爆破（会停止运行中小区） / Start APN password cracking (STOPS the running cell)
@@ -141,14 +192,18 @@ paths:
         '202': { description: 任务运行中，轮询 /api/v1/crack/result / job running, poll /api/v1/crack/result }
         '404': { description: 无终端数据 / no UE data }
         '409': { description: 任务已在运行 / job already running }
-        '412': { description: 抓包中无 CHAP 握手 / no CHAP handshake in capture }
+        '412': { description: 当次未采集到可用 S1AP/CHAP 前置证据 / current session has no usable S1AP/CHAP prerequisite evidence }
+        '422': { description: 抓包过大、不完整或不可解码 / capture oversized, incomplete or undecodable }
+        '503': { description: tshark 缺失或超时 / tshark missing or timed out }
   /api/v1/crack/result:
     get:
       summary: 爆破结果 / Cracking result
       responses:
         '200': { description: 状态 ready|running / state ready|running }
         '404': { description: 字典无口令 / 无终端数据 / password not in dictionary / no UE data }
-        '412': { description: 抓包中无 CHAP 握手 / no CHAP handshake in capture }
+        '412': { description: 当次未采集到可用 S1AP/CHAP 前置证据 / current session has no usable S1AP/CHAP prerequisite evidence }
+        '422': { description: 抓包过大、不完整或不可解码 / capture oversized, incomplete or undecodable }
+        '503': { description: tshark 缺失或超时 / tshark missing or timed out }
   /api/v1/config/subscribers:
     post:
       summary: 原子上传 user_db.csv，与写卡事务串行（重启后生效） / Atomically upload user_db.csv, serialized with SIM transactions (takes effect after restart)

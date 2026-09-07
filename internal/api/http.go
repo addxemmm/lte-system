@@ -24,17 +24,20 @@ import (
 
 // Business codes for the v1 envelope. HTTP status is derived from code/1000.
 const (
-	CodeOK           = 0
-	CodeMalformed    = 40001 // body not JSON / wrong shape (HTTP 400)
-	CodeUnauthorized = 40101 // missing or bad bearer token (HTTP 401)
-	CodeNotFound     = 40401 // unknown resource id (HTTP 404)
-	CodeMethod       = 40501 // method not allowed (HTTP 405)
-	CodeConflict     = 40901 // cell/crack already running, card exists (HTTP 409)
-	CodePrecondition = 41201 // cell not running, no UE/CHAP/data, no card (HTTP 412)
-	CodeTooLarge     = 41301 // JSON body or upload exceeds limit (HTTP 413)
-	CodeInvalid      = 42201 // validation failed, see data.errors (HTTP 422)
-	CodeInternal     = 50001 // unexpected failure (HTTP 500)
-	CodeNoHardware   = 50301 // no SDR / reader attached (HTTP 503)
+	CodeOK              = 0
+	CodeMalformed       = 40001 // body not JSON / wrong shape (HTTP 400)
+	CodeUnauthorized    = 40101 // missing or bad bearer token (HTTP 401)
+	CodeNotFound        = 40401 // unknown resource id (HTTP 404)
+	CodeMethod          = 40501 // method not allowed (HTTP 405)
+	CodeConflict        = 40901 // cell/crack already running, card exists (HTTP 409)
+	CodePrecondition    = 41201 // cell not running, no UE/CHAP/data, no card (HTTP 412)
+	CodeTooLarge        = 41301 // JSON body or upload exceeds limit (HTTP 413)
+	CodeTooManyRequests = 42901 // another bounded diagnostic is already running (HTTP 429)
+	CodeInvalid         = 42201 // validation failed, see data.errors (HTTP 422)
+	CodeUnprocessable   = 42202 // capture exists but cannot be safely interpreted (HTTP 422)
+	CodeInternal        = 50001 // unexpected failure (HTTP 500)
+	CodeNoHardware      = 50301 // no SDR / reader attached (HTTP 503)
+	CodeDependency      = 50302 // required userspace dependency unavailable (HTTP 503)
 )
 
 // FieldError describes one rejected field for 422 responses.

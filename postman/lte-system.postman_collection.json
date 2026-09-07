@@ -24,6 +24,11 @@
 			"key": "token",
 			"value": "",
 			"description": "Bearer token, empty = open LAN mode / 为空即开放模式"
+		},
+		{
+			"key": "ue_dns",
+			"value": "",
+			"description": "Verified reachable IPv4 DNS; empty inherits the saved profile/default / 已验证可达的 IPv4 DNS；留空沿用存档或服务端默认"
 		}
 	],
 	"item": [
@@ -38,7 +43,7 @@
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"band\": \"7\",\n  \"apn\": \"srsapn\",\n  \"mcc\": \"001\",\n  \"mnc\": \"01\",\n  \"network\": \"eth0\",\n  \"sdr\": \"auto\",\n  \"tx_gain\": 80,\n  \"rx_gain\": 40,\n  \"n_prb\": 25,\n  \"full_net_name\": \"MyLTE\",\n  \"short_net_name\": \"MyLTE\",\n  \"dns\": \"8.8.8.8\"\n}",
+							"raw": "{\n  \"band\": \"7\",\n  \"apn\": \"srsapn\",\n  \"mcc\": \"001\",\n  \"mnc\": \"01\",\n  \"network\": \"auto\",\n  \"sdr\": \"auto\",\n  \"tx_gain\": 80,\n  \"rx_gain\": 40,\n  \"n_prb\": 25,\n  \"full_net_name\": \"MyLTE\",\n  \"short_net_name\": \"MyLTE\",\n  \"dns\": \"{{ue_dns}}\"\n}",
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": "{{base_url}}/start",
@@ -222,7 +227,7 @@
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"band\": \"7\",\n  \"apn\": \"srsapn\",\n  \"mcc\": \"001\",\n  \"mnc\": \"01\",\n  \"network\": \"eth0\",\n  \"n_prb\": 25,\n  \"full_net_name\": \"MyLTE\",\n  \"short_net_name\": \"MyLTE\",\n  \"dns\": \"8.8.8.8\"\n}",
+							"raw": "{\n  \"band\": \"7\",\n  \"apn\": \"srsapn\",\n  \"mcc\": \"001\",\n  \"mnc\": \"01\",\n  \"network\": \"auto\",\n  \"n_prb\": 25,\n  \"full_net_name\": \"MyLTE\",\n  \"short_net_name\": \"MyLTE\",\n  \"dns\": \"{{ue_dns}}\"\n}",
 							"options": { "raw": { "language": "json" } }
 						},
 						"url": "{{base_url}}/api/v1/cell",
@@ -271,6 +276,22 @@
 							"code": 200,
 							"header": [{ "key": "Content-Type", "value": "application/json" }],
 							"body": "{\"code\": 0, \"message\": \"ok\", \"data\": {\"apn\": \"srsapn\", \"imsi\": \"001010123456789\", \"ip\": \"172.16.0.2\"}, \"request_id\": \"9ebe20276037bd66\"}"
+						}
+					]
+				},
+				{
+					"name": "GET /api/v1/diagnostics/connectivity（只读）",
+					"request": {
+						"method": "GET",
+						"url": "{{base_url}}/api/v1/diagnostics/connectivity",
+						"description": "已入网但不能上网时优先调用。只读现有EPC日志、S1AP/SGi抓包及当前网络命名空间配置；不会停站、起新抓包、发送探测或返回IMSI/CHAP凭据。各层缺证据仍返回200并在state/reason/limitations说明；已有诊断运行时返回429 diagnostic_busy。/ Primary read-only check for attached-but-offline cases. It never stops the cell, starts a capture, sends probes, or returns IMSI/CHAP material; partial evidence remains HTTP 200, while a concurrent run returns 429 diagnostic_busy."
+					},
+					"response": [
+						{
+							"name": "部分证据也成功",
+							"code": 200,
+							"header": [{ "key": "Content-Type", "value": "application/json" }],
+							"body": "{\"code\":0,\"message\":\"connectivity evidence\",\"data\":{\"registration\":{\"state\":\"attach_complete_observed\",\"scope\":\"aggregate_only\"},\"pdn\":{\"state\":\"bearer_activation_observed\"},\"chap\":{\"state\":\"not_observed\",\"reason\":\"no_chap_frames_observed\"},\"dns\":{\"state\":\"query_without_response_observed\"},\"network\":{\"state\":\"configured\",\"evidence\":\"configuration_only\"}},\"request_id\":\"example\"}"
 						}
 					]
 				},

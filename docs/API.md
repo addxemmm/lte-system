@@ -12,9 +12,9 @@
 - 可选鉴权 Optional auth：服务端设 `LTE_API_TOKEN` 后，所有接口（新旧）都要带 `Authorization: Bearer <token>`，否则 401。默认未设 = 局域网开放模式（启动日志有 WARNING） / After the server sets `LTE_API_TOKEN`, all APIs (old and new) require `Authorization: Bearer <token>`, otherwise 401. Unset by default = open LAN mode (a WARNING appears in the boot log)
 - 404/405 也是 JSON 包络 Envelope（旧版根路径 404 保持纯文本，不变） / 404/405 also use the JSON envelope (legacy root-path 404 stays plain text, unchanged)
 - JSON 请求体必须是且只能是一个对象；`null`、数组、第二个 JSON 值或尾随垃圾均返回 400 且不产生副作用。`cell` 上限 1 MiB，`simcards` 上限 64 KiB，超限返回 413。各端点原有未知字段策略不变 / A JSON body must contain exactly one object; `null`, arrays, a second JSON value, and trailing garbage return 400 without side effects. Limits are 1 MiB for `cell` and 64 KiB for `simcards`; excess returns 413. Each endpoint keeps its existing unknown-field policy
-- Postman 开箱即用：导入 [`postman/lte-system.postman_collection.json`](../postman/lte-system.postman_collection.json)（26 个请求 + 断言，用法见 [`postman/README.md`](../postman/README.md)）/ Ready-to-import Postman collection (26 requests with assertions, see [`postman/README.md`](../postman/README.md))
+- Postman 开箱即用：导入 [`postman/lte-system.postman_collection.json`](../postman/lte-system.postman_collection.json)（27 个请求 + 断言，用法见 [`postman/README.md`](../postman/README.md)）/ Ready-to-import Postman collection (27 requests with assertions, see [`postman/README.md`](../postman/README.md))
 
-目录 Contents：[§1 小区 Cell](#1-小区-cell) · [§2 终端 UE](#2-终端-ue) · [§3 爆破 Cracking](#3-爆破-cracking) · [§4 配置上传 Config Upload](#4-配置上传-config-upload) · [§5 抓包下载 Captures](#5-抓包下载-captures-packet-capture) · [§6 写卡 Simcards](#6-写卡-simcards) · [§7 存档与健康 Saved Profile and Health](#7-存档与健康-saved-profile-and-health) · [§8 错误码 Error Codes](#8-错误码-error-codes) · [§9 旧版新版对照表 Legacy to v1 Mapping](#9-旧版新版对照表-legacy-to-v1-mapping)
+目录 Contents：[§1 小区 Cell](#1-小区-cell) · [§2 终端与诊断 UE and Diagnostics](#2-终端-ue) · [§3 爆破 Cracking](#3-爆破-cracking) · [§4 配置上传 Config Upload](#4-配置上传-config-upload) · [§5 抓包下载 Captures](#5-抓包下载-captures-packet-capture) · [§6 写卡 Simcards](#6-写卡-simcards) · [§7 存档与健康 Saved Profile and Health](#7-存档与健康-saved-profile-and-health) · [§8 错误码 Error Codes](#8-错误码-error-codes) · [§9 旧版新版对照表 Legacy to v1 Mapping](#9-旧版新版对照表-legacy-to-v1-mapping)
 
 ---
 
@@ -26,13 +26,14 @@
 
 Startup sequence and timing are the same as legacy (render config → srsepc → NAT → srsenb → tcpdump, about 6–10 seconds; set `--max-time 100` for curl).
 
-字段与旧 `/start` 一致（band/apn/mcc/mnc/network/sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name/dns，见 openapi.yaml），另有三处**标准化差异**：
+字段与旧 `/start` 一致（band/apn/mcc/mnc/network/sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name/dns，见 openapi.yaml），另有四处**标准化差异**：
 
-Fields are the same as legacy `/start` (band/apn/mcc/mnc/network/sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name/dns; see openapi.yaml), with three **standardization differences**:
+Fields are the same as legacy `/start` (band/apn/mcc/mnc/network/sdr/device_args/tx_gain/rx_gain/n_prb/full_net_name/short_net_name/dns; see openapi.yaml), with four **standardization differences**:
 
 1. **空 `{}` 复用存档 Reuse saved profile with empty `{}`**（`/data/last_start.json`，行为同旧版，见 `RULES.md`） / Reuses the saved profile at `/data/last_start.json` when the request body is empty `{}`, same as legacy; see `RULES.md`
 2. **严格校验 Strict validation**：缺字段/非法值/未知 band/非法 `n_prb`（仅允许 6/15/25/50/75/100）/`tx_rx` 越界（0–90）一律 **422**，`data.errors` 逐字段说明；**未知 band 不再静默回退** / Missing fields, illegal values, unknown band, illegal `n_prb` (only 6/15/25/50/75/100 allowed) or out-of-range `tx_rx` (0–90) always return **422** with per-field details in `data.errors`; **an unknown band never silently falls back**
 3. TDD band 成功时 `data.warning` 提示上行 Uplink 注意事项 / On success with a TDD band, `data.warning` notes uplink precautions
+4. `network` 省略、空值或 `auto` 时，从**当前网络命名空间**的 IPv4 默认路由按 metric 选择可用接口；仍可显式指定接口。Host-network 旧存档若写了宿主机物理网卡名，迁移到 bridge 后须改成 `auto`（或容器内接口名），成功启动后存档才会更新 / Omitted, empty, or `auto` `network` selects a usable IPv4 default route by metric in the **current network namespace**; an explicit interface remains supported. A host-network profile naming the host's physical NIC must be changed to `auto` (or the in-container interface) after bridge migration; the saved profile updates only after a successful start.
 
 ```bash
 # 最小
@@ -61,7 +62,8 @@ curl -X POST http://127.0.0.1:8081/api/v1/cell -H 'Content-Type: application/jso
 ```json
 {"code":0,"message":"ok","data":
  {"running":true,"epc":true,"enb":true,"pcap":true,
-  "started_at":"2026-09-05T10:06:48Z","band":"7","apn":"srsapn","net_name":"MyLTE"}}
+  "started_at":"2026-09-05T10:06:48Z","band":"7","apn":"srsapn","net_name":"MyLTE",
+  "network":"auto","resolved_network":"eth0"}}
 ```
 
 空闲时 `data` 为 `{"running":false,"epc":false,"enb":false,"pcap":false}`。
@@ -95,6 +97,23 @@ Fields that cannot be obtained are `null` (it is normal for `apn` to be null whe
 | 基站没跑 / Cell not running | 412 | 41201 `cell not running` |
 | 无终端 / No UE attached | 404 | 40401 `no UE attached` |
 
+### GET /api/v1/diagnostics/connectivity — 只读分层诊断 Read-only Layered Diagnostics
+
+这是“已入网但不能上网”的首选状态接口；不要为查看状态调用会停止小区的 `POST /api/v1/crack/jobs`。接口只读取现有状态、EPC 日志、S1AP/SGi pcap 与当前网络命名空间配置：**不停止或重启小区、不新增抓包、不发送探测包、不修改规则，也不返回 IMSI、CHAP 用户名/hash/password 或包端点**。任何单项证据缺失时顶层仍返回 200，由该组件的 `state/reason/problems/limitations` 表达；同一时刻只允许一个诊断，第二个请求立即返回 429/`diagnostic_busy`。
+
+This is the primary status endpoint for “attached but no Internet.” Do not call `POST /api/v1/crack/jobs`, which stops the cell, merely to inspect status. It only reads existing process state, EPC logs, S1AP/SGi captures, and configuration in the current network namespace. It does **not** stop/restart the cell, create a capture, send probes, mutate rules, or return IMSI, CHAP material, or packet endpoints. Missing component evidence still yields top-level 200 and is explained by that component's `state/reason/problems/limitations`.
+
+```bash
+curl http://127.0.0.1:8081/api/v1/diagnostics/connectivity
+```
+
+- `registration`：Attach Request、Authentication Accepted、Security Mode Complete、Attach Complete 的聚合计数；`scope=aggregate_only`，多 UE/交错日志不拼成一台 UE。
+- `pdn`：PDN request、IP allocation、EPS bearer activation/reject 独立证据。IP 分配或承载激活不等于公网可达。
+- `chap`：APN 可选 CHAP 的**可观察性**，与 LTE AKA/attach 分离。区分 `not_collected`、`unavailable`（缺 `tshark`/超时）、`not_checked`（文件过大）、`unknown`、`not_observed`、`observed`；没有 CHAP 不是 attach 失败。
+- `user_plane`/`dns`：只对已有 SGi pcap 统计 UE 子网方向与 DNS 请求/响应；无响应只说明该有界窗口未观察到响应。
+- `network`：默认路由、`srs_spgw_sgi`、IPv4 forwarding 与 NAT/filter/mangle 规则的 `configuration_only` 证据；规则存在不证明公网可达。
+- 有界性：EPC 日志只读最后 2 MiB；每个 pcap 最大 64 MiB；`tshark -n` 每项最多 3 秒且输出最多 128 KiB，不进行名称解析。5 秒 context 约束有界子检查；若小区正在启动，快照取得前可能等待 Manager 生命周期锁，因此不是严格的端到端墙钟 SLA。截断时返回 `unknown` 或 lower-bound 计数，不宣称“从未发生”。
+
 ## 3. 爆破 Cracking
 
 ### POST /api/v1/crack/jobs — 开始爆破（⚠️ 会停基站） Start Cracking (⚠️ Stops the Cell)
@@ -112,7 +131,9 @@ Extract CHAP from S1AP packets → stop the cell → run `hashcat -m 4800` in th
 |---|---|---|
 | 已有任务在跑 / Job already running | 409 | 40901 |
 | 无终端数据 / No UE data | 404 | 40401 |
-| pcap 无 CHAP（终端不用 CHAP，如 iPhone） / No CHAP in packet capture (UE does not use CHAP, e.g. iPhone) | 412 | 41201 |
+| 当前会话未采集 S1AP、无可解码 S1AP 或未观察到 CHAP / Current session not captured, no decodable S1AP, or no CHAP observed | 412 | 41201（`data.reason` 区分） |
+| pcap 过大、不完整或不可解码 / Capture oversized, incomplete, or undecodable | 422 | 42202 |
+| `tshark` 缺失或超时 / `tshark` missing or timed out | 503 | 50302 |
 | 停基站失败 / Failed to stop the cell | 500 | 50001 |
 
 ### GET /api/v1/crack/result — 取结果 Get Result
@@ -210,9 +231,12 @@ Calling this API without a reader always returns 503, which is normal (just skip
 | 40901 | 409 | 冲突（小区在跑/爆破在跑/卡已在库） / Conflict (cell running / cracking job running / card already in database) |
 | 41201 | 412 | 前置条件不满足（小区没跑/无 CHAP/没插卡） / Precondition failed (cell not running / no CHAP / no card inserted) |
 | 41301 | 413 | JSON body 或上传超限（带 `max_bytes`） / JSON body or upload exceeds limit (with `max_bytes`) |
+| 42901 | 429 | 已有连通性诊断占用唯一执行槽（`diagnostic_busy`） / The single connectivity-diagnostic slot is busy |
 | 42201 | 422 | 校验失败（`data.errors:[{field,reason}]`） / Validation failed (`data.errors:[{field,reason}]`) |
+| 42202 | 422 | pcap 过大、不完整或不可可靠解码 / Capture oversized, incomplete, or not reliably decodable |
 | 50001 | 500 | 内部失败（message 带原因） / Internal failure (message carries the reason) |
 | 50301 | 503 | 硬件缺失（无 SDR/无读卡器） / Hardware missing (no SDR / no reader attached) |
+| 50302 | 503 | 用户态依赖不可用（`tshark` 缺失或超时） / Userspace dependency unavailable (`tshark` missing or timed out) |
 
 ## 9. 旧版新版对照表 Legacy to v1 Mapping
 
@@ -221,6 +245,7 @@ Calling this API without a reader always returns 503, which is normal (just skip
 | `POST /start` | `POST /api/v1/cell` | 未知 band 由静默回退改为 422；`n_prb`/增益/网卡加入校验；TDD 成功带 warning / Unknown band changed from silent fallback to 422; added validation for `n_prb`/gains/network iface; TDD success carries warning |
 | `POST /stop` | `DELETE /api/v1/cell` | 空闲停止由“失败”改为幂等成功 / Stopping an idle cell changed from "failure" to idempotent success |
 | `POST /basicinfo` | `GET /api/v1/ue` | 无终端由包络失败改为 404 / No UE changed from envelope failure to 404 |
+| 无 / None | `GET /api/v1/diagnostics/connectivity` | 新增只读、有界、分层证据；部分来源不可用仍为 200 / New read-only bounded layered evidence; partial-source failure still returns 200 |
 | `POST /crackapn` | `POST /api/v1/crack/jobs` | 成功改 202；无 CHAP 由失败改为 412 / Success changed to 202; no CHAP changed from failure to 412 |
 | `POST /getcrackresult` | `GET /api/v1/crack/result` | `running`/`ready` 状态机替代真假值 / `running`/`ready` state machine replaces booleans |
 | `POST /userupload` | `POST /api/v1/config/subscribers` | 成功带生效时机 note；超限改 413 / Success carries effective-timing note; over-limit changed to 413 |

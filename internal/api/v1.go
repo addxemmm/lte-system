@@ -37,6 +37,7 @@ var v1Routes = []v1Route{
 	{http.MethodGet, "/api/v1/cell", "cell status"},
 	{http.MethodDelete, "/api/v1/cell", "stop cell (idempotent; stopping idle succeeds)"},
 	{http.MethodGet, "/api/v1/ue", "attached UE snapshot"},
+	{http.MethodGet, "/api/v1/diagnostics/connectivity", "read-only connectivity evidence"},
 	{http.MethodPost, "/api/v1/crack/jobs", "start APN password cracking"},
 	{http.MethodGet, "/api/v1/crack/result", "cracking result"},
 	{http.MethodPost, "/api/v1/config/subscribers", "upload user_db.csv"},
@@ -78,6 +79,8 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 		s.handleV1Stop(w, r)
 	case path == "/api/v1/ue" && r.Method == http.MethodGet:
 		s.handleV1UE(w, r)
+	case path == "/api/v1/diagnostics/connectivity" && r.Method == http.MethodGet:
+		s.handleV1ConnectivityDiagnostics(w, r)
 	case path == "/api/v1/crack/jobs" && r.Method == http.MethodPost:
 		s.handleV1CrackStart(w, r)
 	case path == "/api/v1/crack/result" && r.Method == http.MethodGet:
@@ -194,7 +197,7 @@ func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	_, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
 	if err != nil || hash == "" {
-		writeV1(w, r, CodePrecondition, "no CHAP handshake in capture (UE may not use CHAP)", nil)
+		s.writeV1CHAPFailure(w, r)
 		return
 	}
 	// Cracking needs the cell stopped (frees CPU, freezes the pcap).
@@ -226,7 +229,7 @@ func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 	}
 	username, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
 	if err != nil || hash == "" {
-		writeV1(w, r, CodePrecondition, "no CHAP handshake in capture (UE may not use CHAP)", nil)
+		s.writeV1CHAPFailure(w, r)
 		return
 	}
 	password, err := crack.Show(r.Context(), s.cfg, hash)

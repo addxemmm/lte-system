@@ -17,6 +17,10 @@ Postman → Import → select the file above.
    Smoke-test with `Legacy` first, then build on `v1`.
 4. 文件夹自带断言：Legacy 断 HTTP 200 + JSON，v1 断 2xx + 包络字段。
    Folder-level tests assert status codes and the envelope.
+5. 手机已入网但不能上网时先运行 v1 的 `GET /api/v1/diagnostics/connectivity`；这是只读检查，不要用会停站的 crack 请求代替状态诊断。
+   For an attached-but-offline UE, run the read-only v1 connectivity diagnostic first; do not use the cell-stopping crack request as a status check.
+6. 启动样例使用 `network=auto`，不绑定宿主网卡名。`ue_dns` 留空沿用当前存档/服务默认，避免覆盖已经修好的 DNS；首次部署应填写实际验证可达的 IPv4 resolver。
+   Startup examples use `network=auto`. Leave `ue_dns` empty to inherit the saved/server default without overwriting a repaired DNS setting; first deployments should configure an actually reachable IPv4 resolver.
 
 ---
 **导航 Navigation:** [仓库根 Repo Root](../README.md) · [API v1](../docs/API.md) · [旧版API Legacy](../docs/API_LEGACY.md)

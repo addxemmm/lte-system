@@ -28,14 +28,15 @@ import (
 
 // Server wires handlers to a Manager.
 type Server struct {
-	cfg config.Config
-	mgr *lte.Manager
-	mux *http.ServeMux
+	cfg      config.Config
+	mgr      *lte.Manager
+	mux      *http.ServeMux
+	diagGate chan struct{}
 }
 
 // New builds routes.
 func New(cfg config.Config, mgr *lte.Manager) *Server {
-	s := &Server{cfg: cfg, mgr: mgr, mux: http.NewServeMux()}
+	s := &Server{cfg: cfg, mgr: mgr, mux: http.NewServeMux(), diagGate: make(chan struct{}, 1)}
 	s.mux.HandleFunc("/start", s.handleStart)
 	s.mux.HandleFunc("/stop", s.handleStop)
 	s.mux.HandleFunc("/basicinfo", s.handleBasicInfo)
