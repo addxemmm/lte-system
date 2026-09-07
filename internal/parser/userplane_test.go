@@ -35,6 +35,21 @@ func TestInspectUserPlaneCountsDirectionsAndDNS(t *testing.T) {
 	}
 }
 
+func TestInspectUserPlaneUsesEffectiveSubnetWithoutDefaultFallback(t *testing.T) {
+	p := userPlaneCapture(t, []byte("pcap"))
+	run := func(context.Context, string, ...string) ([]byte, bool, error) {
+		return []byte("10.23.4.2\t8.8.8.8\t0\n8.8.8.8\t10.23.4.2\t1\n172.16.0.2\t1.1.1.1\t\n"), false, nil
+	}
+	o := inspectUserPlaneForSubnet(context.Background(), "tshark", p, "10.23.4.0/24", run)
+	if o.ClassificationSubnet != "10.23.4.0/24" || o.UEUplinkPackets != 1 || o.UEDownlinkPackets != 1 {
+		t.Fatalf("did not use effective subnet: %+v", o)
+	}
+	o = inspectUserPlaneForSubnet(context.Background(), "tshark", p, "", run)
+	if o.UEUplinkPackets != 0 || o.UEDownlinkPackets != 0 || o.IPPackets != 3 || len(o.Limitations) < 3 {
+		t.Fatalf("missing plan silently fell back or lost aggregate evidence: %+v", o)
+	}
+}
+
 func TestInspectUserPlaneDoesNotClaimAbsenceWhenTruncated(t *testing.T) {
 	p := userPlaneCapture(t, []byte("pcap"))
 	run := func(context.Context, string, ...string) ([]byte, bool, error) {

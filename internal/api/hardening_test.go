@@ -33,34 +33,10 @@ func multipartBody(t *testing.T, field, name string, payload []byte) (*bytes.Buf
 
 func TestJSONBodiesAreSingleObjects(t *testing.T) {
 	s, cfg := testServer(t)
-	if err := os.WriteFile(cfg.LogPath(cfg.PcapLTEData), []byte("pcap"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, body := range []string{"null", `[]`, `{"fileid":0}{}`, `{"fileid":0} trailing`} {
-		req := httptest.NewRequest(http.MethodPost, "/getfile", strings.NewReader(body))
-		rec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(rec, req)
-		var got map[string]any
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatalf("legacy body %q unexpectedly served a file: %q", body, rec.Body.String())
-		}
-		if got["message_id"] != float64(2) {
-			t.Fatalf("legacy body %q: want Error id, got %v", body, got)
-		}
-	}
-
-	// Legacy unknown-field behavior remains permissive.
-	req := httptest.NewRequest(http.MethodPost, "/getfile", strings.NewReader(`{"fileid":0,"future":true}`))
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || rec.Body.String() != "pcap" {
-		t.Fatalf("legacy unknown field policy changed: %d %q", rec.Code, rec.Body.String())
-	}
 
 	for _, body := range []string{"null", `[]`, `{}`, `{} {}`, `{} trailing`} {
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/simcards", strings.NewReader(body))
-		rec = httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/simcards", strings.NewReader(body))
+		rec := httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, req)
 		want := http.StatusBadRequest
 		if body == `{}` {
@@ -72,8 +48,8 @@ func TestJSONBodiesAreSingleObjects(t *testing.T) {
 	}
 
 	// The v1 SIM endpoint intentionally ignores unknown fields.
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/simcards", strings.NewReader(`{"future":true}`))
-	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/simcards", strings.NewReader(`{"future":true}`))
+	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("v1 SIM unknown field policy changed: %d %s", rec.Code, rec.Body.String())
@@ -163,7 +139,7 @@ func TestConcurrentUploadsRemainComplete(t *testing.T) {
 		wg.Add(1)
 		go func(body []byte, contentType string) {
 			defer wg.Done()
-			req := httptest.NewRequest(http.MethodPost, "/passwordupload", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/config/wordlist", bytes.NewReader(body))
 			req.Header.Set("Content-Type", contentType)
 			rec := httptest.NewRecorder()
 			s.Handler().ServeHTTP(rec, req)
@@ -171,8 +147,8 @@ func TestConcurrentUploadsRemainComplete(t *testing.T) {
 				errs <- rec.Body.String()
 				return
 			}
-			var response map[string]any
-			if json.Unmarshal(rec.Body.Bytes(), &response) != nil || response["message_id"] != float64(1) {
+			var response Envelope
+			if json.Unmarshal(rec.Body.Bytes(), &response) != nil || response.Code != CodeOK {
 				errs <- rec.Body.String()
 			}
 		}(requestBody, contentType)

@@ -20,6 +20,10 @@ import (
 // process fixture. It never starts RF, packet capture, or hashcat.
 func TestMain(m *testing.M) {
 	base := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	if base == "ps" && os.Getenv("LTE_TEST_PS") != "" {
+		_, _ = os.Stdout.WriteString(os.Getenv("LTE_TEST_PS"))
+		os.Exit(0)
+	}
 	if mode := os.Getenv("LTE_TEST_IPTABLES"); base == "iptables" && mode != "" {
 		f, _ := os.OpenFile(os.Getenv("LTE_TEST_IPTABLES_LOG"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if f != nil {
@@ -48,6 +52,9 @@ func TestMain(m *testing.M) {
 	case "exit1":
 		os.Exit(7)
 	case "sleep":
+		if logPath := os.Getenv("LTE_TEST_ENV_LOG"); logPath != "" && base == "srsepc" {
+			_ = os.WriteFile(logPath, []byte(os.Getenv("LTE_UE_SNAPSHOT_PATH")+"\n"+os.Getenv("LTE_UE_RUN_ID")+"\n"), 0o644)
+		}
 		if marker := os.Getenv("LTE_TEST_HELPER_MARKER"); marker != "" {
 			_ = os.WriteFile(marker+"."+filepath.Base(os.Args[0]), []byte("started"), 0o644)
 		}
@@ -173,7 +180,7 @@ func TestStopCleansOnlyRecordedNetworkRules(t *testing.T) {
 	// rules are intentionally absent from the ownership record.
 	m.lastNetwork = "TARGET"
 	m.natOwned = true
-	m.forwardingOwned = []iptRule{forwardRules()[0]}
+	m.forwardingOwned = []iptRule{forwardRules("")[0]}
 	if !m.Stop() {
 		t.Fatal("owned network resources should count as a stopped lifecycle")
 	}
@@ -264,8 +271,8 @@ func TestStartCancellationRollsBack(t *testing.T) {
 			deletes++
 		}
 	}
-	if deletes != 5 {
-		t.Fatalf("rollback should delete its NAT and 4 forwarding rules; got %d:\n%s", deletes, b)
+	if deletes != 6 {
+		t.Fatalf("rollback should delete its NAT and 5 forwarding rules; got %d:\n%s", deletes, b)
 	}
 }
 

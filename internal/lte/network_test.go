@@ -36,10 +36,12 @@ func installNetworkFiles(t *testing.T, routes, forwarding string, ifaces ...stri
 			t.Fatal(err)
 		}
 	}
-	oldRoute, oldForward, oldInterfaces := routeTablePath, ipForwardPath, netInterfaceDir
+	oldRoute, oldForward, oldInterfaces, oldNetworks := routeTablePath, ipForwardPath, netInterfaceDir, interfaceNetworks
 	routeTablePath, ipForwardPath, netInterfaceDir = routePath, forwardPath, interfacePath
+	interfaceNetworks = func() ([]interfaceNetwork, error) { return nil, nil }
 	t.Cleanup(func() {
 		routeTablePath, ipForwardPath, netInterfaceDir = oldRoute, oldForward, oldInterfaces
+		interfaceNetworks = oldNetworks
 	})
 }
 
@@ -148,7 +150,7 @@ func TestNetworkDiagnosticsIsConfigurationEvidence(t *testing.T) {
 	if !d.SGI.Present || !d.IPv4Forward.Enabled {
 		t.Fatalf("missing namespace evidence: %+v", d)
 	}
-	if len(d.Rules.NAT) != 1 || len(d.Rules.Filter) != 2 || len(d.Rules.Mangle) != 2 {
+	if len(d.Rules.NAT) != 1 || len(d.Rules.Filter) != 3 || len(d.Rules.Mangle) != 2 {
 		t.Fatalf("unexpected rule diagnostics: %+v", d.Rules)
 	}
 	for _, rule := range append(append(d.Rules.NAT, d.Rules.Filter...), d.Rules.Mangle...) {

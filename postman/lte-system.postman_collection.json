@@ -1,395 +1,108 @@
 {
-	"info": {
-		"name": "lte-system API",
-		"description": "LTE 自建基站工具接口 / API collection for the lte-system lab cell.\n\n变量 Variables: base_url（服务器地址，如 http://192.0.2.10:8081；本机 http://127.0.0.1:8081）, token（服务端设 LTE_API_TOKEN 时才填 Bearer token，默认空=开放模式）.\nLegacy 文件夹是冻结的旧版根路径接口；新集成用 v1 标准 文件夹。详见 docs/API.md / See docs/API.md.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"auth": {
-		"type": "bearer",
-		"bearer": [
-			{
-				"key": "token",
-				"value": "{{token}}",
-				"type": "string"
-			}
-		]
-	},
-	"variable": [
-		{
-			"key": "base_url",
-			"value": "http://192.0.2.10:8081",
-			"description": "SDR server address / 服务器地址"
-		},
-		{
-			"key": "token",
-			"value": "",
-			"description": "Bearer token, empty = open LAN mode / 为空即开放模式"
-		},
-		{
-			"key": "ue_dns",
-			"value": "",
-			"description": "Verified reachable IPv4 DNS; empty inherits the saved profile/default / 已验证可达的 IPv4 DNS；留空沿用存档或服务端默认"
-		}
-	],
-	"item": [
-		{
-			"name": "Legacy（兼容旧版 Frozen）",
-			"description": "旧版根路径接口：统一 200 + {status,message_id,message}。已冻结，新集成用 v1。/ Frozen legacy routes: always HTTP 200 with {status,message_id,message}.",
-			"item": [
-				{
-					"name": "POST /start（全参数）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"band\": \"7\",\n  \"apn\": \"srsapn\",\n  \"mcc\": \"001\",\n  \"mnc\": \"01\",\n  \"network\": \"auto\",\n  \"sdr\": \"auto\",\n  \"tx_gain\": 80,\n  \"rx_gain\": 40,\n  \"n_prb\": 25,\n  \"full_net_name\": \"MyLTE\",\n  \"short_net_name\": \"MyLTE\",\n  \"dns\": \"{{ue_dns}}\"\n}",
-							"options": { "raw": { "language": "json" } }
-						},
-						"url": "{{base_url}}/start",
-						"description": "启动基站约6-10秒，curl 设长超时。band限1/3/5/7/8/34/39/40/41。/ Start cell (~6-10s). band must be one of 1,3,5,7,8,34,39,40,41."
-					},
-					"response": [
-						{
-							"name": "启动成功",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"status\": true, \"message_id\": 1, \"message\": \"Start successfully\"}"
-						}
-					]
-				},
-				{
-					"name": "POST /start（空body复用存档）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/start",
-						"description": "空body复用上次成功配置；只传个别字段则其余继承。无存档报id 3。/ Empty body reuses saved profile; partial fields inherit the rest."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /stop",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/stop",
-						"description": "停止基站+抓包并清理iptables。/ Stop cell, capture and iptables rules."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /basicinfo",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/basicinfo",
-						"description": "读第一台终端apn/imsi/ip，取不到为null。/ First attached UE snapshot; missing fields are null."
-					},
-					"response": [
-						{
-							"name": "有终端",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"status\": true, \"message_id\": 1, \"message\": \"Getting information success.\", \"apn\": \"srsapn\", \"imsi\": \"001010123456789\", \"ip\": \"172.16.0.2\"}"
-						}
-					]
-				},
-				{
-					"name": "POST /crackapn（会停基站）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/crackapn",
-						"description": "从S1AP包提CHAP后停基站、后台hashcat爆破。需CHAP终端连过。/ Extracts CHAP, STOPS the cell, cracks in background."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /getcrackresult",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/getcrackresult",
-						"description": "取爆破结果，成功追加username/password。/ Fetch crack result."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /userupload",
-					"request": {
-						"method": "POST",
-						"body": {
-							"mode": "formdata",
-							"formdata": [{ "key": "userdb", "type": "file", "src": "user_db.csv", "description": "卡库CSV，Name,Auth,IMSI,Key,OP_Type,OP,AMF,SQN,QCI,IP_alloc" }]
-						},
-						"url": "{{base_url}}/userupload",
-						"description": "上传卡库（8MB内），EPC重启后生效。先在本地准备好文件再选。/ Upload subscriber DB; takes effect after restart."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /passwordupload",
-					"request": {
-						"method": "POST",
-						"body": {
-							"mode": "formdata",
-							"formdata": [{ "key": "wordlist", "type": "file", "src": "wordlist.list", "description": "字典，一行一个候选口令" }]
-						},
-						"url": "{{base_url}}/passwordupload",
-						"description": "上传爆破字典，下次爆破即用。/ Upload crack dictionary."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /getfile",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{\"fileid\": 0}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/getfile",
-						"description": "fileid: 0业务流量 1=S1AP 2=eNB空口 3=EPC。成功直接下载。/ Download capture by id."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /writesim（最小）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{\"imsi\": \"001010123456789\"}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/writesim",
-						"description": "无读卡器恒返id 2。最长180秒。/ Minimal; id 2 without reader; up to 180s."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /writesim（全参数）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"imsi\": \"460001234567890\",\n  \"mcc\": \"460\",\n  \"mnc\": \"00\",\n  \"ki\": \"00112233445566778899aabbccddeeff\",\n  \"opc\": \"63bfa50ee6523365ff14c1f45f88737d\",\n  \"op_type\": \"opc\",\n  \"auth\": \"mil\",\n  \"amf\": \"8001\",\n  \"acc\": \"FFFF\",\n  \"spn\": \"MyLTE\",\n  \"card\": \"testsim\",\n  \"qci\": 7,\n  \"sqn\": \"000000001234\"\n}",
-							"options": { "raw": { "language": "json" } }
-						},
-						"url": "{{base_url}}/writesim",
-						"description": "op与opc互斥；iccid:auto保留出厂值；mnc3=true时MNC取3位。/ op/opc mutually exclusive."
-					},
-					"response": []
-				},
-				{
-					"name": "GET /healthz",
-					"request": { "method": "GET", "url": "{{base_url}}/healthz" },
-					"response": []
-				},
-				{
-					"name": "GET /status",
-					"request": { "method": "GET", "url": "{{base_url}}/status" },
-					"response": []
-				},
-				{
-					"name": "GET /profile",
-					"request": {
-						"method": "GET",
-						"url": "{{base_url}}/profile",
-						"description": "存档配置+卡库清单（无密钥）。/ Saved profile + UE list (no key material)."
-					},
-					"response": []
-				}
-			],
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"type": "text/javascript",
-						"exec": [
-							"pm.test('http 200', () => pm.response.to.have.status(200));",
-							"pm.test('json body', () => { pm.response.to.be.json; });"
-						]
-					}
-				}
-			]
-		},
-		{
-			"name": "v1 标准 Standard",
-			"description": "标准REST：正确状态码 + {code,message,data,request_id} 包络。code 0=成功。详见 docs/API.md。/ Standard REST with proper status codes and envelope.",
-			"item": [
-				{
-					"name": "POST /api/v1/cell（启动）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"band\": \"7\",\n  \"apn\": \"srsapn\",\n  \"mcc\": \"001\",\n  \"mnc\": \"01\",\n  \"network\": \"auto\",\n  \"n_prb\": 25,\n  \"full_net_name\": \"MyLTE\",\n  \"short_net_name\": \"MyLTE\",\n  \"dns\": \"{{ue_dns}}\"\n}",
-							"options": { "raw": { "language": "json" } }
-						},
-						"url": "{{base_url}}/api/v1/cell",
-						"description": "空{}复用存档；未知band/非法n_prb报422。/ Empty {} reuses profile; strict validation."
-					},
-					"response": [
-						{
-							"name": "成功",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"code\": 0, \"message\": \"cell started\", \"data\": {\"band\": \"7\", \"apn\": \"srsapn\", \"net_name\": \"MyLTE\"}, \"request_id\": \"432678718a07d689\"}"
-						}
-					]
-				},
-				{
-					"name": "GET /api/v1/cell",
-					"request": { "method": "GET", "url": "{{base_url}}/api/v1/cell" },
-					"response": [
-						{
-							"name": "运行中",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"code\": 0, \"message\": \"ok\", \"data\": {\"running\": true, \"epc\": true, \"enb\": true, \"pcap\": true, \"band\": \"7\", \"apn\": \"srsapn\", \"net_name\": \"MyLTE\"}, \"request_id\": \"cebddd5c1be8465c\"}"
-						}
-					]
-				},
-				{
-					"name": "DELETE /api/v1/cell",
-					"request": {
-						"method": "DELETE",
-						"url": "{{base_url}}/api/v1/cell",
-						"description": "幂等：空闲也返回成功。/ Idempotent."
-					},
-					"response": []
-				},
-				{
-					"name": "GET /api/v1/ue",
-					"request": {
-						"method": "GET",
-						"url": "{{base_url}}/api/v1/ue",
-						"description": "第一台终端快照；无终端404；没跑412。/ First UE snapshot."
-					},
-					"response": [
-						{
-							"name": "有终端",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"code\": 0, \"message\": \"ok\", \"data\": {\"apn\": \"srsapn\", \"imsi\": \"001010123456789\", \"ip\": \"172.16.0.2\"}, \"request_id\": \"9ebe20276037bd66\"}"
-						}
-					]
-				},
-				{
-					"name": "GET /api/v1/diagnostics/connectivity（只读）",
-					"request": {
-						"method": "GET",
-						"url": "{{base_url}}/api/v1/diagnostics/connectivity",
-						"description": "已入网但不能上网时优先调用。只读现有EPC日志、S1AP/SGi抓包及当前网络命名空间配置；不会停站、起新抓包、发送探测或返回IMSI/CHAP凭据。各层缺证据仍返回200并在state/reason/limitations说明；已有诊断运行时返回429 diagnostic_busy。/ Primary read-only check for attached-but-offline cases. It never stops the cell, starts a capture, sends probes, or returns IMSI/CHAP material; partial evidence remains HTTP 200, while a concurrent run returns 429 diagnostic_busy."
-					},
-					"response": [
-						{
-							"name": "部分证据也成功",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"code\":0,\"message\":\"connectivity evidence\",\"data\":{\"registration\":{\"state\":\"attach_complete_observed\",\"scope\":\"aggregate_only\"},\"pdn\":{\"state\":\"bearer_activation_observed\"},\"chap\":{\"state\":\"not_observed\",\"reason\":\"no_chap_frames_observed\"},\"dns\":{\"state\":\"query_without_response_observed\"},\"network\":{\"state\":\"configured\",\"evidence\":\"configuration_only\"}},\"request_id\":\"example\"}"
-						}
-					]
-				},
-				{
-					"name": "POST /api/v1/crack/jobs（会停基站）",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/api/v1/crack/jobs",
-						"description": "202受理后轮询result。需CHAP终端。/ Returns 202; poll result."
-					},
-					"response": []
-				},
-				{
-					"name": "GET /api/v1/crack/result",
-					"request": {
-						"method": "GET",
-						"url": "{{base_url}}/api/v1/crack/result",
-						"description": "state: running/ready；字典无口令404。/ Poll state machine."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /api/v1/config/subscribers",
-					"request": {
-						"method": "POST",
-						"body": {
-							"mode": "formdata",
-							"formdata": [{ "key": "userdb", "type": "file", "src": "user_db.csv" }]
-						},
-						"url": "{{base_url}}/api/v1/config/subscribers",
-						"description": "成功data.note提示需重启。/ Note tells restart requirement."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /api/v1/config/wordlist",
-					"request": {
-						"method": "POST",
-						"body": {
-							"mode": "formdata",
-							"formdata": [{ "key": "wordlist", "type": "file", "src": "wordlist.list" }]
-						},
-						"url": "{{base_url}}/api/v1/config/wordlist"
-					},
-					"response": []
-				},
-				{
-					"name": "GET captures/lte-data",
-					"request": {
-						"method": "GET",
-						"url": "{{base_url}}/api/v1/captures/lte-data",
-						"description": "id: lte-data|s1ap|enb|epc（兼容0-3）。/ String ids, numeric aliases."
-					},
-					"response": []
-				},
-				{
-					"name": "POST /api/v1/simcards",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": { "mode": "raw", "raw": "{\"imsi\": \"001010123456789\"}", "options": { "raw": { "language": "json" } } },
-						"url": "{{base_url}}/api/v1/simcards",
-						"description": "未知字段忽略；无读卡器503。/ Unknown fields ignored; 503 without reader."
-					},
-					"response": []
-				},
-				{
-					"name": "GET /api/v1/profile",
-					"request": { "method": "GET", "url": "{{base_url}}/api/v1/profile" },
-					"response": [
-						{
-							"name": "有存档",
-							"code": 200,
-							"header": [{ "key": "Content-Type", "value": "application/json" }],
-							"body": "{\"code\": 0, \"message\": \"ok\", \"data\": {\"has_profile\": true, \"profile\": {\"band\": \"7\", \"apn\": \"srsapn\"}, \"ues\": [{\"name\": \"ue0\", \"auth\": \"mil\", \"imsi\": \"001010123456789\"}]}, \"request_id\": \"06c40143b8842658\"}"
-						}
-					]
-				},
-				{
-					"name": "GET /api/v1/health",
-					"request": { "method": "GET", "url": "{{base_url}}/api/v1/health" },
-					"response": []
-				}
-			],
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"type": "text/javascript",
-						"exec": [
-							"pm.test('2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));",
-							"pm.test('envelope', () => { const j = pm.response.json(); pm.expect(j).to.have.property('code'); pm.expect(j).to.have.property('request_id'); });"
-						]
-					}
-				}
-			]
-		}
-	]
+  "info": {
+    "name": "lte-system API v3",
+    "description": "Standard /api/v1 API only. Root legacy routes and /api/v1/ue were removed. Default Start sends {} so it cannot overwrite a verified saved network/DNS profile.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{"key":"token","value":"{{token}}","type":"string"}]
+  },
+  "variable": [
+    {"key":"base_url","value":"http://192.0.2.10:8081","description":"SDR server URL"},
+    {"key":"token","value":"","description":"LTE_API_TOKEN; empty only when the server uses open LAN mode"},
+    {"key":"first_band","value":"7"},
+    {"key":"first_apn","value":"srsapn"},
+    {"key":"first_mcc","value":"001"},
+    {"key":"first_mnc","value":"01"},
+    {"key":"first_dns","value":"192.168.100.1","description":"Resolver verified reachable from the UE path"},
+    {"key":"first_ue_subnet","value":"172.16.0.0/24"},
+    {"key":"subscriber_imsi","value":"001010123456789"},
+    {"key":"subscriber_key","value":"REPLACE_WITH_32_HEX"},
+    {"key":"subscriber_opc","value":"REPLACE_WITH_32_HEX"},
+    {"key":"subscriber_sqn","value":"000000000000"}
+  ],
+  "item": [
+    {
+      "name": "Cell",
+      "item": [
+        {
+          "name": "POST /api/v1/cell (default: inherit verified profile)",
+          "request": {
+            "method":"POST",
+            "header":[{"key":"Content-Type","value":"application/json"}],
+            "body":{"mode":"raw","raw":"{}","options":{"raw":{"language":"json"}}},
+            "url":"{{base_url}}/api/v1/cell",
+            "description":"Safe default. Inherits the saved network, resolved DNS, UE subnet, and access policy rather than overwriting the live profile."
+          },
+          "response":[]
+        },
+        {
+          "name": "POST /api/v1/cell (first installation template)",
+          "request": {
+            "method":"POST",
+            "header":[{"key":"Content-Type","value":"application/json"}],
+            "body":{"mode":"raw","raw":"{\n  \"band\": \"{{first_band}}\",\n  \"apn\": \"{{first_apn}}\",\n  \"mcc\": \"{{first_mcc}}\",\n  \"mnc\": \"{{first_mnc}}\",\n  \"network\": \"auto\",\n  \"dns\": \"{{first_dns}}\",\n  \"ue_subnet\": \"{{first_ue_subnet}}\",\n  \"ue_access\": \"isolated\"\n}","options":{"raw":{"language":"json"}}},
+            "url":"{{base_url}}/api/v1/cell",
+            "description":"Use only when no saved profile exists. Verify first_dns before sending. network=auto avoids host/container interface-name coupling."
+          },
+          "response":[]
+        },
+        {"name":"GET /api/v1/cell","request":{"method":"GET","url":"{{base_url}}/api/v1/cell","description":"network is the requested policy; resolved_network is the selected interface."},"response":[]},
+        {"name":"GET /api/v1/network","request":{"method":"GET","url":"{{base_url}}/api/v1/network","description":"Read-only effective Manager plan: active, ue_subnet, sgi_address, ue_access, resolved_network. Configuration only; it does not assert Internet or DNS reachability."},"response":[]},
+        {"name":"DELETE /api/v1/cell","request":{"method":"DELETE","url":"{{base_url}}/api/v1/cell","description":"Idempotent stop."},"response":[]}
+      ]
+    },
+    {
+      "name": "UE sessions",
+      "item": [
+        {"name":"GET /api/v1/ues","request":{"method":"GET","url":"{{base_url}}/api/v1/ues","description":"Authoritative bounded multi-UE snapshot. missing/stale/invalid/cell_stopped with sessions=[] means no current snapshot, not no UE."},"response":[]},
+        {"name":"GET /api/v1/ues/{imsi}","request":{"method":"GET","url":"{{base_url}}/api/v1/ues/{{subscriber_imsi}}","description":"Detail is only available for a current session with an authoritative IMSI association."},"response":[]}
+      ]
+    },
+    {
+      "name": "Subscribers",
+      "item": [
+        {"name":"GET /api/v1/subscribers","request":{"method":"GET","url":"{{base_url}}/api/v1/subscribers?limit=50&offset=0","description":"Redacted authorization config. active=null is distinct from authorized=true."},"response":[]},
+        {"name":"GET /api/v1/subscribers/{imsi}","request":{"method":"GET","url":"{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}"},"response":[]},
+        {
+          "name":"POST /api/v1/subscribers",
+          "request":{
+            "method":"POST","header":[{"key":"Content-Type","value":"application/json"}],
+            "body":{"mode":"raw","raw":"{\n  \"name\": \"phone\",\n  \"auth\": \"mil\",\n  \"imsi\": \"{{subscriber_imsi}}\",\n  \"key\": \"{{subscriber_key}}\",\n  \"op_type\": \"opc\",\n  \"opc\": \"{{subscriber_opc}}\",\n  \"amf\": \"8001\",\n  \"sqn\": \"{{subscriber_sqn}}\",\n  \"qci\": 7,\n  \"ip_alloc\": \"dynamic\"\n}","options":{"raw":{"language":"json"}}},
+            "url":"{{base_url}}/api/v1/subscribers","description":"Cell must be stopped. Replace placeholder credential variables locally; responses never echo them."
+          },"response":[]
+        },
+        {
+          "name":"PATCH /api/v1/subscribers/{imsi}",
+          "request":{"method":"PATCH","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"phone-renamed\",\n  \"qci\": 7\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}","description":"Cell must be stopped. Only name/qci/ip_alloc; auth fields and SQN are rejected."},"response":[]
+        },
+        {"name":"DELETE /api/v1/subscribers/{imsi}","request":{"method":"DELETE","url":"{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}","description":"Cell must be stopped. Removes authorization; it does not disconnect a UE."},"response":[]},
+        {"name":"POST /api/v1/config/subscribers (validated replacement)","request":{"method":"POST","body":{"mode":"formdata","formdata":[{"key":"userdb","type":"file","src":"user_db.csv"}]},"url":"{{base_url}}/api/v1/config/subscribers","description":"Cell must be stopped. Validates all rows and preserves current on-disk SQN for every existing IMSI."},"response":[]}
+      ]
+    },
+    {
+      "name": "Diagnostics",
+      "item": [
+        {
+          "name":"GET /api/v1/diagnostics/connectivity",
+          "request":{"method":"GET","url":"{{base_url}}/api/v1/diagnostics/connectivity","description":"Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('200 evidence or 429 busy', () => pm.expect([200, 429]).to.include(pm.response.code));","pm.test('standard envelope', () => { const j=pm.response.json(); pm.expect(j).to.have.property('code'); pm.expect(j).to.have.property('request_id'); });"]}}],
+          "response":[]
+        }
+      ]
+    },
+    {
+      "name": "Other standard endpoints",
+      "item": [
+        {"name":"GET /api/v1/profile","request":{"method":"GET","url":"{{base_url}}/api/v1/profile","description":"Saved cell profile only; use /subscribers and /ues for their separate resources."},"response":[]},
+        {"name":"GET /api/v1/health","request":{"method":"GET","url":"{{base_url}}/api/v1/health"},"response":[]},
+        {"name":"GET /api/v1/captures/lte-data","request":{"method":"GET","url":"{{base_url}}/api/v1/captures/lte-data"},"response":[]},
+        {"name":"POST /api/v1/simcards","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"imsi\":\"{{subscriber_imsi}}\"}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/simcards","description":"Cell must be stopped. Requires a reader and card."},"response":[]},
+        {"name":"POST /api/v1/config/wordlist","request":{"method":"POST","body":{"mode":"formdata","formdata":[{"key":"wordlist","type":"file","src":"wordlist.list"}]},"url":"{{base_url}}/api/v1/config/wordlist"},"response":[]},
+        {"name":"POST /api/v1/crack/jobs (stops cell)","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/crack/jobs","description":"Not a status API. Uses only an already captured CHAP exchange and stops the cell."},"response":[]},
+        {"name":"GET /api/v1/crack/result","request":{"method":"GET","url":"{{base_url}}/api/v1/crack/result"},"response":[]}
+      ]
+    }
+  ]
 }

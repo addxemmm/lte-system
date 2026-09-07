@@ -1,181 +1,196 @@
 openapi: 3.0.3
 info:
-  title: lte-system API v1
-  version: 2.2.0
-  description: |
-    无状态 LTE 实验小区工具的标准 REST API。
-    旧版零散路由（`/start`、`/stop`…）为兼容性冻结保留；新集成必须使用 `/api/v1`。
-    完整参考与迁移表见 docs/API.md。
-    Standard REST API for the stateless LTE lab-cell toolkit.
-    Legacy ad-hoc routes (`/start`, `/stop`, …) remain frozen for
-    compatibility; new integrations must use `/api/v1`.
-    See docs/API.md for the full reference and migration table.
-    Docker 默认监听 0.0.0.0:8081，客户端使用服务器 IP；建议设置 LTE_API_TOKEN。
-    Docker listens on 0.0.0.0:8081 by default; clients use the server IP.
-    A strong random LTE_API_TOKEN is recommended; LTE_LISTEN remains configurable.
-    JSON request bodies contain exactly one object (not null/array/trailing data).
-    Authentication failures and recovered panics are included in request-ID audit logs.
+  title: LTE-System Standard API
+  version: 3.0.0
+  description: >-
+    Standard /api/v1 API only. Root-path legacy endpoints and singular
+    /api/v1/ue were removed in v3.
 servers:
-  - url: http://127.0.0.1:8081
-    description: 服务器本地调用示例 / server-local request example
+  - url: http://HOST:8081
 security:
+  - {}
   - bearerAuth: []
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      description: 仅当服务端设置 LTE_API_TOKEN 时需要 / Required only when LTE_API_TOKEN is set on the server.
   schemas:
     Envelope:
       type: object
       required: [code, message, request_id]
       properties:
-        code:
-          type: integer
-          description: 0 表示成功，否则为 HTTP 状态码*100+序号 / 0 = success; HTTP*100+seq otherwise
-          example: 0
-        message:
-          type: string
-          example: cell started
-        data:
-          description: 端点负载（对象、数组或 null） / endpoint payload (object, array or null)
-        request_id:
-          type: string
-          example: 432678718a07d689
+        code: { type: integer, example: 0 }
+        message: { type: string }
+        data: { nullable: true }
+        request_id: { type: string }
     FieldError:
       type: object
       required: [field, reason]
       properties:
-        field: { type: string, example: band }
-        reason: { type: string, example: must be one of 1,3,5,7,8,34,39,40,41 }
+        field: { type: string }
+        reason: { type: string }
     CellStart:
       type: object
-      additionalProperties: false
       properties:
-        band: { type: string, example: "7", description: "取值之一 / one of 1,3,5,7,8,34,39,40,41" }
-        apn: { type: string, example: srsapn }
-        mcc: { type: string, example: "001", description: "3 位数字 / 3 digits" }
-        mnc: { type: string, example: "01", description: "2-3 位数字 / 2-3 digits" }
-        network: { type: string, example: auto, default: auto, description: "上行策略；省略/空值/auto 按当前网络命名空间最低 metric 的可用 IPv4 默认路由解析，也可显式指定接口 / Uplink policy; omitted/empty/auto resolves the usable lowest-metric IPv4 default route in the current network namespace, or name an interface explicitly" }
-        sdr: { type: string, enum: [auto, uhd, bladerf, zmq], default: auto }
-        device_args: { type: string, description: "射频驱动参数，未设置时针对 B210 自动调优 / RF driver args, auto-tuned for B210 when unset" }
-        tx_gain: { type: integer, minimum: 0, maximum: 90, default: 80 }
-        rx_gain: { type: integer, minimum: 0, maximum: 90, default: 40 }
-        n_prb: { type: integer, enum: [6, 15, 25, 50, 75, 100], default: 25 }
-        full_net_name: { type: string, description: "UE 上显示的运营商名称（NITZ），1-32 字符 / operator name on UE (NITZ), 1-32 chars" }
-        short_net_name: { type: string, description: "运营商短名称，1-32 字符 / short operator name, 1-32 chars" }
-        dns: { type: string, description: "经 PCO 下发给 UE 的 DNS（IPv4） / DNS handed to UEs via PCO (IPv4)" }
-      description: 单一 JSON 对象，上限 1 MiB；空对象 {} 复用上次成功启动的存档 / Exactly one JSON object, maximum 1 MiB; empty object {} reuses the saved profile from the last successful start.
-    UE:
+        band: { type: string, enum: ['1','3','5','7','8','34','39','40','41'] }
+        apn: { type: string }
+        mcc: { type: string, pattern: '^[0-9]{3}$' }
+        mnc: { type: string, pattern: '^[0-9]{2,3}$' }
+        network: { type: string, default: auto, description: 'auto resolves the current namespace default route' }
+        dns: { type: string, format: ipv4 }
+        ue_subnet: { type: string, default: 172.16.0.0/24, description: 'RFC1918 /24; one pool for the single APN' }
+        ue_access: { type: string, enum: [isolated, allow], default: isolated }
+        sdr: { type: string, enum: [auto, uhd, bladerf, zmq] }
+        device_args: { type: string }
+        tx_gain: { type: integer, minimum: 0, maximum: 90 }
+        rx_gain: { type: integer, minimum: 0, maximum: 90 }
+        n_prb: { type: integer, enum: [6,15,25,50,75,100] }
+        full_net_name: { type: string }
+        short_net_name: { type: string }
+      description: '{} reuses the complete saved profile; explicit fields override it.'
+    NetworkPlan:
       type: object
+      required: [active, ue_subnet, sgi_address, ue_access]
       properties:
-        apn: { type: string, nullable: true }
-        imsi: { type: string, nullable: true }
-        ip: { type: string, nullable: true }
+        active: { type: boolean, description: 'Whether this Manager currently has an effective UE network plan' }
+        ue_subnet: { type: string, example: 172.16.0.0/24 }
+        sgi_address: { type: string, format: ipv4, example: 172.16.0.1 }
+        ue_access: { type: string, enum: [isolated, allow] }
+        resolved_network: { type: string, description: 'Present after an active plan resolves its egress interface' }
+      description: 'Configuration snapshot only; it does not assert Internet or DNS reachability.'
+    Bearer:
+      type: object
+      required: [ebi, qci, state]
+      properties:
+        ebi: { type: integer, minimum: 5, maximum: 15 }
+        qci: { type: integer, minimum: 0, maximum: 9, description: '0 means not known yet and is allowed only for deactivated/requested bearers' }
+        state: { type: string, enum: [deactivated, requested, setup, active] }
+    UESession:
+      type: object
+      required: [session_id, mme_ue_s1ap_id, enb_ue_s1ap_id, sctp_assoc_id, emm_state, ecm_state, apn_source, apn_validated, bearers]
+      properties:
+        session_id: { type: string, maxLength: 128 }
+        imsi: { type: string, pattern: '^[0-9]{15}$', description: 'Absent before authoritative identity association' }
+        mme_ue_s1ap_id: { type: integer, minimum: 0 }
+        enb_ue_s1ap_id: { type: integer, minimum: 0 }
+        sctp_assoc_id: { type: integer, format: int32 }
+        emm_state: { type: string, enum: [deregistered, common_procedure_initiated, registered, deregistered_initiated] }
+        ecm_state: { type: string, enum: [idle, connected] }
+        ue_ipv4: { type: string, format: ipv4 }
+        requested_apn: { type: string, maxLength: 99 }
+        apn_source: { type: string, enum: [omitted, pdn_request, esm_information_response] }
+        selected_apn: { type: string, maxLength: 99 }
+        apn_validated: { type: boolean }
+        bearers:
+          type: array
+          maxItems: 16
+          items: { $ref: '#/components/schemas/Bearer' }
+    UESnapshotData:
+      type: object
+      required: [state, sessions, count]
+      properties:
+        state: { type: string, enum: [current, missing, stale, invalid, cell_stopped] }
+        cell_state: { type: string, enum: [running] }
+        reason: { type: string }
+        schema_version: { type: integer, enum: [1] }
+        run_id: { type: string }
+        sequence: { type: integer, format: int64 }
+        started_at_unix_ms: { type: integer, format: int64 }
+        updated_at_unix_ms: { type: integer, format: int64 }
+        count: { type: integer, minimum: 0, maximum: 256 }
+        sessions:
+          type: array
+          maxItems: 256
+          items: { $ref: '#/components/schemas/UESession' }
+    Subscriber:
+      type: object
+      required: [name, auth, imsi, op_type, qci, ip_alloc, authorized, active, credential_status]
+      properties:
+        name: { type: string }
+        auth: { type: string, enum: [mil, xor] }
+        imsi: { type: string, pattern: '^[0-9]{15}$' }
+        op_type: { type: string, enum: [op, opc] }
+        qci: { type: integer, minimum: 1, maximum: 9 }
+        ip_alloc: { type: string }
+        authorized: { type: boolean, enum: [true] }
+        active: { type: boolean, nullable: true, description: 'true iff a current authoritative snapshot has EMM registered for this IMSI; null when no safe join is available' }
+        credential_status: { type: string, enum: [configured] }
+    SubscriberCreate:
+      type: object
+      additionalProperties: false
+      required: [name, auth, imsi, key, amf, sqn, qci, ip_alloc]
+      properties:
+        name: { type: string, pattern: '^[A-Za-z0-9_.-]{1,64}$' }
+        auth: { type: string, enum: [mil, xor] }
+        imsi: { type: string, pattern: '^[0-9]{15}$' }
+        key: { type: string, pattern: '^[0-9A-Fa-f]{32}$', writeOnly: true }
+        op_type: { type: string, enum: [op, opc] }
+        op: { type: string, pattern: '^[0-9A-Fa-f]{32}$', writeOnly: true }
+        opc: { type: string, pattern: '^[0-9A-Fa-f]{32}$', writeOnly: true }
+        amf: { type: string, pattern: '^[0-9A-Fa-f]{4}$', writeOnly: true }
+        sqn: { type: string, pattern: '^[0-9A-Fa-f]{12}$', writeOnly: true }
+        qci: { type: integer, minimum: 1, maximum: 9 }
+        ip_alloc: { type: string, enum: [dynamic] }
+      oneOf:
+        - required: [op]
+        - required: [opc]
+      description: 'name and imsi must each be unique; responses never echo writeOnly fields'
+    SubscriberPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, pattern: '^[A-Za-z0-9_.-]{1,64}$' }
+        qci: { type: integer, minimum: 1, maximum: 9 }
+        ip_alloc: { type: string, enum: [dynamic] }
     SIMProgram:
       type: object
       required: [imsi]
-      description: 单一 JSON 对象，上限 64 KiB；未知字段忽略；已有 IMSI 的认证冲突在硬件操作前拒绝 / Exactly one JSON object, maximum 64 KiB; unknown fields are ignored; authentication conflicts for an existing IMSI are rejected before hardware work.
       properties:
-        imsi: { type: string, example: "001010123456789", description: "15 位数字 / 15 digits" }
+        imsi: { type: string, pattern: '^[0-9]{15}$' }
         mcc: { type: string }
         mnc: { type: string }
-        mnc3: { type: boolean }
-        iccid: { type: string, description: '"auto" 保留出厂值 / "auto" keeps the factory value' }
-        ki: { type: string, description: "32 位十六进制 / 32 hex" }
-        op: { type: string, description: "32 位十六进制，与 opc 互斥 / 32 hex, mutually exclusive with opc" }
-        opc: { type: string, description: "32 位十六进制 / 32 hex" }
+        ki: { type: string, writeOnly: true }
+        op: { type: string, writeOnly: true }
+        opc: { type: string, writeOnly: true }
         op_type: { type: string, enum: [op, opc] }
         auth: { type: string, enum: [mil, xor] }
-        amf: { type: string, description: "4 位十六进制 / 4 hex" }
-        acc: { type: string, description: "4 位十六进制 / 4 hex" }
-        adm: { type: string }
-        spn: { type: string }
+        amf: { type: string }
+        acc: { type: string }
+        sqn: { type: string, writeOnly: true }
         name: { type: string }
-        sqn: { type: string, description: "12 位十六进制 / 12 hex" }
         qci: { type: integer }
+        spn: { type: string }
         card: { type: string }
-    UEEntry:
-      type: object
-      properties:
-        name: { type: string }
-        auth: { type: string }
-        imsi: { type: string }
-    ConnectivityDiagnostics:
-      type: object
-      required: [cell, log_window, registration, pdn, nas_visibility, chap, user_plane, dns, network, limitations]
-      description: 只读、有界、聚合的分层诊断；不探测外网、不停止小区、不创建抓包、不返回 IMSI 或 CHAP 凭据 / Read-only bounded aggregate layer diagnostics; does not probe the Internet, stop the cell, create captures, or return IMSI/CHAP credentials.
-      properties:
-        cell:
-          type: object
-          description: 进程状态及请求/解析后的上行接口策略 / Process state and requested/resolved uplink policy
-        log_window:
-          type: object
-          description: EPC 日志尾窗元数据，最多读取 2 MiB / EPC log-tail metadata, maximum 2 MiB read
-        registration:
-          type: object
-          description: 聚合 Attach/鉴权/Security Mode/Attach Complete 计数；不跨 UE 拼接 / Aggregate attach/authentication/security/attach-complete counts; never joined across UEs
-        pdn:
-          type: object
-          description: 聚合 PDN 请求、IP 分配、承载激活、拒绝计数 / Aggregate PDN request, IP allocation, bearer activation and reject counts
-        nas_visibility:
-          type: object
-          description: 日志窗口中的 NAS 加密可见性计数 / NAS ciphering visibility counts from the log window
-        chap:
-          type: object
-          description: CHAP 可观察性；S1AP pcap 最大 64 MiB、tshark 3 秒且输出有界；不返回握手内容 / CHAP observability; 64 MiB S1AP cap, 3-second bounded tshark output; no handshake material returned
-        user_plane:
-          type: object
-          description: 聚合 SGi 上下行 IP 与 DNS 请求/响应计数；不返回包内容或端点 / Aggregate SGi uplink/downlink IP and DNS request/response counts; no packet contents or endpoints returned
-        dns:
-          type: object
-          description: DNS 配置证据与抓包观察必须分开解释 / DNS configuration and capture observations are reported separately
-        network:
-          type: object
-          description: 当前网络命名空间内默认路由、SGi、IPv4 转发及规则的 configuration_only 证据 / configuration_only evidence for route, SGi, IPv4 forwarding and rules in the current network namespace
-        limitations:
-          type: array
-          items: { type: string }
 paths:
   /api/v1/cell:
     post:
-      summary: 启动小区（空对象复用存档） / Start the cell (empty object reuses saved profile)
+      summary: Start the cell; {} inherits the saved profile
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CellStart' }
       responses:
-        '200': { description: 启动成功（含幂等复用） / started (also on idempotent reuse) }
-        '400': { description: 请求体损坏 / malformed body }
-        '413': { description: JSON 请求体超过 1 MiB / JSON body exceeds 1 MiB }
-        '409': { description: 小区运行中 / cell already running }
-        '422': { description: 校验失败（含 data.errors） / validation failed (data.errors) }
-        '503': { description: 无 SDR 附着 / no SDR attached }
+        '200': { description: Cell started }
+        '409': { description: Already running }
+        '422': { description: Validation failed }
+        '503': { description: SDR unavailable }
     get:
-      summary: 小区状态 / Cell status
+      summary: Manager-owned cell state and resolved network
       responses:
-        '200': { description: '小区状态 / {running,epc,enb,pcap,started_at?,band?,apn?,net_name?,network?,resolved_network?}' }
+        '200': { description: Current state }
     delete:
-      summary: 停止小区并清理本服务管理的孤立抓包（幂等） / Stop cell and clean up owned orphan captures (idempotent)
+      summary: Idempotently stop the cell
       responses:
-        '200': { description: '停止结果 / {stopped:true|false}' }
-        '500': { description: 本服务管理的进程仍未停止 / an owned process remains running }
-  /api/v1/ue:
+        '200': { description: Stopped or already stopped }
+  /api/v1/network:
     get:
-      summary: 附着终端快照（仅第一台） / Attached UE snapshot (first UE only)
-      responses:
-        '200': { description: 终端信息 / UE }
-        '404': { description: 无附着终端 / no UE attached }
-        '412': { description: 小区未运行 / cell not running }
-  /api/v1/diagnostics/connectivity:
-    get:
-      summary: 只读分层连通性证据 / Read-only layered connectivity evidence
-      description: 返回独立的注册、PDN/IP、CHAP、SGi/DNS、路由/转发/NAT证据。部分证据缺失仍返回 200，并在对应 state/reason/problems/limitations 中说明。/ Returns independent registration, PDN/IP, CHAP, SGi/DNS and route/forwarding/NAT evidence. Missing evidence still returns 200 and is explained by component state/reason/problems/limitations.
+      summary: Read the current effective UE network plan without probing or mutation
       responses:
         '200':
-          description: 有界诊断快照（允许部分来源不可用） / Bounded diagnostic snapshot (partial sources allowed)
+          description: Manager network configuration snapshot only
           content:
             application/json:
               schema:
@@ -183,91 +198,173 @@ paths:
                   - $ref: '#/components/schemas/Envelope'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/ConnectivityDiagnostics' }
-        '429': { description: 已有诊断运行，data.reason=diagnostic_busy / another diagnostic is running; data.reason=diagnostic_busy }
+                      data: { $ref: '#/components/schemas/NetworkPlan' }
+  /api/v1/ues:
+    get:
+      summary: Bounded authoritative multi-UE snapshot
+      description: >-
+        Reads the EPC's atomic once-per-second schema-v1 telemetry. Only a matching
+        run_id/PID snapshot no older than five seconds is current. Missing/stale/
+        invalid/cell_stopped states carry sessions=[] and never fall back to log joins.
+      responses:
+        '200':
+          description: Current sessions or an explicit no-current-snapshot state
+  /api/v1/ues/{imsi}:
+    parameters:
+      - in: path
+        name: imsi
+        required: true
+        schema: { type: string, pattern: '^[0-9]{15}$' }
+    get:
+      summary: One current UE session by authoritative IMSI association
+      responses:
+        '200': { description: Session, or explicit no-current-snapshot state }
+        '404': { description: Complete current snapshot proves IMSI absent }
+        '422': { description: Invalid IMSI }
+  /api/v1/subscribers:
+    get:
+      summary: List redacted authorized subscribers
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200': { description: Paginated redacted subscriber list }
+        '422': { description: Invalid pagination }
+        '500': { description: Existing database is invalid }
+    post:
+      summary: Create one subscriber while the cell is stopped
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriberCreate' }
+      responses:
+        '201': { description: Created; response is redacted }
+        '409': { description: Cell running or IMSI already exists }
+        '422': { description: Validation failed }
+  /api/v1/subscribers/{imsi}:
+    parameters:
+      - in: path
+        name: imsi
+        required: true
+        schema: { type: string, pattern: '^[0-9]{15}$' }
+    get:
+      summary: Read one redacted subscriber
+      responses:
+        '200': { description: Redacted subscriber }
+        '404': { description: Not found }
+        '422': { description: Invalid IMSI }
+    patch:
+      summary: Update non-authentication metadata while stopped
+      description: Authentication fields and SQN are rejected and never overwritten.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriberPatch' }
+      responses:
+        '200': { description: Updated; response is redacted }
+        '404': { description: Not found }
+        '409': { description: Cell must be stopped or subscriber name already exists }
+        '422': { description: Validation or protected-field error }
+    delete:
+      summary: Delete subscriber authorization while stopped; does not disconnect a UE
+      responses:
+        '200': { description: Deleted with disconnected=false }
+        '404': { description: Not found }
+        '409': { description: Cell must be stopped }
+        '422': { description: Invalid IMSI }
+  /api/v1/diagnostics/connectivity:
+    get:
+      summary: Read-only layered connectivity evidence
+      responses:
+        '200': { description: Partial or complete evidence }
+        '429': { description: diagnostic_busy }
   /api/v1/crack/jobs:
     post:
-      summary: 开始爆破（会停止运行中小区） / Start APN password cracking (STOPS the running cell)
+      summary: Start a job from an already captured CHAP exchange; stops the cell
       responses:
-        '202': { description: 任务运行中，轮询 /api/v1/crack/result / job running, poll /api/v1/crack/result }
-        '404': { description: 无终端数据 / no UE data }
-        '409': { description: 任务已在运行 / job already running }
-        '412': { description: 当次未采集到可用 S1AP/CHAP 前置证据 / current session has no usable S1AP/CHAP prerequisite evidence }
-        '422': { description: 抓包过大、不完整或不可解码 / capture oversized, incomplete or undecodable }
-        '503': { description: tshark 缺失或超时 / tshark missing or timed out }
+        '202': { description: Accepted }
+        '409': { description: Job conflict }
+        '412': { description: No suitable observed handshake/capture }
+        '422': { description: Capture cannot be interpreted }
+        '503': { description: Decoder unavailable }
   /api/v1/crack/result:
     get:
-      summary: 爆破结果 / Cracking result
+      summary: Poll crack job result
       responses:
-        '200': { description: 状态 ready|running / state ready|running }
-        '404': { description: 字典无口令 / 无终端数据 / password not in dictionary / no UE data }
-        '412': { description: 当次未采集到可用 S1AP/CHAP 前置证据 / current session has no usable S1AP/CHAP prerequisite evidence }
-        '422': { description: 抓包过大、不完整或不可解码 / capture oversized, incomplete or undecodable }
-        '503': { description: tshark 缺失或超时 / tshark missing or timed out }
+        '200': { description: running or ready }
+        '404': { description: Result not found }
   /api/v1/config/subscribers:
     post:
-      summary: 原子上传 user_db.csv，与写卡事务串行（重启后生效） / Atomically upload user_db.csv, serialized with SIM transactions (takes effect after restart)
+      summary: Validate and replace user_db.csv while stopped, preserving existing SQNs
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required: [userdb]
               properties:
                 userdb: { type: string, format: binary }
       responses:
-        '200': { description: 上传成功 / uploaded }
-        '413': { description: 超过 8 MiB / exceeds 8 MiB }
-        '422': { description: 缺少文件 / missing file }
+        '200': { description: Replaced; sqn_policy=preserved_for_existing_imsi }
+        '409': { description: Cell must be stopped }
+        '413': { description: Upload exceeds limit }
+        '422': { description: Missing file or invalid CSV }
+        '500': { description: Existing database or atomic replacement failed }
   /api/v1/config/wordlist:
     post:
-      summary: 原子上传爆破字典 / Atomically upload crack dictionary
+      summary: Atomically replace the crack dictionary
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required: [wordlist]
               properties:
                 wordlist: { type: string, format: binary }
       responses:
-        '200': { description: 上传成功 / uploaded }
-        '413': { description: 超过 8 MiB / exceeds 8 MiB }
-        '422': { description: 缺少文件 / missing file }
+        '200': { description: Uploaded }
+        '413': { description: Upload exceeds limit }
+        '422': { description: Missing file }
   /api/v1/captures/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, enum: [lte-data, s1ap, enb, epc] }
     get:
-      summary: 下载抓包 / Download a capture
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, enum: [lte-data, s1ap, enb, epc, "0", "1", "2", "3"] }
+      summary: Download an existing capture
       responses:
-        '200': { description: 文件下载 / file download }
-        '404': { description: 未知 id 或未就绪 / unknown id or not ready }
+        '200': { description: Capture file }
+        '404': { description: Unknown id or file not ready }
   /api/v1/simcards:
     post:
-      summary: 串行事务写卡（冲突预检，最长约 180s） / Program a SIM in a serialized transaction with conflict preflight (up to ~180s)
+      summary: Program a SIM and append its subscriber row while stopped
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/SIMProgram' }
       responses:
-        '200': { description: 写卡成功 / programmed }
-        '400': { description: 非单一 JSON 对象 / body is not exactly one JSON object }
-        '413': { description: JSON 请求体超过 64 KiB / JSON body exceeds 64 KiB }
-        '409': { description: 卡已在库 / card already in database }
-        '412': { description: 未插卡 / no card inserted }
-        '422': { description: 校验失败 / validation failed }
-        '503': { description: 无读卡器 / no reader attached }
+        '200': { description: Programmed }
+        '409': { description: Cell running or card already exists }
+        '412': { description: No card inserted }
+        '422': { description: Validation failed }
+        '503': { description: Reader unavailable }
   /api/v1/profile:
     get:
-      summary: 存档启动配置与终端列表（无密钥） / Saved launch profile + UE list (no key material)
+      summary: Saved launch profile only; subscribers and sessions are separate resources
       responses:
-        '200': { description: '存档与终端列表 / {has_profile,profile?,ues[]}' }
+        '200': { description: has_profile and optional profile }
   /api/v1/health:
     get:
-      summary: 健康与 SDR 检测 / Health + SDR detection
+      summary: API health, Manager running state and SDR detection
       responses:
-        '200': { description: '健康状态 / {ok,running,sdr,time}' }
+        '200': { description: Health snapshot }

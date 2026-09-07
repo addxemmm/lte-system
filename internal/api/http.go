@@ -1,10 +1,10 @@
-// Package api implements the HTTP layer: legacy routes (frozen) + /api/v1.
+// Package api implements the standard /api/v1 HTTP layer.
 //
 // v1 contract (see docs/API.md and docs/api/openapi.yaml):
 //   - Proper HTTP status codes (200/201/400/401/404/405/409/412/413/422/500/503)
 //   - JSON envelope {"code","message","data","request_id"}; code 0 = success
 //   - X-Request-ID response header; per-request audit log line
-//   - Optional bearer auth via LTE_API_TOKEN (when set, all routes require it)
+//   - Optional bearer auth via LTE_API_TOKEN (when set, every route requires it)
 package api
 
 import (
@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-// Business codes for the v1 envelope. HTTP status is derived from code/1000.
+// Business codes for the v1 envelope. HTTP status is derived from code/100.
 const (
 	CodeOK              = 0
 	CodeMalformed       = 40001 // body not JSON / wrong shape (HTTP 400)

@@ -77,6 +77,7 @@ func (s *Server) handleV1ConnectivityDiagnostics(w http.ResponseWriter, r *http.
 	defer cancel()
 
 	cell := s.mgr.IsRunning()
+	plan := s.mgr.NetworkPlanSnapshot()
 	logEvidence := parser.InspectConnectivityLog(s.cfg.LogPath(s.cfg.EPCLogName))
 
 	var wg sync.WaitGroup
@@ -90,7 +91,11 @@ func (s *Server) handleV1ConnectivityDiagnostics(w http.ResponseWriter, r *http.
 	}()
 	go func() {
 		defer wg.Done()
-		userPlane = parser.InspectUserPlane(ctx, s.cfg.TsharkBin, s.cfg.LogPath(s.cfg.PcapLTEData))
+		ueSubnet := ""
+		if plan.Active {
+			ueSubnet = plan.UESubnet
+		}
+		userPlane = parser.InspectUserPlaneForSubnet(ctx, s.cfg.TsharkBin, s.cfg.LogPath(s.cfg.PcapLTEData), ueSubnet)
 	}()
 	go func() {
 		defer wg.Done()

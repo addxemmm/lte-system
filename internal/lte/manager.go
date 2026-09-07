@@ -37,7 +37,9 @@ type StartParams struct {
 	FullNetName  string `json:"full_net_name"`
 	ShortNetName string `json:"short_net_name"`
 	// DNS server handed to UEs via PCO. Empty = server default.
-	DNS string `json:"dns"`
+	DNS      string `json:"dns"`
+	UESubnet string `json:"ue_subnet"` // canonical RFC1918 /24; empty = 172.16.0.0/24
+	UEAccess string `json:"ue_access"` // "isolated" (default) or "allow"
 }
 
 // Validate checks legacy "incomplete parameters" + new field formats.
@@ -52,8 +54,8 @@ func (p StartParams) Validate() error {
 	if !(len(p.MNC) == 2 || len(p.MNC) == 3) || !isDigits(p.MNC) {
 		return fmt.Errorf("mnc must be 2 or 3 digits")
 	}
-	if strings.ContainsAny(p.APN, " \t\n\r\"';&|<>$`\\") {
-		return fmt.Errorf("apn contains illegal characters")
+	if err := validateAPN(p.APN); err != nil {
+		return fmt.Errorf("apn %w", err)
 	}
 	network := strings.TrimSpace(p.Network)
 	if network != "" && network != "auto" && !validInterfaceName(network) {
@@ -67,6 +69,16 @@ func (p StartParams) Validate() error {
 	}
 	if p.DNS != "" && !validIPv4(p.DNS) {
 		return fmt.Errorf("dns must be an IPv4 address")
+	}
+	ueSubnet, ueAccess := strings.TrimSpace(p.UESubnet), strings.ToLower(strings.TrimSpace(p.UEAccess))
+	if ueSubnet == "" {
+		ueSubnet = defaultUESubnet
+	}
+	if ueAccess == "" {
+		ueAccess = defaultUEAccess
+	}
+	if _, err := makeUENetworkPlan(ueSubnet, ueAccess); err != nil {
+		return err
 	}
 	return nil
 }
@@ -162,8 +174,12 @@ type Manager struct {
 	// Stop removes the right rules even when the persisted policy is "auto".
 	// It is cleared on successful Stop and is never written into the profile.
 	lastNetwork     string
+	lastUESubnet    string
+	lastUEAccess    string
 	natOwned        bool
 	forwardingOwned []iptRule
+	runID           string
+	ueSnapshotPath  string
 	lastBand        BandInfo
 	bandKnown       bool
 }
@@ -221,6 +237,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	if p.Network == "" {
 		p.Network = "auto"
 	}
+	normalizeUEPolicy(&p)
 	if err := p.Validate(); err != nil {
 		return false, err
 	}
@@ -249,6 +266,13 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	}
 	if err := m.cfg.EnsureDirs(); err != nil {
 		return false, err
+	}
+	uePlan, err := makeUENetworkPlan(p.UESubnet, p.UEAccess)
+	if err != nil {
+		return false, err
+	}
+	if err := m.validateUENetworkEnvironment(uePlan); err != nil {
+		return false, fmt.Errorf("UE network preflight: %w", err)
 	}
 
 	band, known := Lookup(p.Band)
@@ -299,18 +323,28 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	if err := ctx.Err(); err != nil {
 		return known, err
 	}
+	runID, err := generateRunID()
+	if err != nil {
+		return known, fmt.Errorf("generate UE telemetry run ID: %w", err)
+	}
+	ueSnapshotPath := m.cfg.LogPath("ue-sessions.json")
+	if err := os.Remove(ueSnapshotPath); err != nil && !os.IsNotExist(err) {
+		return known, fmt.Errorf("remove stale UE telemetry snapshot: %w", err)
+	}
 
 	// Network policy is established before either LTE process is started, so
 	// permissions, xtables locking and forwarding failures cannot surface only
 	// after RF transmission begins. Each helper reports exactly which rules it
 	// inserted; rollback removes those rules and leaves pre-existing host rules.
 	m.lastNetwork = resolvedNetwork
-	m.natOwned, err = ensureRule(ctx, natRule(resolvedNetwork))
+	m.lastUESubnet = uePlan.SubnetText
+	m.lastUEAccess = uePlan.Access
+	m.natOwned, err = ensureRule(ctx, natRule(resolvedNetwork, uePlan.SubnetText))
 	if err != nil {
 		m.stopLocked()
 		return known, fmt.Errorf("configure UE NAT on %q: %w", resolvedNetwork, err)
 	}
-	m.forwardingOwned, err = ensureForwarding(ctx, resolvedNetwork)
+	m.forwardingOwned, err = ensureForwarding(ctx, resolvedNetwork, uePlan)
 	if err != nil {
 		m.stopLocked()
 		return known, fmt.Errorf("configure UE forwarding on %q: %w", resolvedNetwork, err)
@@ -332,6 +366,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, err
 	}
 	epcCmd := exec.CommandContext(context.Background(), m.cfg.SrsEPCBin, epcConf)
+	epcCmd.Env = withEnv(os.Environ(), "LTE_UE_SNAPSHOT_PATH", ueSnapshotPath, "LTE_UE_RUN_ID", runID)
 	epcCmd.Stdout = epcLogF
 	epcCmd.Stderr = epcLogF
 	epc, err := startManaged(epcCmd)
@@ -389,6 +424,8 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 
 	m.startedAt = time.Now()
 	m.lastStart = p
+	m.runID = runID
+	m.ueSnapshotPath = ueSnapshotPath
 	m.lastBand = band
 	m.bandKnown = known
 	_ = m.SaveProfile(p) // best-effort: next /start {} reuses it
@@ -432,6 +469,7 @@ func (m *Manager) LoadProfile() (p StartParams, ok bool) {
 	if strings.TrimSpace(v.Network) == "" {
 		v.Network = "auto"
 	}
+	normalizeUEPolicy(&v)
 	return v, true
 }
 
@@ -481,6 +519,12 @@ func (m *Manager) OverlayProfile(p *StartParams) bool {
 	if p.DNS == "" {
 		p.DNS = saved.DNS
 	}
+	if p.UESubnet == "" {
+		p.UESubnet = saved.UESubnet
+	}
+	if p.UEAccess == "" {
+		p.UEAccess = saved.UEAccess
+	}
 	return true
 }
 
@@ -496,8 +540,8 @@ func (m *Manager) Stop() bool {
 }
 
 // deleteNAT removes the single MASQUERADE rule recorded as ours.
-func deleteNAT(iface string) error {
-	return deleteOwnedRule(natRule(iface))
+func deleteNAT(iface, subnet string) error {
+	return deleteOwnedRule(natRule(iface, subnet))
 }
 
 func (m *Manager) stopLocked() bool {
@@ -514,15 +558,23 @@ func (m *Manager) stopLocked() bool {
 		m.epcCmd = nil
 	}
 	if m.natOwned && m.lastNetwork != "" {
-		if deleteNAT(m.lastNetwork) == nil {
+		subnet := m.lastUESubnet
+		if subnet == "" {
+			subnet = defaultUESubnet
+		}
+		if deleteNAT(m.lastNetwork, subnet) == nil {
 			m.natOwned = false
 		}
 	}
 	m.forwardingOwned = cleanupForwarding(m.forwardingOwned)
 	if !m.natOwned && len(m.forwardingOwned) == 0 {
 		m.lastNetwork = ""
+		m.lastUESubnet = ""
+		m.lastUEAccess = ""
 	}
 	m.startedAt = time.Time{}
+	m.runID = ""
+	m.ueSnapshotPath = ""
 	return !m.anyAliveLocked() && !m.natOwned && len(m.forwardingOwned) == 0
 }
 
@@ -593,8 +645,8 @@ func waitForInit(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-// ueSubnet is the canonical /24 spelling of the SPGW UE pool.
-const ueSubnet = "172.16.0.0/24"
+// ueSubnet is retained as the canonical default for compatibility tests.
+const ueSubnet = defaultUESubnet
 
 // iptRule is one iptables rule (filter table when table == "").
 type iptRule struct {
@@ -606,27 +658,43 @@ type iptRule struct {
 // forwardRules returns the precise UE-subnet rules every /start must ensure:
 // forwarding is limited to SGi<->uplink, unsolicited inbound packets are not
 // accepted, and TCP MSS is clamped in both directions over the GTP path.
-func forwardRules(uplink ...string) []iptRule {
-	iface := "UPLINK"
-	if len(uplink) != 0 && uplink[0] != "" {
-		iface = uplink[0]
+func forwardRules(uplink string, plans ...ueNetworkPlan) []iptRule {
+	iface := uplink
+	if iface == "" {
+		iface = "UPLINK"
+	}
+	plan, _ := makeUENetworkPlan(defaultUESubnet, defaultUEAccess)
+	if len(plans) != 0 {
+		plan = plans[0]
+	}
+	subnet := plan.SubnetText
+	policyTarget := "DROP"
+	if plan.Access == "allow" {
+		policyTarget = "ACCEPT"
 	}
 	return []iptRule{
-		{"filter", "FORWARD", []string{"-i", sgiInterface, "-s", ueSubnet,
+		{"filter", "FORWARD", []string{"-i", sgiInterface, "-s", subnet,
 			"-o", iface, "-j", "ACCEPT"}},
 		{"filter", "FORWARD", []string{"-i", iface, "-o", sgiInterface,
-			"-d", ueSubnet, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"}},
-		{"mangle", "FORWARD", []string{"-i", sgiInterface, "-s", ueSubnet,
+			"-d", subnet, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"}},
+		{"mangle", "FORWARD", []string{"-i", sgiInterface, "-s", subnet,
 			"-o", iface, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN",
 			"-j", "TCPMSS", "--clamp-mss-to-pmtu"}},
 		{"mangle", "FORWARD", []string{"-i", iface, "-o", sgiInterface,
-			"-d", ueSubnet, "-p", "tcp",
+			"-d", subnet, "-p", "tcp",
 			"--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}},
+		// This rule is inserted last and therefore lands first in FORWARD.
+		{"filter", "FORWARD", []string{"-i", sgiInterface, "-o", sgiInterface,
+			"-s", subnet, "-d", subnet, "-j", policyTarget}},
 	}
 }
 
-func natRule(iface string) iptRule {
-	return iptRule{"nat", "POSTROUTING", []string{"-s", ueSubnet,
+func natRule(iface string, subnets ...string) iptRule {
+	subnet := defaultUESubnet
+	if len(subnets) != 0 && subnets[0] != "" {
+		subnet = subnets[0]
+	}
+	return iptRule{"nat", "POSTROUTING", []string{"-s", subnet,
 		"-o", iface, "-j", "MASQUERADE"}}
 }
 
@@ -663,10 +731,18 @@ func ensureRule(ctx context.Context, r iptRule) (bool, error) {
 
 // ensureForwarding adds missing rules and returns exactly the rules added by
 // this invocation. Stop must not delete a pre-existing host rule.
-func ensureForwarding(ctx context.Context, uplink string) ([]iptRule, error) {
+func ensureForwarding(ctx context.Context, uplink string, plans ...ueNetworkPlan) ([]iptRule, error) {
 	var added []iptRule
-	for _, r := range forwardRules(uplink) {
-		owned, err := ensureRule(ctx, r)
+	rules := forwardRules(uplink, plans...)
+	for i, r := range rules {
+		var owned bool
+		var err error
+		if i == len(rules)-1 {
+			err = r.run(ctx, "-I")
+			owned = err == nil
+		} else {
+			owned, err = ensureRule(ctx, r)
+		}
 		if err != nil {
 			return added, err
 		}
@@ -712,6 +788,7 @@ type epcTmplData struct {
 	MCC, MNC, APN             string
 	FullNetName, ShortNetName string
 	DNSAddr                   string
+	SGIAddress                string
 	UserDB, EPCPcap, EPCLog   string
 }
 
@@ -742,7 +819,7 @@ db_file = {{.UserDB}}
 
 [spgw]
 gtpu_bind_addr   = 127.0.1.100
-sgi_if_addr      = 172.16.0.1
+sgi_if_addr      = {{.SGIAddress}}
 sgi_if_name      = srs_spgw_sgi
 max_paging_queue = 100
 
@@ -952,6 +1029,11 @@ nr_cell_list =
 `))
 
 func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs string, tx, rx, nprb int) error {
+	normalizeUEPolicy(&p)
+	uePlan, err := makeUENetworkPlan(p.UESubnet, p.UEAccess)
+	if err != nil {
+		return err
+	}
 	userDB := m.cfg.UserDBPath()
 	if err := ensureUserDB(userDB, m.cfg.ConfDir); err != nil {
 		return err
@@ -972,7 +1054,7 @@ func (m *Manager) renderAll(p StartParams, band BandInfo, devName, devArgs strin
 	epcData := epcTmplData{
 		MCC: p.MCC, MNC: p.MNC, APN: p.APN,
 		FullNetName: p.FullNetName, ShortNetName: p.ShortNetName,
-		DNSAddr: p.DNS,
+		DNSAddr: p.DNS, SGIAddress: uePlan.SGIAddress,
 		UserDB:  userDB,
 		EPCPcap: m.cfg.LogPath(m.cfg.PcapEPC),
 		EPCLog:  m.cfg.LogPath(m.cfg.EPCLogName),

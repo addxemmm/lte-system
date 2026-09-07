@@ -1,26 +1,20 @@
-# postman — Postman 集合 Postman Collection
+# Postman Collection — LTE-System API v3
 
-## 导入 Import
+导入 `postman/lte-system.postman_collection.json`。集合只含 `/api/v1/*` 标准接口；根路径旧接口与 `/api/v1/ue` 已删除。
 
-Postman → Import → 选择 `postman/lte-system.postman_collection.json`。
-Postman → Import → select the file above.
+Import `postman/lte-system.postman_collection.json`. The collection contains only the standard `/api/v1/*` API; root legacy routes and `/api/v1/ue` were removed.
 
 ## 使用 Use
 
-1. 右键集合 → Edit → Variables：`base_url` 改成你的服务器地址
-   （服务器本机 `http://127.0.0.1:8081`，局域网如 `http://192.0.2.10:8081`）。
-   Set `base_url` to your server in collection Variables.
-2. `token` 留空即可（开放模式）；服务端设了 `LTE_API_TOKEN` 才填，
-   集合会自动带 `Authorization: Bearer {{token}}`。
-   Leave `token` empty for open mode.
-3. 先跑 `Legacy` 文件夹冒烟，再用 `v1 标准` 做新集成；上传类请求先在本地备好文件。
-   Smoke-test with `Legacy` first, then build on `v1`.
-4. 文件夹自带断言：Legacy 断 HTTP 200 + JSON，v1 断 2xx + 包络字段。
-   Folder-level tests assert status codes and the envelope.
-5. 手机已入网但不能上网时先运行 v1 的 `GET /api/v1/diagnostics/connectivity`；这是只读检查，不要用会停站的 crack 请求代替状态诊断。
-   For an attached-but-offline UE, run the read-only v1 connectivity diagnostic first; do not use the cell-stopping crack request as a status check.
-6. 启动样例使用 `network=auto`，不绑定宿主网卡名。`ue_dns` 留空沿用当前存档/服务默认，避免覆盖已经修好的 DNS；首次部署应填写实际验证可达的 IPv4 resolver。
-   Startup examples use `network=auto`. Leave `ue_dns` empty to inherit the saved/server default without overwriting a repaired DNS setting; first deployments should configure an actually reachable IPv4 resolver.
+1. 在 collection variables 设置 `base_url=http://HOST:8081`；服务端启用 `LTE_API_TOKEN` 时填写 `token`。
+2. 日常启动用第一项 **default: inherit verified profile**，body 固定 `{}`。它继承上次验证可用的 `network`、DNS、UE subnet 与 access policy，不会把现场配置覆盖成 Postman 示例值。
+3. 只有首次安装且没有存档时才使用 **first installation template**。先确认 `first_dns` 从 UE 路径可达；`network=auto` 默认解析容器/主机当前命名空间默认路由。
+4. 在线状态先查 `GET /api/v1/ues`；`missing|stale|invalid|cell_stopped` 且 `sessions=[]` 表示缺少可靠当前快照，不表示没有 UE。配置授权查 `/subscribers`，两者不是同一概念。
+5. “已入网但不能上网”先调用只读 `GET /api/v1/diagnostics/connectivity`。200 是证据结果；并发检查可能返回 429 `diagnostic_busy`。不要用会停止小区的 crack 请求替代状态诊断。
+6. subscriber 新增、修改、删除、批量替换和 SIM 写卡都要求小区已停止，否则 409。响应不回显 Key、OP/OPc、AMF、SQN；批量替换保留现有 IMSI 的磁盘最新 SQN。
+7. 集合中的 subscriber 凭据变量是不可用占位符；只在本地变量中填入测试卡资料，不要提交真实凭据。
+
+完整语义与错误码见 [`docs/API.md`](../docs/API.md)，机器契约见 [`docs/api/openapi.yaml`](../docs/api/openapi.yaml)。
 
 ---
-**导航 Navigation:** [仓库根 Repo Root](../README.md) · [API v1](../docs/API.md) · [旧版API Legacy](../docs/API_LEGACY.md)
+**导航 Navigation:** [仓库根](../README.md) · [API v3](../docs/API.md)

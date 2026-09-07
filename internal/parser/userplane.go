@@ -21,17 +21,18 @@ const (
 // UserPlaneObservation is a count-only summary of an existing SGi capture.
 // Packet contents and endpoint addresses are never returned.
 type UserPlaneObservation struct {
-	State             string    `json:"state"`
-	Reason            string    `json:"reason"`
-	CaptureSize       int64     `json:"capture_size_bytes,omitempty"`
-	CaptureModified   time.Time `json:"capture_modified_at,omitempty"`
-	IPPackets         int       `json:"ip_packets"`
-	UEUplinkPackets   int       `json:"ue_uplink_packets"`
-	UEDownlinkPackets int       `json:"ue_downlink_packets"`
-	DNSQueries        int       `json:"dns_queries"`
-	DNSResponses      int       `json:"dns_responses"`
-	ScanComplete      bool      `json:"scan_complete"`
-	Limitations       []string  `json:"limitations,omitempty"`
+	State                string    `json:"state"`
+	Reason               string    `json:"reason"`
+	CaptureSize          int64     `json:"capture_size_bytes,omitempty"`
+	CaptureModified      time.Time `json:"capture_modified_at,omitempty"`
+	IPPackets            int       `json:"ip_packets"`
+	UEUplinkPackets      int       `json:"ue_uplink_packets"`
+	UEDownlinkPackets    int       `json:"ue_downlink_packets"`
+	DNSQueries           int       `json:"dns_queries"`
+	DNSResponses         int       `json:"dns_responses"`
+	ScanComplete         bool      `json:"scan_complete"`
+	ClassificationSubnet string    `json:"classification_subnet,omitempty"`
+	Limitations          []string  `json:"limitations,omitempty"`
 }
 
 type userPlaneRunner func(context.Context, string, ...string) ([]byte, bool, error)
@@ -42,6 +43,17 @@ func InspectUserPlane(ctx context.Context, tsharkBin, path string) UserPlaneObse
 }
 
 func inspectUserPlane(ctx context.Context, tsharkBin, path string, run userPlaneRunner) UserPlaneObservation {
+	return inspectUserPlaneForSubnet(ctx, tsharkBin, path, "172.16.0.0/24", run)
+}
+
+// InspectUserPlaneForSubnet classifies direction against the effective UE pool
+// of the current Manager run. An empty/invalid subnet leaves direction counts
+// unclassified rather than silently falling back to a different pool.
+func InspectUserPlaneForSubnet(ctx context.Context, tsharkBin, path, subnet string) UserPlaneObservation {
+	return inspectUserPlaneForSubnet(ctx, tsharkBin, path, subnet, runUserPlaneCommand)
+}
+
+func inspectUserPlaneForSubnet(ctx context.Context, tsharkBin, path, subnet string, run userPlaneRunner) UserPlaneObservation {
 	o := UserPlaneObservation{
 		State:  "not_collected",
 		Reason: "capture_missing",
@@ -98,7 +110,15 @@ func inspectUserPlane(ctx context.Context, tsharkBin, path string, run userPlane
 		}
 	}
 
-	ueSubnet := netip.MustParsePrefix("172.16.0.0/24")
+	ueSubnet, subnetErr := netip.ParsePrefix(subnet)
+	classifyUE := subnetErr == nil && ueSubnet.Addr().Is4()
+	if classifyUE {
+		ueSubnet = ueSubnet.Masked()
+		o.ClassificationSubnet = ueSubnet.String()
+	} else {
+		o.Limitations = append(o.Limitations,
+			"UE direction counts are unavailable because no effective IPv4 UE subnet was active")
+	}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -113,10 +133,10 @@ func inspectUserPlane(ctx context.Context, tsharkBin, path string, run userPlane
 			continue
 		}
 		o.IPPackets++
-		if srcErr == nil && ueSubnet.Contains(src) {
+		if classifyUE && srcErr == nil && ueSubnet.Contains(src) {
 			o.UEUplinkPackets++
 		}
-		if dstErr == nil && ueSubnet.Contains(dst) {
+		if classifyUE && dstErr == nil && ueSubnet.Contains(dst) {
 			o.UEDownlinkPackets++
 		}
 		switch strings.TrimSpace(fields[2]) {

@@ -16,6 +16,9 @@ type NetworkDiagnostics struct {
 	Evidence         string                 `json:"evidence"`
 	RequestedNetwork string                 `json:"requested_network,omitempty"`
 	ResolvedNetwork  string                 `json:"resolved_network,omitempty"`
+	UESubnet         string                 `json:"ue_subnet"`
+	SGIAddress       string                 `json:"sgi_address"`
+	UEAccess         string                 `json:"ue_access"`
 	DefaultRoute     DefaultRouteDiagnostic `json:"default_route"`
 	SGI              InterfaceDiagnostic    `json:"sgi"`
 	IPv4Forward      IPv4ForwardDiagnostic  `json:"ipv4_forward"`
@@ -72,12 +75,25 @@ func (m *Manager) NetworkDiagnostics(ctx context.Context) NetworkDiagnostics {
 	}
 
 	m.mu.Lock()
-	d.RequestedNetwork = m.lastStart.Network
+	lastStart := m.lastStart
+	d.RequestedNetwork = lastStart.Network
 	activeConfig := m.lastNetwork != ""
 	activeResolved := m.lastNetwork
+	activeSubnet, activeAccess := m.lastUESubnet, m.lastUEAccess
 	natOwned := m.natOwned
 	forwardOwned := append([]iptRule(nil), m.forwardingOwned...)
 	m.mu.Unlock()
+	normalizeUEPolicy(&lastStart)
+	uePlan, err := makeUENetworkPlan(lastStart.UESubnet, lastStart.UEAccess)
+	if err != nil {
+		uePlan, _ = makeUENetworkPlan(defaultUESubnet, defaultUEAccess)
+	}
+	if activeConfig && activeSubnet != "" && activeAccess != "" {
+		if activePlan, activeErr := makeUENetworkPlan(activeSubnet, activeAccess); activeErr == nil {
+			uePlan = activePlan
+		}
+	}
+	d.UESubnet, d.SGIAddress, d.UEAccess = uePlan.SubnetText, uePlan.SGIAddress, uePlan.Access
 
 	route, routeErr := readDefaultIPv4Route()
 	if routeErr != nil {
@@ -123,10 +139,13 @@ func (m *Manager) NetworkDiagnostics(ctx context.Context) NetworkDiagnostics {
 	}
 
 	if d.ResolvedNetwork != "" {
-		nat := natRule(d.ResolvedNetwork)
+		nat := natRule(d.ResolvedNetwork, uePlan.SubnetText)
 		d.Rules.NAT = append(d.Rules.NAT, diagnoseRule(ctx, "ue_masquerade", nat, natOwned, activeConfig, &d.Problems))
-		for i, rule := range forwardRules(d.ResolvedNetwork) {
-			name := []string{"ue_to_uplink", "established_to_ue", "mss_to_uplink", "mss_to_ue"}[i]
+		for i, rule := range forwardRules(d.ResolvedNetwork, uePlan) {
+			name := []string{"ue_to_uplink", "established_to_ue", "mss_to_uplink", "mss_to_ue", "ue_isolation"}[i]
+			if uePlan.Access == "allow" && i == 4 {
+				name = "ue_interconnect"
+			}
 			owned := slices.ContainsFunc(forwardOwned, func(candidate iptRule) bool {
 				return sameRule(candidate, rule)
 			})

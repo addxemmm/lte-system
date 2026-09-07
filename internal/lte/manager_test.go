@@ -126,6 +126,30 @@ func TestRenderAll_NetName(t *testing.T) {
 	}
 }
 
+func TestRenderAll_CustomUESubnet(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.ConfDir = filepath.Join(cfg.DataDir, "conf")
+	cfg.LogDir = filepath.Join(cfg.DataDir, "log")
+	if err := cfg.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	m := New(cfg)
+	band, _ := Lookup("7")
+	p := StartParams{Band: "7", APN: "corp-lab", MCC: "001", MNC: "01", Network: "eth0",
+		UESubnet: "10.20.30.0/24", UEAccess: "allow"}
+	if err := m.renderAll(p, band, "zmq", "", 80, 40, 25); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(cfg.ConfDir, "epc_run.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "sgi_if_addr      = 10.20.30.1") {
+		t.Fatalf("custom SGi gateway not rendered:\n%s", b)
+	}
+}
+
 func TestValidIPv4(t *testing.T) {
 	for _, ok := range []string{"8.8.8.8", "192.168.100.1", "1.2.3.4"} {
 		if !validIPv4(ok) {
@@ -145,8 +169,8 @@ func TestValidIPv4(t *testing.T) {
 
 func TestForwardRules(t *testing.T) {
 	rules := forwardRules("eth9")
-	if len(rules) != 4 {
-		t.Fatalf("want 4 rules, got %d", len(rules))
+	if len(rules) != 5 {
+		t.Fatalf("want 5 rules, got %d", len(rules))
 	}
 	joined := ""
 	for _, r := range rules {
@@ -160,6 +184,9 @@ func TestForwardRules(t *testing.T) {
 	}
 	if strings.Contains(joined, "DOCKER-USER") {
 		t.Fatalf("bridge-safe rules must not depend on DOCKER-USER:\n%s", joined)
+	}
+	if !strings.Contains(joined, "-i srs_spgw_sgi -o srs_spgw_sgi -s 172.16.0.0/24 -d 172.16.0.0/24 -j DROP") {
+		t.Fatalf("default UE isolation rule missing:\n%s", joined)
 	}
 	if got := strings.Join(rules[2].commandArgs("-I"), " "); got != "-w 5 -t mangle -I FORWARD -i srs_spgw_sgi -s 172.16.0.0/24 -o eth9 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu" {
 		t.Fatalf("wrong iptables ordering (MSS would not apply): %s", got)
@@ -207,7 +234,8 @@ func TestProfile_SaveLoadOverlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := m.LoadProfile()
-	if !ok || got.APN != "addxLTE" || got.DNS != "192.168.100.1" {
+	if !ok || got.APN != "addxLTE" || got.DNS != "192.168.100.1" ||
+		got.UESubnet != defaultUESubnet || got.UEAccess != defaultUEAccess {
 		t.Fatalf("load failed: %v %+v", ok, got)
 	}
 	// Overlay: partial request inherits the rest.
@@ -215,7 +243,8 @@ func TestProfile_SaveLoadOverlay(t *testing.T) {
 	if !m.OverlayProfile(&part) {
 		t.Fatal("overlay failed")
 	}
-	if part.APN != "addxLTE" || part.Band != "40" || part.MCC != "001" {
+	if part.APN != "addxLTE" || part.Band != "40" || part.MCC != "001" ||
+		part.UESubnet != defaultUESubnet || part.UEAccess != defaultUEAccess {
 		t.Fatalf("bad overlay: %+v", part)
 	}
 	// Corrupt file => no profile, no crash.

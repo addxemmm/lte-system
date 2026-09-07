@@ -1,9 +1,9 @@
 // v1 implements the standard REST API (/api/v1/*). See docs/API.md and
 // docs/api/openapi.yaml for the contract.
 //
-// Differences from the frozen legacy routes: proper HTTP status codes,
+// Every endpoint uses proper HTTP status codes, the
 // {"code","message","data","request_id"} envelope, per-field 422 details,
-// no silent fallbacks (unknown band is an error), idempotent stop.
+// no silent fallbacks (unknown band is an error), and idempotent stop.
 package api
 
 import (
@@ -16,10 +16,8 @@ import (
 
 	"github.com/addxemmm/lte-system/internal/crack"
 	"github.com/addxemmm/lte-system/internal/lte"
-	"github.com/addxemmm/lte-system/internal/parser"
 	"github.com/addxemmm/lte-system/internal/sdr"
 	"github.com/addxemmm/lte-system/internal/sim"
-	"github.com/addxemmm/lte-system/internal/subscriber"
 	"github.com/addxemmm/lte-system/internal/sysop"
 )
 
@@ -36,21 +34,46 @@ var v1Routes = []v1Route{
 	{http.MethodPost, "/api/v1/cell", "start cell"},
 	{http.MethodGet, "/api/v1/cell", "cell status"},
 	{http.MethodDelete, "/api/v1/cell", "stop cell (idempotent; stopping idle succeeds)"},
-	{http.MethodGet, "/api/v1/ue", "attached UE snapshot"},
+	{http.MethodGet, "/api/v1/network", "effective read-only UE network plan"},
+	{http.MethodGet, "/api/v1/ues", "current structured UE session snapshot"},
+	{http.MethodGet, "/api/v1/ues/", "current structured UE session detail (prefix)"},
 	{http.MethodGet, "/api/v1/diagnostics/connectivity", "read-only connectivity evidence"},
 	{http.MethodPost, "/api/v1/crack/jobs", "start APN password cracking"},
 	{http.MethodGet, "/api/v1/crack/result", "cracking result"},
-	{http.MethodPost, "/api/v1/config/subscribers", "upload user_db.csv"},
+	{http.MethodGet, "/api/v1/subscribers", "list authorized subscribers"},
+	{http.MethodPost, "/api/v1/subscribers", "create authorized subscriber"},
+	{http.MethodGet, "/api/v1/subscribers/", "authorized subscriber detail (prefix)"},
+	{http.MethodPatch, "/api/v1/subscribers/", "update subscriber metadata (prefix)"},
+	{http.MethodDelete, "/api/v1/subscribers/", "delete authorized subscriber (prefix)"},
+	{http.MethodPost, "/api/v1/config/subscribers", "replace validated subscriber database while stopped"},
 	{http.MethodPost, "/api/v1/config/wordlist", "upload crack dictionary"},
 	{http.MethodGet, "/api/v1/captures/", "download capture by id (prefix)"},
 	{http.MethodPost, "/api/v1/simcards", "program a SIM card"},
-	{http.MethodGet, "/api/v1/profile", "saved launch profile + UE list"},
+	{http.MethodGet, "/api/v1/profile", "saved launch profile"},
 	{http.MethodGet, "/api/v1/health", "health + SDR detection"},
 }
 
 // serveV1 dispatches /api/v1/* with method enforcement and v1 envelopes.
 func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	if strings.HasPrefix(path, "/api/v1/ues/") {
+		wanted := strings.TrimPrefix(path, "/api/v1/ues/")
+		if wanted == "" || strings.Contains(wanted, "/") {
+			writeV1(w, r, CodeNotFound, "not found: "+path, nil)
+			return
+		}
+		s.handleV1UE(w, r, wanted)
+		return
+	}
+	if strings.HasPrefix(path, "/api/v1/subscribers/") {
+		wanted := strings.TrimPrefix(path, "/api/v1/subscribers/")
+		if wanted == "" || strings.Contains(wanted, "/") {
+			writeV1(w, r, CodeNotFound, "not found: "+path, nil)
+			return
+		}
+		s.handleV1Subscriber(w, r, wanted)
+		return
+	}
 	if _, ok := strings.CutPrefix(path, "/api/v1/captures/"); ok {
 		if r.Method != http.MethodGet {
 			writeV1(w, r, CodeMethod, "method not allowed, want GET", nil)
@@ -77,16 +100,20 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 		s.handleV1CellStatus(w, r)
 	case path == "/api/v1/cell" && r.Method == http.MethodDelete:
 		s.handleV1Stop(w, r)
-	case path == "/api/v1/ue" && r.Method == http.MethodGet:
-		s.handleV1UE(w, r)
+	case path == "/api/v1/network" && r.Method == http.MethodGet:
+		s.handleV1Network(w, r)
+	case path == "/api/v1/ues":
+		s.handleV1UEs(w, r)
 	case path == "/api/v1/diagnostics/connectivity" && r.Method == http.MethodGet:
 		s.handleV1ConnectivityDiagnostics(w, r)
 	case path == "/api/v1/crack/jobs" && r.Method == http.MethodPost:
 		s.handleV1CrackStart(w, r)
 	case path == "/api/v1/crack/result" && r.Method == http.MethodGet:
 		s.handleV1CrackResult(w, r)
+	case path == "/api/v1/subscribers":
+		s.handleV1Subscribers(w, r)
 	case path == "/api/v1/config/subscribers" && r.Method == http.MethodPost:
-		s.handleV1Upload(w, r, "userdb", s.cfg.UserDBPath(), "takes effect after restart (EPC reads at boot)")
+		s.handleV1SubscriberUpload(w, r)
 	case path == "/api/v1/config/wordlist" && r.Method == http.MethodPost:
 		s.handleV1Upload(w, r, "wordlist", s.cfg.WordlistPath(), "used by the next crack run")
 	case path == "/api/v1/simcards" && r.Method == http.MethodPost:
@@ -141,7 +168,7 @@ func (s *Server) handleV1Start(w http.ResponseWriter, r *http.Request) {
 	band, _ := lte.Lookup(p.Band)
 	data := map[string]any{"band": p.Band, "apn": p.APN, "net_name": p.FullNetName}
 	if band.IsTDD() {
-		data["warning"] = "TDD band: uplink EARFCN is pinned explicitly; verify UE attach with GET /api/v1/ue"
+		data["warning"] = "TDD band: uplink EARFCN is pinned explicitly; verify UE sessions with GET /api/v1/ues"
 	}
 	writeV1(w, r, CodeOK, "cell started", data)
 }
@@ -166,21 +193,10 @@ func (s *Server) handleV1Stop(w http.ResponseWriter, r *http.Request) {
 	writeV1(w, r, CodeOK, "already stopped", map[string]any{"stopped": false})
 }
 
-// ---- GET /api/v1/ue ----
-
-func (s *Server) handleV1UE(w http.ResponseWriter, r *http.Request) {
-	if !sysop.Running("srsepc") && !sysop.Running("srsenb") {
-		writeV1(w, r, CodePrecondition, "cell not running", nil)
-		return
-	}
-	info, err := parser.ParseEPCLog(s.cfg.LogPath(s.cfg.EPCLogName))
-	if err != nil || !info.Found {
-		writeV1(w, r, CodeNotFound, "no UE attached", nil)
-		return
-	}
-	writeV1(w, r, CodeOK, "ok", map[string]any{
-		"apn": nilStr(info.APN), "imsi": nilStr(info.IMSI), "ip": nilStr(info.IP),
-	})
+// handleV1Network returns only the Manager's effective configuration snapshot.
+// Rule presence and plan activation are not evidence of external reachability.
+func (s *Server) handleV1Network(w http.ResponseWriter, r *http.Request) {
+	writeV1(w, r, CodeOK, "ok", s.mgr.NetworkPlanSnapshot())
 }
 
 // ---- POST /api/v1/crack/jobs ----
@@ -188,11 +204,6 @@ func (s *Server) handleV1UE(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
 	if crack.HashcatRunning() {
 		writeV1(w, r, CodeConflict, "a crack job is already running", nil)
-		return
-	}
-	info, err := parser.ParseEPCLog(s.cfg.LogPath(s.cfg.EPCLogName))
-	if err != nil || !info.Found {
-		writeV1(w, r, CodeNotFound, "no UE data: start the cell and attach a UE first", nil)
 		return
 	}
 	_, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
@@ -222,11 +233,6 @@ func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 		writeV1(w, r, CodeOK, "ok", map[string]any{"state": "running"})
 		return
 	}
-	info, err := parser.ParseEPCLog(s.cfg.LogPath(s.cfg.EPCLogName))
-	if err != nil || !info.Found {
-		writeV1(w, r, CodeNotFound, "no UE data: start the cell and attach a UE first", nil)
-		return
-	}
 	username, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
 	if err != nil || hash == "" {
 		s.writeV1CHAPFailure(w, r)
@@ -243,8 +249,7 @@ func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeV1(w, r, CodeOK, "ok", map[string]any{
-		"state": "ready", "apn": nilStr(info.APN), "imsi": nilStr(info.IMSI),
-		"ip": nilStr(info.IP), "username": username, "password": password,
+		"state": "ready", "username": username, "password": password,
 	})
 }
 
@@ -268,10 +273,6 @@ func (s *Server) handleV1Upload(w http.ResponseWriter, r *http.Request, field, d
 		return
 	}
 	defer f.Close()
-	if field == "userdb" {
-		subscriber.Mutex.Lock()
-		defer subscriber.Mutex.Unlock()
-	}
 	n, err := saveUpload(f, dst, s.cfg.MaxUploadBytes)
 	if errors.Is(err, errUploadEmpty) {
 		writeV1(w, r, CodeInvalid, "missing file field: "+field, map[string]any{
@@ -302,12 +303,21 @@ func (s *Server) handleV1Health(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.mgr.LoadProfile()
+	out := map[string]any{"has_profile": ok}
+	if ok {
+		out["profile"] = p
+	}
+	writeV1(w, r, CodeOK, "ok", out)
+}
+
 func (s *Server) handleV1Capture(w http.ResponseWriter, r *http.Request, id string) {
 	name, ok := map[string]string{
-		"lte-data": s.cfg.PcapLTEData, "0": s.cfg.PcapLTEData,
-		"s1ap": s.cfg.PcapS1AP, "1": s.cfg.PcapS1AP,
-		"enb": s.cfg.PcapENB, "2": s.cfg.PcapENB,
-		"epc": s.cfg.PcapEPC, "3": s.cfg.PcapEPC,
+		"lte-data": s.cfg.PcapLTEData,
+		"s1ap":     s.cfg.PcapS1AP,
+		"enb":      s.cfg.PcapENB,
+		"epc":      s.cfg.PcapEPC,
 	}[id]
 	if !ok || id == "" {
 		writeV1(w, r, CodeNotFound, "unknown capture id (want lte-data|s1ap|enb|epc)", nil)
@@ -344,7 +354,17 @@ func (s *Server) handleV1SIM(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 	defer cancel()
-	id, msg, _ := sim.Program(ctx, s.cfg, req)
+	var id int
+	var msg string
+	err := s.mgr.RunWhileStopped(ctx, func() error {
+		var programErr error
+		id, msg, programErr = sim.Program(ctx, s.cfg, req)
+		return programErr
+	})
+	if errors.Is(err, lte.ErrCellMustBeStopped) {
+		writeV1(w, r, CodeConflict, "cell must be stopped before programming a SIM", nil)
+		return
+	}
 	switch id {
 	case 1:
 		writeV1(w, r, CodeOK, "card programmed", map[string]any{"result": "programmed"})

@@ -30,8 +30,8 @@ func (p StartParams) ValidateDetailed() []FieldIssue {
 	}
 	if strings.TrimSpace(p.APN) == "" {
 		add("apn", "required")
-	} else if strings.ContainsAny(p.APN, " \t\n\r\"';&|<>$`\\") {
-		add("apn", "contains illegal characters")
+	} else if err := validateAPN(p.APN); err != nil {
+		add("apn", err.Error())
 	}
 	if len(p.MCC) != 3 || !isDigits(p.MCC) {
 		add("mcc", "must be 3 digits")
@@ -39,10 +39,11 @@ func (p StartParams) ValidateDetailed() []FieldIssue {
 	if !(len(p.MNC) == 2 || len(p.MNC) == 3) || !isDigits(p.MNC) {
 		add("mnc", "must be 2 or 3 digits")
 	}
-	if strings.TrimSpace(p.Network) == "" {
+	network := strings.TrimSpace(p.Network)
+	if network == "" {
 		add("network", "required")
-	} else if strings.ContainsAny(p.Network, " \t\n\r\"';&|<>$`\\") {
-		add("network", "contains illegal characters")
+	} else if network != "auto" && !validInterfaceName(network) {
+		add("network", "must be auto or a valid interface name")
 	}
 	switch p.SDR {
 	case "", "auto", "uhd", "bladerf", "zmq":
@@ -66,6 +67,20 @@ func (p StartParams) ValidateDetailed() []FieldIssue {
 	}
 	if p.DNS != "" && !validIPv4(p.DNS) {
 		add("dns", "must be an IPv4 address")
+	}
+	subnet := strings.TrimSpace(p.UESubnet)
+	if subnet == "" {
+		subnet = defaultUESubnet
+	}
+	if _, err := makeUENetworkPlan(subnet, defaultUEAccess); err != nil {
+		add("ue_subnet", err.Error())
+	}
+	access := strings.ToLower(strings.TrimSpace(p.UEAccess))
+	if access == "" {
+		access = defaultUEAccess
+	}
+	if access != "isolated" && access != "allow" {
+		add("ue_access", "must be isolated or allow")
 	}
 	return out
 }

@@ -40,13 +40,13 @@ func TestV1_NotFound(t *testing.T) {
 	}
 }
 
-func TestV1_Legacy404StaysPlain(t *testing.T) {
+func TestV1_UnknownRootPathUsesStandardEnvelope(t *testing.T) {
 	s, _ := testServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != 404 || rec.Header().Get("Content-Type") == "application/json" {
-		t.Fatalf("legacy 404 must stay plain-text: %d %q", rec.Code, rec.Body.String())
+	if rec.Code != 404 || decodeEnvelope(t, rec)["code"] != float64(CodeNotFound) {
+		t.Fatalf("unknown path must use standard 404: %d %q", rec.Code, rec.Body.String())
 	}
 }
 
@@ -62,10 +62,10 @@ func TestV1_MethodNotAllowed(t *testing.T) {
 		valid[rt.path][rt.method] = true
 	}
 	probe := map[string]string{ // one path per group is enough
-		"/api/v1/cell": "PATCH", "/api/v1/ue": "POST",
+		"/api/v1/cell": "PATCH", "/api/v1/network": "POST", "/api/v1/ues": "POST",
 		"/api/v1/diagnostics/connectivity": "POST",
 		"/api/v1/crack/jobs":               "GET", "/api/v1/crack/result": "DELETE",
-		"/api/v1/config/subscribers": "GET", "/api/v1/config/wordlist": "DELETE",
+		"/api/v1/subscribers": "PUT", "/api/v1/config/subscribers": "GET", "/api/v1/config/wordlist": "DELETE",
 		"/api/v1/captures/lte-data": "POST", "/api/v1/simcards": "GET",
 		"/api/v1/profile": "POST", "/api/v1/health": "POST",
 	}
@@ -261,13 +261,37 @@ func TestV1_StopIdempotent(t *testing.T) {
 	}
 }
 
-func TestV1_UENotRunning(t *testing.T) {
+func TestV1_NetworkIsReadOnlyConfigurationSnapshot(t *testing.T) {
 	s, _ := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ue", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/network", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != 412 || decodeEnvelope(t, rec)["code"] != float64(41201) {
-		t.Fatalf("want 412: %d %s", rec.Code, rec.Body.String())
+	m := decodeEnvelope(t, rec)
+	data, ok := m["data"].(map[string]any)
+	if rec.Code != http.StatusOK || !ok || data["active"] != false {
+		t.Fatalf("unexpected idle network plan: %d %v", rec.Code, m)
+	}
+	for _, field := range []string{"ue_subnet", "sgi_address", "ue_access"} {
+		if _, exists := data[field]; !exists {
+			t.Fatalf("network plan omitted %s: %v", field, data)
+		}
+	}
+	for _, inferred := range []string{"internet_reachable", "dns_reachable", "connected"} {
+		if _, exists := data[inferred]; exists {
+			t.Fatalf("network configuration endpoint inferred %s: %v", inferred, data)
+		}
+	}
+}
+
+func TestV1_UEsReportsCellStoppedWithoutLogFallback(t *testing.T) {
+	s, _ := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ues", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	m := decodeEnvelope(t, rec)
+	data := m["data"].(map[string]any)
+	if rec.Code != http.StatusOK || data["state"] != "cell_stopped" || len(data["sessions"].([]any)) != 0 {
+		t.Fatalf("unexpected stopped snapshot: %d %v", rec.Code, m)
 	}
 }
 
@@ -287,11 +311,11 @@ func TestV1_Captures(t *testing.T) {
 	if rec.Code != 404 {
 		t.Fatalf("want 404 got %d", rec.Code)
 	}
-	// Present file -> download (string id and legacy numeric alias).
+	// Present file -> download by standard string id.
 	if err := os.WriteFile(cfg.LogPath(cfg.PcapLTEData), []byte("pcap"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"lte-data", "0"} {
+	for _, id := range []string{"lte-data"} {
 		req = httptest.NewRequest(http.MethodGet, "/api/v1/captures/"+id, nil)
 		rec = httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, req)
@@ -318,7 +342,7 @@ func TestV1_Uploads(t *testing.T) {
 	buf.Reset()
 	mw = multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("userdb", "user_db.csv")
-	_, _ = fw.Write([]byte("ue0,mil,001010123456789,aaa,opc,bbb,8000,000000001234,7,dynamic\n"))
+	_, _ = fw.Write([]byte("ue0,mil,001010123456789,00112233445566778899aabbccddeeff,opc,63bfa50ee6523365ff14c1f45f88737d,8000,000000001234,7,dynamic\n"))
 	_ = mw.Close()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/config/subscribers", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -328,11 +352,93 @@ func TestV1_Uploads(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("upload: %d %v", rec.Code, m)
 	}
-	if m["data"].(map[string]any)["note"] == nil {
-		t.Fatalf("restart note missing: %v", m)
+	if m["data"].(map[string]any)["sqn_policy"] != "preserved_for_existing_imsi" {
+		t.Fatalf("SQN policy missing: %v", m)
 	}
 	if _, err := os.Stat(cfg.UserDBPath()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestV1_SubscriberCRUDIsRedactedAndSQNSafe(t *testing.T) {
+	s, cfg := testServer(t)
+	secretKey := "00112233445566778899aabbccddeeff"
+	secretOPC := "63bfa50ee6523365ff14c1f45f88737d"
+	body := `{"name":"phone","auth":"mil","imsi":"001010123456789","key":"` + secretKey + `","opc":"` + secretOPC + `","op_type":"opc","amf":"8001","sqn":"000000001234","qci":7,"ip_alloc":"dynamic"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subscribers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), secretKey) || strings.Contains(rec.Body.String(), secretOPC) || strings.Contains(rec.Body.String(), "000000001234") {
+		t.Fatalf("create response leaked authentication material: %s", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/subscribers?limit=1&offset=0", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	m := decodeEnvelope(t, rec)
+	data := m["data"].(map[string]any)
+	items := data["items"].([]any)
+	if rec.Code != http.StatusOK || len(items) != 1 || items[0].(map[string]any)["authorized"] != true || items[0].(map[string]any)["active"] != nil {
+		t.Fatalf("list does not distinguish authorization from activity: %d %v", rec.Code, m)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/subscribers/001010123456789", strings.NewReader(`{"sqn":"00000000ffff"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("SQN patch accepted: %d %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/subscribers/001010123456789", strings.NewReader(`{"key":null}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("null protected field bypassed presence check: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/subscribers/001010123456789", strings.NewReader(`{"name":"updated","qci":9}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metadata patch: %d %s", rec.Code, rec.Body.String())
+	}
+	disk, err := os.ReadFile(cfg.UserDBPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(disk), secretKey) || !strings.Contains(string(disk), "000000001234") {
+		t.Fatalf("metadata patch changed protected columns: %s", disk)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/subscribers/001010123456789", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), secretKey) {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestV1_SubscriberValidationAndPagination(t *testing.T) {
+	s, _ := testServer(t)
+	for _, tc := range []struct {
+		method, path, body string
+	}{
+		{http.MethodGet, "/api/v1/subscribers?limit=201", ""},
+		{http.MethodGet, "/api/v1/subscribers/not-an-imsi", ""},
+		{http.MethodPost, "/api/v1/subscribers", `{"name":"phone","auth":"mil","imsi":"001","key":"secret","opc":"secret","amf":"8001","sqn":"000000001234","qci":7,"ip_alloc":"dynamic"}`},
+		{http.MethodPost, "/api/v1/subscribers", `{"name":"phone","auth":"mil","imsi":"001010123456789","key":"00112233445566778899aabbccddeeff","opc":"63bfa50ee6523365ff14c1f45f88737d","amf":"8001","sqn":"000000001234","qci":7,"ip_alloc":"172.16.0.2"}`},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("%s %s: want 422 got %d %s", tc.method, tc.path, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "secret") {
+			t.Fatalf("validation response leaked submitted value: %s", rec.Body.String())
+		}
 	}
 }
 
@@ -375,11 +481,12 @@ func TestV1_Auth(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("want 200 got %d", rec.Code)
 	}
-	// Legacy routes are covered by the same gate.
+	// Unknown paths are covered by the same gate, so unauthenticated probes do
+	// not reveal whether a resource exists.
 	req = httptest.NewRequest(http.MethodPost, "/stop", nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != 401 {
-		t.Fatalf("legacy must also require token: %d", rec.Code)
+		t.Fatalf("unknown route must also require token: %d", rec.Code)
 	}
 }
