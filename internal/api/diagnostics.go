@@ -29,18 +29,24 @@ func (s *Server) writeV1CHAPFailure(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), connectivityDiagnosticTimeout)
 	defer cancel()
 	o := crack.ObserveCHAP(ctx, s.cfg, cell.StartedAt)
-	data := map[string]any{"reason": o.Reason, "state": o.State}
+	data := map[string]any{"reason": o.Reason, "state": o.State, "scan_complete": o.ScanComplete,
+		"capture": o.Capture}
 	switch o.Reason {
-	case "capture_missing", "capture_empty", "capture_predates_current_session":
+	case "capture_missing", "capture_empty", "capture_no_packets", "capture_predates_current_session":
 		writeV1(w, r, CodePrecondition, "S1AP capture not collected for the current session", data)
-	case "tshark_missing", "tshark_timeout":
+	case "tshark_missing", "tshark_timeout", "tshark_incompatible", "inspection_timeout":
 		writeV1(w, r, CodeDependency, "CHAP inspection dependency unavailable", data)
-	case "capture_stat_failed", "capture_decode_failed", "capture_too_large", "tshark_output_truncated":
+	case "capture_incomplete":
+		writeV1(w, r, CodeUnprocessable, "S1AP capture is incomplete or changed during inspection; CHAP absence is not established", data)
+	case "capture_stat_failed", "capture_read_failed", "capture_not_regular", "capture_format_invalid",
+		"capture_linktype_unsupported", "capture_decode_failed", "capture_too_large", "tshark_output_truncated", "inspection_cancelled":
 		writeV1(w, r, CodeUnprocessable, "S1AP capture could not be conclusively inspected", data)
 	case "no_s1ap_frames_observed":
 		writeV1(w, r, CodePrecondition, "no decodable S1AP frames observed in capture", data)
 	case "no_chap_frames_observed":
 		writeV1(w, r, CodePrecondition, "no CHAP exchange observed; APN authentication may not require CHAP", data)
+	case "pap_frames_observed":
+		writeV1(w, r, CodePrecondition, "PAP protocol metadata observed instead of CHAP; no credentials inspected", data)
 	case "chap_frames_observed":
 		writeV1(w, r, CodeUnprocessable, "CHAP frames were observed but a complete handshake was not extractable", data)
 	default:

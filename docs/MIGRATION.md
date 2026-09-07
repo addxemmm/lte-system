@@ -96,3 +96,21 @@ Follow-ups: the user confirmed intermittent Xiaomi service loss. Missing associa
 
 新窗口中用户故意请求错误 APN，当前快照显示未注册/未分配地址，严格拒绝符合现行策略；因此前后窗口设备数/业务负载不一致，不能宣称掉线已改善。下一步先恢复正确实际 APN 后确认两台 registered，再关联用户中断时刻与 RF/RRC 日志；不自动改 APN 策略、增益或定时器。回滚使用 `rollback-log-load-20260907` 与私有备份，保留新 SQN。后续代码修改再运行全量 Go/vet 和相关 C++ 回归。
 During the new window the user intentionally requested an incorrect APN; the snapshot showed no registration/address, consistent with strict rejection. Different UE/traffic counts invalidate a direct stability comparison. Next restore the correct actual APN, confirm both registered, then correlate reported outages with RF/RRC events. Do not silently change APN policy, gains or timers. Rollback uses the retained log-load image/backup without overwriting newer SQNs; future code changes require full Go/vet and relevant C++ regressions.
+
+
+## 2026-09-07 抓包诊断与 UE 设计交接 / Capture diagnostics and UE design handoff
+
+当前实验分支 `folk/ue-presence-auth-diagnostics` 仅交付抓包完整性元数据诊断与文档、Postman 更新。凭据提取/Hashcat 实施和 eNB producer 实施遭执行工具安全拦截，未改动该链路、未添加 0004 补丁。未完成的 UE 消费端探索已独立保存并从发布源码移出，不能单独部署。现网 UE/subscriber 语义不变；设计与后续验收见 [UE 设计](UE_PRESENCE_DESIGN_2026-09-07.md)。
+
+The experiment branch delivers only capture-integrity metadata diagnostics, documentation and Postman changes. Execution-tool safety checks blocked credential/Hashcat and eNB-producer implementation; no extraction-chain changes or 0004 patch are included. Incomplete UE consumer prototypes were saved separately and removed from release sources. Existing UE/subscriber semantics remain unchanged; see the design for outstanding acceptance work.
+
+修改后继续执行 `go test ./...`、`go vet ./...`、`python -m unittest discover -s scripts/tests -v`；Linux 上全量 race 和部署检查。仅在服务器构建与发布，维持 bridge/8081/compat FPGA/原 profile，保留卷、新 SQN 和旧镜像。具体进度及发布证据见 [完整性报告](CAPTURE_INTEGRITY_2026-09-07.md)。未完成项仍包括 Hashcat 链路、UE 双源实现/实机掉线清单验收和小米偶发无服务根因。
+
+Re-run full Go tests/vet and Python contracts, plus Linux race/deployment checks after changes. Build and deploy only on the server, preserving bridge/8081/compat FPGA/profile, the volume, newer SQNs and rollback image. Consult the integrity report for release evidence. Outstanding work includes the Hashcat chain, complete dual-source UE implementation/handset removal tests and the cause of intermittent Xiaomi service loss.
+
+
+### 本轮最终交接：未发布 / Final handoff: unreleased
+
+抓包诊断的最终竞态/进程等待修订同样触发执行工具拦截，故整个分支保持未发布草稿，不再构建、部署、合并或推送。初稿本地测试通过不覆盖最终未验收修订。生产仍为 `ltesystem-dep:enb-log-load-20260907`，bridge/8081/原数据卷与 RF 均未改。下一步先处理执行权限，再复核最终差异、运行全量测试；未完整验证前不要从该分支发布。
+
+The final capture-race/process-wait revision also encountered an execution-tool safety block. The branch is an unreleased draft: no build, deployment, merge or push. Passing initial tests do not validate later unaccepted edits. Production remains on the existing log-load image with bridge/8081/data/RF unchanged. Address execution permissions before reviewing and testing the final diff; do not deploy an unvalidated branch.

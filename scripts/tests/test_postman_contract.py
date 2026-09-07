@@ -180,7 +180,8 @@ function execute(code, body) {{
   try {{ eval(SCRIPT); }} catch (err) {{ failures.push('script: ' + err.message); }}
   return failures;
 }}
-const layers = {{registration: {{}}, pdn: {{}}, chap: {{}}, user_plane: {{}}, dns: {{}}, network: {{}}}};
+const chap = {{state: 'unknown', reason: 'capture_incomplete', capture: {{state: 'incomplete', incomplete: true, snapshot_size_bytes: 24, complete_packets: 0}}, scan_complete: false, s1ap_observed: false, chap_observed: false, pap_observed: false}};
+const layers = {{registration: {{}}, pdn: {{}}, chap, user_plane: {{}}, dns: {{}}, network: {{}}}};
 const cases = [
   [200, {{code: 0, request_id: 'r1', data: layers}}, true],
   [429, {{code: 42901, request_id: 'r2', data: {{reason: 'diagnostic_busy'}}}}, true],
@@ -188,6 +189,10 @@ const cases = [
   [200, {{code: 0, request_id: 'r4', data: {{registration: {{}}}}}}, false],
   [429, {{code: 42901, request_id: 'r5', data: {{reason: 'wrong'}}}}, false],
   [500, {{code: 50001, request_id: 'r6', data: {{}}}}, false],
+  [200, {{code: 0, request_id: 'r7', data: {{...layers, chap: {{...chap, scan_complete: true}}}}}}, false],
+  [200, {{code: 0, request_id: 'r8', data: {{...layers, chap: {{...chap, password: 'SYNTHETIC_FORBIDDEN'}}}}}}, false],
+  [200, {{code: 0, request_id: 'r9', data: {{...layers, chap: {{...chap, capture: {{state: 'incomplete', complete_packets: -1}}}}}}}}, false],
+  [200, {{code: 0, request_id: 'r10', data: {{...layers, chap: {{...chap, state: 'not_observed', reason: 'no_chap_frames_observed', capture: {{state: 'present'}}, scan_complete: true}}}}}}, true],
 ];
 for (const [code, body, shouldPass] of cases) {{
   const passed = execute(code, body).length === 0;

@@ -1,5 +1,11 @@
 # 更新日志 Changelog
 
+## 未发布草稿：2026-09-07 抓包完整性诊断 / Unreleased capture-integrity draft
+
+- 区分活跃 S1AP 抓包的未完成尾 record、坏格式、错误 DLT、工具不兼容与读取失败；只检查有界私有完整前缀，源文件不变。 / Distinguish incomplete live records, invalid format/DLT, incompatible decoder and read failures using a private bounded complete-record prefix without modifying the source.
+- 不完整扫描不再被当作无 CHAP 证据；响应只含协议元数据，更新标准文档、OpenAPI、Postman 断言与合成回归。 / Incomplete scans no longer imply absent CHAP; return protocol metadata only, with updated docs, OpenAPI, Postman assertions and synthetic regressions.
+- UE 双源清单仅交付设计，认证提取/Hashcat 未修改，现行 UE/subscriber 契约保持。 / Dual-source UE presence remains design-only; authentication extraction/Hashcat and deployed UE/subscriber semantics are unchanged.
+
 ## [3.0] - 2026-09-07
 
 - 标准接口收敛：删除根路径旧接口和单条 `/api/v1/ue`；提供 `/api/v1/ues`、按 IMSI 查询、订户管理与网络规划；同步 OpenAPI、Postman 和迁移文档。 / Standard-only API: remove legacy root routes and singleton UE lookup; add UE collections, IMSI lookup, subscriber management and network planning, with updated OpenAPI, Postman and migration docs.

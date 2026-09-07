@@ -1,5 +1,9 @@
 # Postman Collections — LTE-System API v3
 
+> **未发布草稿 / Unreleased draft:** 本分支内容未完成最终复核，未合并 master、未推送、未构建或部署。本轮执行工具拦截中止了后续实施；文中新增契约与 Postman 仅供审查，不代表现网已支持。
+> Final review is incomplete. This branch has not been merged, pushed, built or deployed. Execution-tool safety checks halted implementation; proposed additions and Postman files do not describe new production capabilities.
+
+
 ## 导入 Import
 
 先删除或替换 Postman 中旧的 `lte-system` collection，再按用途导入：
@@ -27,6 +31,10 @@ Remove or replace any older `lte-system` collection in Postman before importing.
 - 其他状态均失败。
 
 只读 smoke 的六个请求均带断言，但它只验证 API 契约、Manager 配置和已有采样证据；**不发送外网/DNS 探测，也不证明手机实际能上网、域名可解析或无线链路稳定**。小米等终端的偶发掉线仍需结合实时 eNB/EPC/射频日志诊断。
+
+新增完整性断言：读取 `chap.capture` 元数据、检查布尔状态和 packet 数量，拒绝“不完整但 scan_complete=true”及凭据字段。旧 UE 清单语义保持不变，新 UE 在线方案仅为设计；本次未修复或验证 Hashcat 作业链路。
+
+Capture-integrity assertions now reject contradictory completeness flags, invalid counts and credential fields. UE semantics remain unchanged; the new presence model is design-only. Hashcat jobs were not changed or validated in this revision.
 
 The assertions validate API envelopes and bounded evidence only. They do not probe Internet/DNS reachability or prove UE radio stability.
 

@@ -19,6 +19,7 @@ const (
 	CHAPObservationMaxCaptureBytes int64 = 64 << 20
 	chapObservationOutputMax             = 128 << 10
 	chapObservationTimeout               = 3 * time.Second
+	chapObservationWaitDelay             = 250 * time.Millisecond
 )
 
 // CaptureObservation reports metadata only; it never returns packet contents.
@@ -27,6 +28,9 @@ type CaptureObservation struct {
 	SizeBytes       int64     `json:"size_bytes,omitempty"`
 	ModifiedAt      time.Time `json:"modified_at,omitempty"`
 	SessionRelation string    `json:"session_relation,omitempty"`
+	SnapshotSize    int64     `json:"snapshot_size_bytes,omitempty"`
+	CompletePackets uint64    `json:"complete_packets,omitempty"`
+	Incomplete      bool      `json:"incomplete,omitempty"`
 }
 
 // CHAPObservation describes protocol visibility without returning a username,
@@ -37,11 +41,19 @@ type CHAPObservation struct {
 	Capture      CaptureObservation `json:"capture"`
 	S1APObserved bool               `json:"s1ap_observed"`
 	CHAPObserved bool               `json:"chap_observed"`
+	PAPObserved  bool               `json:"pap_observed"`
 	ScanComplete bool               `json:"scan_complete"`
 	Limitations  []string           `json:"limitations,omitempty"`
 }
 
-type observationRunner func(context.Context, string, ...string) ([]byte, bool, error)
+type observationCommandResult struct {
+	Output          []byte
+	OutputTruncated bool
+	Failure         string
+	Err             error
+}
+
+type observationRunner func(context.Context, string, ...string) observationCommandResult
 
 // ObserveCHAP performs a bounded, read-only inspection of the existing S1AP
 // capture. It is intentionally independent from ExtractCHAP and does not make
@@ -61,71 +73,143 @@ func observeCHAP(ctx context.Context, cfg config.Config, startedAt *time.Time, r
 		},
 	}
 	path := cfg.LogPath(cfg.PcapS1AP)
-	st, err := os.Stat(path)
+	ctx2, cancel := context.WithTimeout(ctx, chapObservationTimeout)
+	defer cancel()
+	snapshot, err := snapshotClassicPCAP(ctx2, path, CHAPObservationMaxCaptureBytes)
+	predates := false
+	if snapshot != nil && snapshot.sourceInfo != nil {
+		// Always report metadata for the file descriptor that was actually
+		// copied. The preliminary path Lstat is only a missing-file fast path
+		// and may refer to an object replaced before Open.
+		o.Capture.SizeBytes = snapshot.sourceInfo.Size()
+		o.Capture.ModifiedAt = snapshot.sourceInfo.ModTime()
+		o.Capture.State = "present"
+		if startedAt != nil {
+			// The capture is normally created shortly before Manager.startedAt
+			// is recorded, hence the process-initialization tolerance.
+			predates = snapshot.sourceInfo.ModTime().Before(startedAt.Add(-30 * time.Second))
+			if predates {
+				o.Capture.SessionRelation = "predates_current_session"
+			} else {
+				o.Capture.SessionRelation = "current_or_recent"
+			}
+		}
+	}
 	if err != nil {
-		if !os.IsNotExist(err) {
+		switch {
+		case errors.Is(ctx2.Err(), context.DeadlineExceeded):
 			o.State = "unavailable"
-			o.Reason = "capture_stat_failed"
+			o.Reason = "inspection_timeout"
+		case errors.Is(ctx2.Err(), context.Canceled):
+			o.State = "unavailable"
+			o.Reason = "inspection_cancelled"
+		case os.IsNotExist(err):
+			o.State = "not_collected"
+			o.Reason = "capture_missing"
+			o.Capture.State = "missing"
+		case errors.Is(err, errCaptureTooLarge):
+			o.State = "not_checked"
+			o.Reason = "capture_too_large"
+			o.Limitations = append(o.Limitations,
+				"capture exceeds the synchronous diagnostic size limit")
+		case errors.Is(err, errCaptureIncomplete), errors.Is(err, errCaptureChanged):
+			o.State = "unknown"
+			o.Reason = "capture_incomplete"
+			o.Capture.State = "incomplete"
+			o.Capture.Incomplete = true
+		case errors.Is(err, errCaptureFormat):
+			o.State = "unavailable"
+			o.Reason = "capture_format_invalid"
+			o.Capture.State = "invalid"
+		case errors.Is(err, errCaptureLinkType):
+			o.State = "unavailable"
+			o.Reason = "capture_linktype_unsupported"
+			o.Capture.State = "invalid"
+		case errors.Is(err, errCaptureNotRegular):
+			o.State = "unavailable"
+			o.Reason = "capture_not_regular"
+			o.Capture.State = "unreadable"
+		default:
+			o.State = "unavailable"
+			o.Reason = "capture_read_failed"
 			o.Capture.State = "unreadable"
 		}
 		return o
 	}
-	o.Capture.SizeBytes = st.Size()
-	o.Capture.ModifiedAt = st.ModTime()
-	o.Capture.State = "present"
-	if startedAt != nil {
-		// The capture is normally created shortly before Manager.startedAt is
-		// recorded, hence the tolerance for process initialization.
-		if st.ModTime().Before(startedAt.Add(-30 * time.Second)) {
-			o.Capture.SessionRelation = "predates_current_session"
-			o.Reason = "capture_predates_current_session"
-			return o
-		}
-		o.Capture.SessionRelation = "current_or_recent"
+	if snapshot.path != "" {
+		defer snapshot.cleanup()
 	}
-	if st.Size() == 0 {
-		o.Reason = "capture_empty"
+	o.Capture.SnapshotSize = snapshot.sizeBytes
+	o.Capture.CompletePackets = snapshot.completePackets
+	o.Capture.Incomplete = snapshot.incomplete
+	if snapshot.sourceChanged(path) {
+		snapshot.incomplete = true
+		o.Capture.Incomplete = true
+	}
+	if snapshot.incomplete {
+		o.Capture.State = "incomplete"
+		o.Limitations = append(o.Limitations,
+			"only the immutable prefix ending at the last complete pcap record was inspected")
+	}
+	if predates {
+		if snapshot.incomplete {
+			o.State = "unknown"
+			o.Reason = "capture_incomplete"
+		} else {
+			o.Reason = "capture_predates_current_session"
+		}
 		return o
 	}
-	if st.Size() > CHAPObservationMaxCaptureBytes {
-		o.State = "not_checked"
-		o.Reason = "capture_too_large"
-		o.Limitations = append(o.Limitations,
-			"capture exceeds the synchronous diagnostic size limit")
+	if snapshot.sourceInfo.Size() == 0 {
+		if snapshot.incomplete {
+			o.State = "unknown"
+			o.Reason = "capture_incomplete"
+		} else {
+			o.Reason = "capture_empty"
+		}
+		return o
+	}
+	if snapshot.completePackets == 0 {
+		if snapshot.incomplete {
+			o.State = "unknown"
+			o.Reason = "capture_incomplete"
+		} else {
+			o.Reason = "capture_no_packets"
+		}
 		return o
 	}
 
-	ctx2, cancel := context.WithTimeout(ctx, chapObservationTimeout)
-	defer cancel()
 	args := []string{
 		"-n",
 		"-o", `uat:user_dlts:"User 3 (DLT=150)","s1ap","0","","0",""`,
-		"-r", path,
-		"-Y", "s1ap || chap",
+		"-r", snapshot.path,
+		"-Y", "s1ap || chap || pap",
 		"-T", "fields",
 		"-E", "occurrence=f",
 		"-e", "frame.number",
 		"-e", "frame.protocols",
 		"-e", "chap.code",
 	}
-	out, outputTruncated, err := run(ctx2, cfg.TsharkBin, args...)
-	if err != nil {
-		switch {
-		case errors.Is(ctx2.Err(), context.DeadlineExceeded):
-			o.State = "unavailable"
-			o.Reason = "tshark_timeout"
-		case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
-			o.State = "unavailable"
-			o.Reason = "tshark_missing"
-		default:
-			o.State = "unavailable"
-			o.Reason = "capture_decode_failed"
-			o.Capture.State = "decode_failed"
-		}
+	result := run(ctx2, cfg.TsharkBin, args...)
+	if snapshot.sourceChanged(path) {
+		snapshot.incomplete = true
+		o.Capture.Incomplete = true
+		o.Capture.State = "incomplete"
+		o.Limitations = append(o.Limitations,
+			"the source capture changed while its immutable prefix was inspected")
+	}
+	if errors.Is(ctx2.Err(), context.DeadlineExceeded) {
+		o.State = "unavailable"
+		o.Reason = "tshark_timeout"
+		return o
+	}
+	if errors.Is(ctx2.Err(), context.Canceled) {
+		o.State = "unavailable"
+		o.Reason = "inspection_cancelled"
 		return o
 	}
 
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(string(result.Output)), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -140,26 +224,74 @@ func observeCHAP(ctx context.Context, cfg config.Config, startedAt *time.Time, r
 		if strings.Contains(protocols, "chap") || (len(fields) > 2 && strings.TrimSpace(fields[2]) != "") {
 			o.CHAPObserved = true
 		}
+		if strings.Contains(protocols, "pap") {
+			o.PAPObserved = true
+		}
+	}
+
+	if result.Err != nil {
+		switch {
+		case errors.Is(ctx2.Err(), context.DeadlineExceeded):
+			o.State = "unavailable"
+			o.Reason = "tshark_timeout"
+		case errors.Is(ctx2.Err(), context.Canceled):
+			o.State = "unavailable"
+			o.Reason = "inspection_cancelled"
+		case errors.Is(result.Err, exec.ErrNotFound), errors.Is(result.Err, os.ErrNotExist):
+			o.State = "unavailable"
+			o.Reason = "tshark_missing"
+		case result.Failure == "capture_incomplete" && o.CHAPObserved:
+			o.State = "observed"
+			o.Reason = "chap_frames_observed"
+			o.Capture.State = "incomplete"
+			o.Capture.Incomplete = true
+			o.Limitations = append(o.Limitations,
+				"CHAP metadata was decoded only from a complete prefix")
+		case result.Failure == "capture_incomplete":
+			o.State = "unknown"
+			o.Reason = "capture_incomplete"
+			o.Capture.State = "incomplete"
+			o.Capture.Incomplete = true
+		default:
+			o.State = "unavailable"
+			o.Reason = result.Failure
+			if o.Reason == "" {
+				o.Reason = "capture_decode_failed"
+			}
+			o.Capture.State = "decode_failed"
+		}
+		return o
 	}
 	if o.CHAPObserved {
 		o.State = "observed"
 		o.Reason = "chap_frames_observed"
-		o.ScanComplete = !outputTruncated
-		if outputTruncated {
+		o.ScanComplete = !result.OutputTruncated && !snapshot.incomplete
+		if result.OutputTruncated {
 			o.Limitations = append(o.Limitations, "tshark output was bounded")
 		}
 		return o
 	}
-	if outputTruncated {
+	if result.OutputTruncated {
 		o.State = "unknown"
 		o.Reason = "tshark_output_truncated"
 		o.Limitations = append(o.Limitations,
 			"bounded tshark output cannot prove CHAP was absent later in the capture")
 		return o
 	}
+	if snapshot.incomplete {
+		o.State = "unknown"
+		o.Reason = "capture_incomplete"
+		o.Limitations = append(o.Limitations,
+			"absence in a prefix does not prove that later packets contain no CHAP exchange")
+		return o
+	}
 	o.ScanComplete = true
 	o.State = "not_observed"
-	if o.S1APObserved {
+	if o.PAPObserved {
+		o.Reason = "pap_frames_observed"
+		o.Limitations = append(o.Limitations,
+			"PAP protocol metadata was observed; no PAP identity or password was read")
+	} else if o.S1APObserved {
 		o.Reason = "no_chap_frames_observed"
 	} else {
 		o.Reason = "no_s1ap_frames_observed"
@@ -200,15 +332,50 @@ func (b *boundedBuffer) result() ([]byte, bool) {
 	return append([]byte(nil), b.buf.Bytes()...), b.truncated
 }
 
-func runObservationCommand(ctx context.Context, name string, args ...string) ([]byte, bool, error) {
+func runObservationCommand(ctx context.Context, name string, args ...string) observationCommandResult {
 	var stdout, stderr boundedBuffer
 	stdout.max = chapObservationOutputMax
 	stderr.max = chapObservationOutputMax
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	// Bound Wait when a failed decoder leaves descendants holding inherited
+	// stdout/stderr pipes. CommandContext still owns the process cancellation;
+	// WaitDelay only prevents pipe EOF from extending it indefinitely.
+	cmd.WaitDelay = chapObservationWaitDelay
 	err := cmd.Run()
 	out, truncated := stdout.result()
-	_, stderrTruncated := stderr.result()
-	return out, truncated || stderrTruncated, err
+	errOut, stderrTruncated := stderr.result()
+	failure := classifyTsharkFailure(errOut)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		failure = "tshark_wait_timeout"
+	}
+	return observationCommandResult{
+		Output:          out,
+		OutputTruncated: truncated || stderrTruncated,
+		Failure:         failure,
+		Err:             err,
+	}
+}
+
+// classifyTsharkFailure converts bounded stderr into stable metadata. Raw
+// stderr is intentionally never exposed because dissector diagnostics can
+// contain paths or packet-rendered text.
+func classifyTsharkFailure(stderr []byte) string {
+	s := strings.ToLower(string(stderr))
+	switch {
+	case strings.Contains(s, "cut short"), strings.Contains(s, "middle of a packet"):
+		return "capture_incomplete"
+	case strings.Contains(s, "permission denied"), strings.Contains(s, "could not open"):
+		return "capture_read_failed"
+	case strings.Contains(s, "not a capture file"), strings.Contains(s, "isn't a capture file"),
+		strings.Contains(s, "appears to be damaged"), strings.Contains(s, "corrupt"):
+		return "capture_format_invalid"
+	case strings.Contains(s, "some fields aren't valid"), strings.Contains(s, "isn't a valid field"),
+		strings.Contains(s, "invalid -o"), strings.Contains(s, "unknown preference"),
+		strings.Contains(s, "syntax error"):
+		return "tshark_incompatible"
+	default:
+		return "capture_decode_failed"
+	}
 }

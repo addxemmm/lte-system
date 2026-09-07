@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "lte-system API v3",
-    "description": "Standard /api/v1 API only. Import this file after removing/replacing any older lte-system collection. It contains 21 requests covering 20 unique operations, including mutating operations that must be run manually. The default Start sends {} so it cannot overwrite a verified saved profile.",
+    "description": "UNRELEASED DRAFT / 未发布草稿: final integrity revisions are unvalidated and not deployed. Do not infer current server support. Standard /api/v1 API only. Import this file after removing/replacing any older lte-system collection. It contains 21 requests covering 20 unique operations, including mutating operations that must be run manually. The default Start sends {} so it cannot overwrite a verified saved profile.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -410,7 +410,7 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/api/v1/diagnostics/connectivity",
-            "description": "Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap."
+            "description": "Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap. Live capture integrity is metadata only; incomplete scans are not proof of absent authentication. 不完整抓包不等于无认证，原抓包不变。"
           },
           "event": [
             {
@@ -430,12 +430,46 @@
                   "    pm.expect(j.code === 42901).to.eql(true);",
                   "    pm.expect(j.data && j.data.reason === 'diagnostic_busy').to.eql(true);",
                   "  }",
+                  "});",
+                  "pm.test('capture integrity metadata is conservative and credential-free', () => {",
+                  "  if (pm.response.code !== 200) return;",
+                  "  const c = j.data.chap;",
+                  "  pm.expect(c && typeof c.state === 'string' && typeof c.reason === 'string').to.eql(true);",
+                  "  pm.expect(c.capture && typeof c.capture.state === 'string').to.eql(true);",
+                  "  pm.expect(['scan_complete','s1ap_observed','chap_observed','pap_observed'].every(k => typeof c[k] === 'boolean')).to.eql(true);",
+                  "  if (c.reason === 'capture_incomplete' || c.capture.incomplete === true) {",
+                  "    pm.expect(c.scan_complete === false).to.eql(true);",
+                  "  }",
+                  "  for (const key of ['snapshot_size_bytes','complete_packets']) {",
+                  "    if (Object.prototype.hasOwnProperty.call(c.capture, key)) pm.expect(Number.isSafeInteger(c.capture[key]) && c.capture[key] >= 0).to.eql(true);",
+                  "  }",
+                  "  const serialized = JSON.stringify(c);",
+                  "  pm.expect(!/\"(username|password|challenge|response|hash)\"\\s*:/.test(serialized)).to.eql(true);",
                   "});"
                 ]
               }
             }
           ],
-          "response": []
+          "response": [
+            {
+              "name": "Incomplete live capture — synthetic metadata / 合成完整性示例",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/api/v1/diagnostics/connectivity",
+                "description": "Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap. Live capture integrity is metadata only; incomplete scans are not proof of absent authentication. 不完整抓包不等于无认证，原抓包不变。"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": 0,\n  \"message\": \"ok\",\n  \"data\": {\n    \"registration\": {\n      \"state\": \"unknown\",\n      \"scope\": \"aggregate_only\"\n    },\n    \"pdn\": {\n      \"state\": \"unknown\"\n    },\n    \"chap\": {\n      \"state\": \"unknown\",\n      \"reason\": \"capture_incomplete\",\n      \"capture\": {\n        \"state\": \"incomplete\",\n        \"size_bytes\": 4096,\n        \"snapshot_size_bytes\": 4080,\n        \"complete_packets\": 8,\n        \"incomplete\": true\n      },\n      \"s1ap_observed\": true,\n      \"chap_observed\": false,\n      \"pap_observed\": false,\n      \"scan_complete\": false,\n      \"limitations\": [\n        \"A partial scan does not establish protocol absence.\"\n      ]\n    },\n    \"user_plane\": {\n      \"state\": \"not_collected\"\n    },\n    \"dns\": {\n      \"state\": \"not_collected\"\n    },\n    \"network\": {\n      \"state\": \"not_checked\"\n    }\n  },\n  \"request_id\": \"SYNTHETIC_EXAMPLE\"\n}"
+            }
+          ]
         }
       ]
     },

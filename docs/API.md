@@ -1,5 +1,9 @@
 # LTE-System API v3
 
+> **未发布草稿 / Unreleased draft:** 本分支内容未完成最终复核，未合并 master、未推送、未构建或部署。本轮执行工具拦截中止了后续实施；文中新增契约与 Postman 仅供审查，不代表现网已支持。
+> Final review is incomplete. This branch has not been merged, pushed, built or deployed. Execution-tool safety checks halted implementation; proposed additions and Postman files do not describe new production capabilities.
+
+
 机器可读契约见 [`api/openapi.yaml`](api/openapi.yaml)。v3 只提供 `/api/v1/*` 标准接口；已删除根路径旧接口以及单终端 `/api/v1/ue`。
 
 The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 exposes only the standard `/api/v1/*` surface; root-path legacy endpoints and singular `/api/v1/ue` have been removed.
@@ -126,7 +130,28 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 - `chap` 与 LTE attach/AKA 分离；`not_collected`、缺 tshark、超时、不可解码、未观察到握手分别表达。iPhone 不必使用 CHAP。
 - `user_plane`/`dns` 统计已有 SGi pcap 的上下行及 DNS 请求/响应；UE 方向只按当前 `NetworkPlanSnapshot.ue_subnet` 分类并返回 `classification_subnet`，不会硬编码或回退到另一网段。部分可解码文件保留正证据并标注 scan 不完整。
 - `network` 只是配置证据，规则存在不证明公网可达。
-- 同时只运行一个诊断；并发请求立即 429/`diagnostic_busy`。每项 tshark `-n`、最多 3 秒/128 KiB，pcap 最大 64 MiB；5 秒是有界子检查 budget，不是启动锁等待在内的严格总墙钟 SLA。
+- 同时只运行一个诊断；并发请求立即 429/`diagnostic_busy`。每项 tshark 使用 `-n`、3 秒 context budget/128 KiB 输出上限，pcap 最大 64 MiB；文件 IO 为协作式取消，5 秒是子检查 budget，不是包含文件 IO、进程回收和启动锁等待的严格总墙钟 SLA。
+
+### 抓包完整性 / Capture integrity
+
+S1AP 文件可能正在写入，最后一条 packet 尚未写完并不等于整个文件损坏。诊断只读取一个有界、权限 0600 的完整 record 前缀临时副本，检查结束即清理；原始抓包不改动。支持 classic-PCAP 的 micro/nanosecond 大小端格式与本项目 DLT 150；其他格式显式报错。读取或检查期间源文件变化，`scan_complete=false`。
+
+A live S1AP capture can end mid-record. Diagnostics inspect a bounded private immutable complete-record prefix, then remove it, without modifying the original. Classic-PCAP micro/nanosecond byte orders and this project's DLT 150 are supported. Source mutation makes the scan incomplete.
+
+- `capture_incomplete`：未写完或检查期间变化，`state=unknown`，不是“没有 CHAP”。
+- `capture_format_invalid` / `capture_linktype_unsupported`：格式或链路类型不符。
+- `capture_no_packets`：仅文件头，尚无完整 packet。
+- `capture_read_failed` / `capture_not_regular`：读取失败或非普通文件。
+- `inspection_timeout` / `inspection_cancelled`：副本检查超时或请求取消；与 `tshark_timeout` 分开。
+- `tshark_incompatible`：字段或配置选项不受支持；原始 stderr 不回显。
+- `pap_frames_observed`：仅观察到 PAP 协议存在性，不读取用户名或密码。
+
+`chap.capture` 可新增 `snapshot_size_bytes`、`complete_packets`、`incomplete`。`chap_observed=true` 只表示协议元数据存在，不保证完整认证交换，更不表示成功恢复密码。`scan_complete=false` 时不得据未观察结果推断协议不存在；完整性 reason 由只读诊断及既有失败诊断分支提供。本次没有修改认证提取或 Hashcat 作业实现。
+
+Optional capture metadata reports prefix size, complete-packet count and incompleteness. Protocol presence is not proof of a complete exchange or recovered credentials. Never interpret an incomplete negative scan as absence. This change affects diagnostics only, not authentication extraction or Hashcat jobs.
+
+UE 清单新方案仍是[设计](UE_PRESENCE_DESIGN_2026-09-07.md)，未上线；上文现行 UE/subscriber 契约保持不变。
+The new UE-presence scheme remains a design, not a released change to UE/subscriber semantics.
 
 ## 5. 其他标准接口 Other Standard Endpoints
 

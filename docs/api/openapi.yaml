@@ -3,6 +3,7 @@ info:
   title: LTE-System Standard API
   version: 3.0.0
   description: >-
+    UNRELEASED DRAFT: integrity additions have not completed final validation or deployment.
     Standard /api/v1 API only. Root-path legacy endpoints and singular
     /api/v1/ue were removed in v3.
 servers:
@@ -59,6 +60,41 @@ components:
         ue_access: { type: string, enum: [isolated, allow] }
         resolved_network: { type: string, description: 'Present after an active plan resolves its egress interface' }
       description: 'Configuration snapshot only; it does not assert Internet or DNS reachability.'
+    CaptureMetadata:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        modified_at: { type: string, format: date-time }
+        session_relation: { type: string }
+        snapshot_size_bytes: { type: integer, format: int64, minimum: 0 }
+        complete_packets: { type: integer, format: int64, minimum: 0 }
+        incomplete: { type: boolean }
+      description: 'Metadata only. A private complete-record prefix is removed after inspection; the original capture is unchanged.'
+    ProtocolObservation:
+      type: object
+      required: [state, reason, capture, s1ap_observed, chap_observed, pap_observed, scan_complete]
+      properties:
+        state: { type: string, enum: [not_collected, unavailable, not_checked, unknown, observed, not_observed] }
+        reason: { type: string, description: 'Includes capture_incomplete, capture_format_invalid, capture_linktype_unsupported, capture_no_packets, capture_read_failed, inspection_timeout, inspection_cancelled, tshark_incompatible and pap_frames_observed.' }
+        capture: { $ref: '#/components/schemas/CaptureMetadata' }
+        s1ap_observed: { type: boolean }
+        chap_observed: { type: boolean }
+        pap_observed: { type: boolean }
+        scan_complete: { type: boolean }
+        limitations: { type: array, items: { type: string } }
+      description: 'Protocol presence only, with no identities or credentials. An incomplete negative scan does not prove absence; presence does not prove a complete handshake or recovered password.'
+    ConnectivityEvidence:
+      type: object
+      required: [registration, pdn, chap, user_plane, dns, network]
+      properties:
+        registration: { type: object }
+        pdn: { type: object }
+        chap: { $ref: '#/components/schemas/ProtocolObservation' }
+        user_plane: { type: object }
+        dns: { type: object }
+        network: { type: object }
     Bearer:
       type: object
       required: [ebi, qci, state]
@@ -282,7 +318,17 @@ paths:
     get:
       summary: Read-only layered connectivity evidence
       responses:
-        '200': { description: Partial or complete evidence }
+        '200':
+          description: 'Partial or complete read-only evidence; live capture truncation is not absence of authentication.'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    required: [data]
+                    properties:
+                      data: { $ref: '#/components/schemas/ConnectivityEvidence' }
         '429': { description: diagnostic_busy }
   /api/v1/crack/jobs:
     post:

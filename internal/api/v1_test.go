@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -141,6 +142,19 @@ func TestV1_CrackDistinguishesMissingCapture(t *testing.T) {
 	}
 }
 
+// Synthetic framing only: one byte of opaque payload, no authentication data.
+func diagnosticPCAPFixture() []byte {
+	b := make([]byte, 41)
+	copy(b, []byte{0xd4, 0xc3, 0xb2, 0xa1})
+	binary.LittleEndian.PutUint16(b[4:6], 2)
+	binary.LittleEndian.PutUint16(b[6:8], 4)
+	binary.LittleEndian.PutUint32(b[16:20], 65535)
+	binary.LittleEndian.PutUint32(b[20:24], 150)
+	binary.LittleEndian.PutUint32(b[32:36], 1)
+	binary.LittleEndian.PutUint32(b[36:40], 1)
+	return b
+}
+
 func TestV1_CrackDistinguishesMissingTsharkAndUndecodableCapture(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -168,7 +182,7 @@ func TestV1_CrackDistinguishesMissingTsharkAndUndecodableCapture(t *testing.T) {
 			if err := os.WriteFile(cfg.LogPath(cfg.EPCLogName), []byte("ESM Info: APN test\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(cfg.LogPath(cfg.PcapS1AP), []byte("partial pcap"), 0o644); err != nil {
+			if err := os.WriteFile(cfg.LogPath(cfg.PcapS1AP), diagnosticPCAPFixture(), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs", nil)
@@ -178,6 +192,52 @@ func TestV1_CrackDistinguishesMissingTsharkAndUndecodableCapture(t *testing.T) {
 			data, _ := m["data"].(map[string]any)
 			if rec.Code != tc.wantHTTP || m["code"] != float64(tc.wantCode) || data["reason"] != tc.wantReason {
 				t.Fatalf("unexpected classification: %d %v", rec.Code, m)
+			}
+		})
+	}
+}
+
+func TestV1_ConnectivityCaptureIntegrityMetadata(t *testing.T) {
+	wrongLink := diagnosticPCAPFixture()
+	binary.LittleEndian.PutUint32(wrongLink[20:24], 1)
+	for _, tc := range []struct {
+		name, reason, state string
+		capture             []byte
+	}{
+		{"invalid format", "capture_format_invalid", "unavailable", []byte("not-a-pcap")},
+		{"partial record", "capture_incomplete", "unknown", diagnosticPCAPFixture()[:40]},
+		{"header only", "capture_no_packets", "not_collected", diagnosticPCAPFixture()[:24]},
+		{"wrong link", "capture_linktype_unsupported", "unavailable", wrongLink},
+		{"missing decoder", "tshark_missing", "unavailable", diagnosticPCAPFixture()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, cfg := testServer(t)
+			s.cfg.TsharkBin = filepath.Join(cfg.DataDir, "missing-tshark")
+			if err := os.WriteFile(cfg.LogPath(cfg.PcapS1AP), tc.capture, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/connectivity", nil))
+			m := decodeEnvelope(t, rec)
+			if rec.Code != 200 || m["code"] != float64(0) {
+				t.Fatalf("%d: %v", rec.Code, m)
+			}
+			data := m["data"].(map[string]any)
+			chap := data["chap"].(map[string]any)
+			if chap["reason"] != tc.reason || chap["state"] != tc.state || chap["scan_complete"] != false {
+				t.Fatalf("wrong integrity classification: %v", chap)
+			}
+			for _, key := range []string{`"username"`, `"password"`, `"challenge"`, `"response"`, `"hash"`} {
+				if strings.Contains(rec.Body.String(), key) {
+					t.Fatalf("sensitive field %s", key)
+				}
+			}
+			left, err := filepath.Glob(cfg.LogPath(".lte-s1ap-prefix-*.pcap"))
+			if err != nil || len(left) != 0 {
+				t.Fatalf("temporary capture leak: %v %v", left, err)
+			}
+			if s.mgr.IsRunning().Running {
+				t.Fatal("diagnostic changed cell state")
 			}
 		})
 	}
