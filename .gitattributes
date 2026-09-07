@@ -1,6 +1,8 @@
 # Text handling: keep LF everywhere (shell scripts break on CRLF in Docker),
 # keep firmware blobs byte-exact.
 * text=auto eol=lf
+# Unified diffs require a single-space prefix on empty context lines.
+*.patch whitespace=-blank-at-eol
 *.bin binary
 *.pcap binary
 *.pdf binary

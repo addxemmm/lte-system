@@ -26,3 +26,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ipv4v6_fallback_test.cc")
     ${SCTP_LIBRARIES})
   add_lte_test(ipv4v6_fallback_test ipv4v6_fallback_test)
 endif()
+
+foreach(test_name strict_apn_test spgw_session_safety_test ue_snapshot_test)
+  add_executable(${test_name} ${test_name}.cc)
+  target_compile_definitions(${test_name} PRIVATE ASSERTS_ENABLED)
+  target_link_libraries(${test_name} srsepc_mme srsepc_hss srsepc_sgw srsran_gtpu s1ap_asn1 srsran_asn1
+    srsran_common srslog support ${CMAKE_THREAD_LIBS_INIT} ${SEC_LIBRARIES} ${SCTP_LIBRARIES})
+  add_lte_test(${test_name} ${test_name})
+endforeach()

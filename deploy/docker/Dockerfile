@@ -29,8 +29,12 @@ RUN git clone --depth 1 --branch ${SRSRAN_VERSION} https://github.com/srsran/srs
 # Fail closed if the selected upstream revision no longer matches the patch baseline.
 COPY third_party/srsran/0001-protected-pdn-reject.patch \
      third_party/srsran/0002-ipv4v6-fallback.patch \
+     third_party/srsran/0003-strict-apn-session-safety.patch \
      third_party/srsran/nas_pdn_reject_test.cc \
      third_party/srsran/ipv4v6_fallback_test.cc \
+     third_party/srsran/strict_apn_test.cc \
+     third_party/srsran/spgw_session_safety_test.cc \
+     third_party/srsran/ue_snapshot_test.cc \
      third_party/srsran/test-CMakeLists.txt /tmp/lte-srsran/
 RUN test "$(git -C /src/srsRAN_4G rev-parse HEAD)" = "eea87b1d893ae58e0b08bc381730c502024ae71f" \
  && mkdir -p /src/srsRAN_4G/srsepc/test \
@@ -39,11 +43,13 @@ RUN test "$(git -C /src/srsRAN_4G rev-parse HEAD)" = "eea87b1d893ae58e0b08bc3817
  && git -C /src/srsRAN_4G apply --check /tmp/lte-srsran/0001-protected-pdn-reject.patch \
  && git -C /src/srsRAN_4G apply /tmp/lte-srsran/0001-protected-pdn-reject.patch \
  && git -C /src/srsRAN_4G apply --check /tmp/lte-srsran/0002-ipv4v6-fallback.patch \
- && git -C /src/srsRAN_4G apply /tmp/lte-srsran/0002-ipv4v6-fallback.patch
+ && git -C /src/srsRAN_4G apply /tmp/lte-srsran/0002-ipv4v6-fallback.patch \
+ && git -C /src/srsRAN_4G apply --check /tmp/lte-srsran/0003-strict-apn-session-safety.patch \
+ && git -C /src/srsRAN_4G apply /tmp/lte-srsran/0003-strict-apn-session-safety.patch
 WORKDIR /src/srsRAN_4G/build
 RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
  && make -j"${SRSRAN_BUILD_JOBS}" \
- && ctest --output-on-failure --no-tests=error -R '^(nas_pdn_reject_test|ipv4v6_fallback_test)$' \
+ && ctest --output-on-failure --no-tests=error -R '^(nas_pdn_reject_test|ipv4v6_fallback_test|strict_apn_test|spgw_session_safety_test|ue_snapshot_test)$' \
  && make install \
  && ldconfig
 # Verify RF drivers got compiled in (fail early if UHD missing)

@@ -1,0 +1,1324 @@
+diff --git a/lib/include/srsran/interfaces/epc_interfaces.h b/lib/include/srsran/interfaces/epc_interfaces.h
+index 8cdc226..e7cfe74 100644
+--- a/lib/include/srsran/interfaces/epc_interfaces.h
++++ b/lib/include/srsran/interfaces/epc_interfaces.h
+@@ -113,7 +113,7 @@ class gtpu_interface_gtpc // GTP-C -> GTP-U
+ public:
+   virtual in_addr_t get_s1u_addr() = 0;
+ 
+-  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw_user_fteid, uint32_t up_ctrl_teid) = 0;
++  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw_user_fteid, uint32_t up_ctrl_teid, uint32_t up_user_teid) = 0;
+   virtual bool delete_gtpu_tunnel(in_addr_t ue_ipv4)                                                              = 0;
+   virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4)                                                              = 0;
+   virtual void send_all_queued_packets(srsran::gtp_fteid_t                       dw_user_fteid,
+diff --git a/srsepc/hdr/mme/apn_policy.h b/srsepc/hdr/mme/apn_policy.h
+new file mode 100644
+index 0000000..958c00e
+--- /dev/null
++++ b/srsepc/hdr/mme/apn_policy.h
+@@ -0,0 +1,138 @@
++#ifndef SRSEPC_APN_POLICY_H
++#define SRSEPC_APN_POLICY_H
++
++#include "srsran/asn1/liblte_mme.h"
++#include <cstring>
++#include <string>
++
++namespace srsepc {
++namespace apn_policy {
++
++inline bool normalize(const std::string& input, std::string& out)
++{
++  out.clear();
++  if (input.empty() || input.size() > 99) return false;
++  size_t label = 0;
++  bool previous_hyphen = false;
++  for (unsigned char c : input) {
++    if (c == '.') {
++      if (label == 0 || previous_hyphen) return false;
++      label = 0;
++    } else {
++      if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
++      if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
++      if (++label > 63 || (label == 1 && c == '-')) return false;
++    }
++    previous_hyphen = c == '-';
++    out += static_cast<char>(c);
++  }
++  return label != 0 && !previous_hyphen;
++}
++
++struct request {
++  bool present = false;
++  bool eit = false;
++  std::string apn;
++};
++
++// Parse only a bounded inner ESM PDU. Never let a malformed explicit APN
++// turn into the omitted-APN default. Unknown low-bit IEs are fail-closed.
++inline bool parse(const uint8_t* data, size_t size, bool information_response, request& out)
++{
++  out = {};
++  const size_t fixed = information_response ? 3 : 4;
++  if (!data || size < fixed || size > LIBLTE_MAX_MSG_SIZE_BYTES || (data[0] & 15) != 2 ||
++      data[2] != (information_response ? LIBLTE_MME_MSG_TYPE_ESM_INFORMATION_RESPONSE :
++                                         LIBLTE_MME_MSG_TYPE_PDN_CONNECTIVITY_REQUEST)) return false;
++  bool seen_eit = false;
++  for (size_t i = fixed; i < size;) {
++    const uint8_t ie = data[i++];
++    if (ie & 0x80) {
++      if ((ie >> 4) == 0xd) {
++        if (information_response || seen_eit) return false;
++        seen_eit = true;
++        out.eit = (ie & 1) != 0;
++      }
++      continue; // TS 24.007 type-1 optional IE, one octet.
++    }
++    if (ie != 0x28 && ie != 0x27 && ie != 0x33 && ie != 0x66 && ie != 0x7b) return false;
++    const size_t length_bytes = ie == 0x7b ? 2 : 1;
++    if (size - i < length_bytes) return false;
++    size_t length = data[i++];
++    if (length_bytes == 2) length = (length << 8) | data[i++];
++    if (length > size - i) return false;
++    if (ie == 0x28) {
++      if (out.present || length == 0 || length > 100) return false;
++      out.present = true;
++      std::string text;
++      const size_t end = i + length;
++      while (i < end) {
++        const size_t label = data[i++];
++        if (label == 0 || label > 63 || label > end - i) return false;
++        if (!text.empty()) text += '.';
++        text.append(reinterpret_cast<const char*>(data + i), label);
++        i += label;
++      }
++      if (!normalize(text, out.apn)) return false;
++    } else {
++      i += length;
++    }
++  }
++  return true;
++}
++
++inline LIBLTE_ERROR_ENUM unpack_pdn(LIBLTE_BYTE_MSG_STRUCT* msg,
++                                    LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT* out)
++{
++  request parsed;
++  if (!msg || !out || !parse(msg->msg, msg->N_bytes, false, parsed)) return LIBLTE_ERROR_INVALID_INPUTS;
++  *out = {};
++  out->eps_bearer_id = msg->msg[0] >> 4;
++  out->proc_transaction_id = msg->msg[1];
++  out->request_type = msg->msg[3] & 7;
++  out->pdn_type = (msg->msg[3] >> 4) & 7;
++  out->esm_info_transfer_flag_present = parsed.eit;
++  out->esm_info_transfer_flag = static_cast<LIBLTE_MME_ESM_INFO_TRANSFER_FLAG_ENUM>(parsed.eit);
++  out->apn_present = parsed.present;
++  if (parsed.present) std::memcpy(out->apn.apn, parsed.apn.c_str(), parsed.apn.size() + 1);
++  return LIBLTE_SUCCESS;
++}
++
++// Validate the containing Attach before the legacy decoder copies its ESM LV-E.
++// This prevents an advertised 16-bit container length from overrunning either
++// the actual NAS PDU or the fixed LIBLTE message array.
++inline bool validate_attach(const uint8_t* data, size_t size)
++{
++  if (!data || size < 3 || size > LIBLTE_MAX_MSG_SIZE_BYTES || (data[0] & 15) != 7) return false;
++  const unsigned security = data[0] >> 4;
++  if (security > 4) return false;
++  size_t i = security ? 6 : 0;
++  if (i > size || size - i < 3 || data[i] != 7 || data[i + 1] != LIBLTE_MME_MSG_TYPE_ATTACH_REQUEST) return false;
++  i += 3;
++  if (i >= size) return false;
++  size_t length = data[i++];
++  if (length > size - i || length < 1) return false;
++  const uint8_t identity_type = data[i] & 7;
++  if (!((identity_type == LIBLTE_MME_EPS_MOBILE_ID_TYPE_IMSI && length == 8) ||
++        (identity_type == LIBLTE_MME_EPS_MOBILE_ID_TYPE_GUTI && length == 11))) return false;
++  i += length;
++  if (i >= size) return false;
++  length = data[i++];
++  if (length < 2 || length > size - i) return false;
++  i += length;
++  if (size - i < 2) return false;
++  length = (size_t(data[i]) << 8) | data[i + 1];
++  i += 2;
++  if (length > size - i) return false;
++  request parsed;
++  return parse(data + i, length, false, parsed);
++}
++
++inline bool matches(bool present, const std::string& requested, const std::string& configured)
++{
++  std::string allowed, supplied;
++  return normalize(configured, allowed) && (!present || (normalize(requested, supplied) && supplied == allowed));
++}
++} // namespace apn_policy
++} // namespace srsepc
++#endif
+diff --git a/srsepc/hdr/mme/mme.h b/srsepc/hdr/mme/mme.h
+index 00a701c..28db4ff 100644
+--- a/srsepc/hdr/mme/mme.h
++++ b/srsepc/hdr/mme/mme.h
+@@ -33,6 +33,7 @@
+ #include "srsran/common/standard_streams.h"
+ #include "srsran/common/threads.h"
+ #include <cstddef>
++#include <atomic>
+ 
+ namespace srsepc {
+ 
+@@ -71,7 +72,7 @@ private:
+   s1ap*       m_s1ap;
+   mme_gtpc*   m_mme_gtpc;
+ 
+-  bool   m_running;
++  std::atomic<bool> m_running;
+   fd_set m_set;
+ 
+   // Timer map
+diff --git a/srsepc/hdr/mme/nas.h b/srsepc/hdr/mme/nas.h
+index 7dbeeea..dc04a2b 100644
+--- a/srsepc/hdr/mme/nas.h
++++ b/srsepc/hdr/mme/nas.h
+@@ -158,6 +158,22 @@ class nas
+ public:
+   nas(const nas_init_t& args, const nas_if_t& itf);
+   void reset();
++  void set_pdn_apn(const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& request);
++  bool start_pdn_session();
++  void clear_pdn_session();
++  bool reject_initial_pdn(uint8_t esm_cause);
++  bool apn_allowed() const;
++  uint64_t m_session_generation = 0;
++  std::string m_requested_apn;
++  std::string m_apn_source = "omitted";
++  std::string m_selected_apn;
++  bool m_apn_present = false;
++  bool m_apn_validated = false;
++  bool m_security_ready = false;
++  bool m_waiting_esm = false;
++  bool m_session_requested = false;
++  bool m_pdn_rejected = false;
++
+ 
+   /***********************
+    * Initial UE messages *
+diff --git a/srsepc/hdr/mme/s1ap.h b/srsepc/hdr/mme/s1ap.h
+index 4039953..f9d647b 100644
+--- a/srsepc/hdr/mme/s1ap.h
++++ b/srsepc/hdr/mme/s1ap.h
+@@ -96,6 +96,9 @@ public:
+   uint32_t         allocate_m_tmsi(uint64_t imsi);
+   virtual uint64_t find_imsi_from_m_tmsi(uint32_t m_tmsi);
+ 
++  // MME-owner thread only: immutable serialized snapshot, no pointers escape.
++  std::string snapshot_sessions(const std::string& run_id) const;
++
+   s1ap_args_t           m_s1ap_args;
+   srslog::basic_logger& m_logger = srslog::fetch_basic_logger("S1AP");
+ 
+diff --git a/srsepc/hdr/mme/ue_snapshot.h b/srsepc/hdr/mme/ue_snapshot.h
+new file mode 100644
+index 0000000..d6f18b6
+--- /dev/null
++++ b/srsepc/hdr/mme/ue_snapshot.h
+@@ -0,0 +1,142 @@
++#ifndef SRSEPC_UE_SNAPSHOT_H
++#define SRSEPC_UE_SNAPSHOT_H
++
++#include "srsepc/hdr/mme/nas.h"
++#include <arpa/inet.h>
++#include <chrono>
++#include <cstdio>
++#include <cstdlib>
++#include <cerrno>
++#include <set>
++#include <sstream>
++#include <iomanip>
++#include <sys/stat.h>
++#include <unistd.h>
++
++namespace srsepc {
++namespace ue_snapshot {
++inline std::string quote(const std::string& input)
++{
++  std::string result = "\"";
++  const char hex[] = "0123456789abcdef";
++  for (unsigned char c : input) {
++    if (c == '"' || c == '\\') { result += '\\'; result += c; }
++    else if (c < 32 || c >= 127) {
++      result += "\\u00"; result += hex[c >> 4]; result += hex[c & 15];
++    } else result += c;
++  }
++  return result + '"';
++}
++
++inline int64_t unix_ms()
++{
++  return std::chrono::duration_cast<std::chrono::milliseconds>(
++      std::chrono::system_clock::now().time_since_epoch()).count();
++}
++
++// Caller owns all contexts: invoked only by the MME event loop, never a
++// telemetry/network worker walking mutable NAS pointers concurrently.
++inline std::string sessions(const std::set<const nas*>& contexts, const std::string& run_id)
++{
++  if (contexts.size() > 256) return ""; // Fail stale instead of publishing a partial current view.
++  const char* emm[] = {"deregistered", "common_procedure_initiated", "registered", "deregistered_initiated"};
++  const char* bearer[] = {"deactivated", "requested", "setup", "active"};
++  std::ostringstream out;
++  out << '[';
++  bool first = true;
++  for (const nas* context : contexts) {
++    if (!context) continue;
++    const auto& n = *context;
++    if (n.m_emm_ctx.imsi > 999999999999999ULL) return "";
++    if (unsigned(n.m_emm_ctx.state) >= EMM_STATE_N_ITEMS || unsigned(n.m_ecm_ctx.state) >= ECM_STATE_N_ITEMS) return "";
++    if (!first) out << ',';
++    first = false;
++    char address[INET_ADDRSTRLEN] = {};
++    if (n.m_emm_ctx.ue_ip.s_addr != 0) inet_ntop(AF_INET, &n.m_emm_ctx.ue_ip, address, sizeof(address));
++    std::ostringstream identity;
++    if (n.m_emm_ctx.imsi) identity << std::setw(15) << std::setfill('0') << n.m_emm_ctx.imsi;
++    out << "{\"session_id\":" << quote(run_id + ":" + std::to_string(n.m_session_generation))
++        << ",\"imsi\":" << quote(identity.str())
++        << ",\"mme_ue_s1ap_id\":" << n.m_ecm_ctx.mme_ue_s1ap_id
++        << ",\"enb_ue_s1ap_id\":" << n.m_ecm_ctx.enb_ue_s1ap_id
++        << ",\"sctp_assoc_id\":" << n.m_ecm_ctx.enb_sri.sinfo_assoc_id
++        << ",\"emm_state\":" << quote(emm[n.m_emm_ctx.state])
++        << ",\"ecm_state\":" << quote(n.m_ecm_ctx.state == ECM_STATE_CONNECTED ? "connected" : "idle")
++        << ",\"ue_ipv4\":" << quote(address)
++        << ",\"requested_apn\":" << quote(n.m_requested_apn)
++        << ",\"apn_source\":" << quote(n.m_apn_source)
++        << ",\"selected_apn\":" << quote(n.m_selected_apn)
++        << ",\"apn_validated\":" << (n.m_apn_validated ? "true" : "false")
++        << ",\"bearers\":[";
++    bool first_bearer = true;
++    for (unsigned i = 5; i < MAX_ERABS_PER_UE; ++i) {
++      const auto& b = n.m_esm_ctx[i];
++      if (i != 5 && b.state == ERAB_DEACTIVATED) continue;
++      if (unsigned(b.state) > ERAB_ACTIVE) return "";
++      if (!first_bearer) out << ',';
++      first_bearer = false;
++      out << "{\"ebi\":" << i << ",\"qci\":" << unsigned(b.qci)
++          << ",\"state\":" << quote(bearer[b.state]) << '}';
++    }
++    out << "]}";
++  }
++  out << ']';
++  return out.str();
++}
++
++class writer
++{
++public:
++  writer(const std::string& path, const std::string& run) : path_(path), run_(run), started_(unix_ms()) {}
++  writer() : writer(environment("LTE_UE_SNAPSHOT_PATH"), environment("LTE_UE_RUN_ID")) {}
++  const std::string& run_id() const { return run_; }
++  bool enabled() const
++  {
++    if (path_.empty() || run_.empty() || run_.size() > 128) return false;
++    for (char c : run_) if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
++        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.')) return false;
++    return true;
++  }
++  bool publish(const std::string& rows, bool running, bool force = false)
++  {
++    if (!enabled() || rows.empty() || rows.size() > 1024 * 1024) return false;
++    const auto now = std::chrono::steady_clock::now();
++    // Publish after changed control-plane event batches and at least once each second.
++    if (!force && rows == last_rows_ && now - last_write_ < std::chrono::seconds(1)) return true;
++    const int64_t updated = unix_ms();
++    if (updated < started_) return false;
++    std::ostringstream out;
++    out << "{\"schema_version\":1,\"run_id\":" << quote(run_)
++        << ",\"pid\":" << getpid() << ",\"started_at_unix_ms\":" << started_
++        << ",\"updated_at_unix_ms\":" << updated << ",\"sequence\":" << sequence_ + 1
++        << ",\"state\":" << quote(running ? "running" : "stopped") << ",\"sessions\":" << rows << "}\n";
++    const std::string bytes = out.str();
++    std::string temp = path_ + ".tmp.XXXXXX";
++    const int fd = mkstemp(&temp[0]); // Same directory, exclusive creation, mode 0600.
++    if (fd < 0) return false;
++    bool ok = fchmod(fd, S_IRUSR | S_IWUSR) == 0;
++    size_t offset = 0;
++    while (ok && offset < bytes.size()) {
++      ssize_t size = write(fd, bytes.data() + offset, bytes.size() - offset);
++      if (size < 0 && errno == EINTR) continue;
++      if (size <= 0) { ok = false; break; }
++      offset += size;
++    }
++    if (close(fd) != 0) ok = false;
++    if (ok && rename(temp.c_str(), path_.c_str()) != 0) ok = false;
++    if (!ok) { unlink(temp.c_str()); return false; }
++    ++sequence_;
++    last_rows_ = rows;
++    last_write_ = now;
++    return true;
++  }
++private:
++  static std::string environment(const char* name) { const char* value = getenv(name); return value ? value : ""; }
++  std::string path_, run_, last_rows_;
++  int64_t started_;
++  uint64_t sequence_ = 0;
++  std::chrono::steady_clock::time_point last_write_{};
++};
++} // namespace ue_snapshot
++} // namespace srsepc
++#endif
+diff --git a/srsepc/hdr/spgw/gtpc.h b/srsepc/hdr/spgw/gtpc.h
+index 42b99bd..5cab326 100644
+--- a/srsepc/hdr/spgw/gtpc.h
++++ b/srsepc/hdr/spgw/gtpc.h
+@@ -50,7 +50,7 @@ public:
+   in_addr_t get_new_ue_ipv4(uint64_t imsi);
+ 
+   void handle_s11_pdu(srsran::byte_buffer_t* msg);
+-  bool send_s11_pdu(const srsran::gtpc_pdu& pdu);
++  virtual bool send_s11_pdu(const srsran::gtpc_pdu& pdu);
+ 
+   void handle_create_session_request(const srsran::gtpc_create_session_request& cs_req);
+   void handle_modify_bearer_request(const srsran::gtpc_header&                mb_req_hdr,
+@@ -91,6 +91,7 @@ public:
+                                                              // reply ctrl TEID, UE IP, etc.
+ 
+   std::set<uint32_t>                 m_ue_ip_addr_pool;
++  std::set<uint32_t>                 m_dynamic_ip_in_use;
+   std::map<uint64_t, struct in_addr> m_imsi_to_ip;
+ 
+   srslog::basic_logger& m_logger = srslog::fetch_basic_logger("SPGW GTPC");
+diff --git a/srsepc/hdr/spgw/gtpu.h b/srsepc/hdr/spgw/gtpu.h
+index 7c7370c..da8d7bc 100644
+--- a/srsepc/hdr/spgw/gtpu.h
++++ b/srsepc/hdr/spgw/gtpu.h
+@@ -30,6 +30,7 @@
+ #include "srsran/srslog/srslog.h"
+ #include <cstddef>
+ #include <queue>
++#include <mutex>
+ 
+ namespace srsepc {
+ 
+@@ -52,12 +53,18 @@ public:
+ 
+   virtual in_addr_t get_s1u_addr();
+ 
+-  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtp_fteid_t dw_user_fteid, uint32_t up_ctr_fteid);
++  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtp_fteid_t dw_user_fteid, uint32_t up_ctr_fteid, uint32_t up_user_teid);
+   virtual bool delete_gtpu_tunnel(in_addr_t ue_ipv4);
+   virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4);
+   virtual void send_all_queued_packets(srsran::gtp_fteid_t                       dw_user_fteid,
+                                        std::queue<srsran::unique_byte_buffer_t>& pkt_queue);
+ 
++  // SPGW owns lifecycle changes; serialize explicit test/control callers too.
++  std::mutex m_tunnel_mutex;
++  std::map<uint32_t, in_addr_t> m_up_teid_to_ip;
++  bool valid_uplink(uint32_t teid, const uint8_t* data, size_t size);
++  bool valid_uplink_locked(uint32_t teid, const uint8_t* data, size_t size);
++
+   spgw*                m_spgw;
+   gtpc_interface_gtpu* m_gtpc;
+ 
+diff --git a/srsepc/hdr/spgw/spgw.h b/srsepc/hdr/spgw/spgw.h
+index affdafd..ab6c0db 100644
+--- a/srsepc/hdr/spgw/spgw.h
++++ b/srsepc/hdr/spgw/spgw.h
+@@ -62,6 +62,7 @@ typedef struct spgw_tunnel_ctx {
+ 
+ class spgw : public srsran::thread
+ {
++  friend struct spgw_test_access; // Narrow CPU-test access to nested protocol handlers.
+   class gtpc;
+   class gtpu;
+ 
+diff --git a/srsepc/src/mme/mme.cc b/srsepc/src/mme/mme.cc
+index 5ccedc2..ada56f6 100644
+--- a/srsepc/src/mme/mme.cc
++++ b/srsepc/src/mme/mme.cc
+@@ -25,6 +25,7 @@
+ #include <netinet/sctp.h>
+ #include <sys/socket.h>
+ #include <sys/types.h>
++#include "srsepc/hdr/mme/ue_snapshot.h"
+ 
+ namespace srsepc {
+ 
+@@ -77,6 +78,7 @@ int mme::init(mme_args_t* args)
+     exit(-1);
+   }
+ 
++  m_running = true;
+   /*Log successful initialization*/
+   m_s1ap_logger.info("MME Initialized. MCC: 0x%x, MNC: 0x%x", args->s1ap_args.mcc, args->s1ap_args.mnc);
+   srsran::console("MME Initialized. MCC: 0x%x, MNC: 0x%x\n", args->s1ap_args.mcc, args->s1ap_args.mnc);
+@@ -85,14 +87,13 @@ int mme::init(mme_args_t* args)
+ 
+ void mme::stop()
+ {
+-  if (m_running) {
++  if (m_running.exchange(false)) {
++    // Join before destroying maps; the owner loop publishes a stopped snapshot.
++    // The bounded select timeout wakes idle shutdown without cancellation during rename.
++    wait_thread_finish();
+     m_s1ap->stop();
+     m_s1ap->cleanup();
+-    m_running = false;
+-    thread_cancel();
+-    wait_thread_finish();
+   }
+-  return;
+ }
+ 
+ void mme::run_thread()
+@@ -111,8 +112,8 @@ void mme::run_thread()
+   int rd_sz;
+   int msg_flags = 0;
+ 
+-  // Mark the thread as running
+-  m_running = true;
++  ue_snapshot::writer snapshot;
++  if (snapshot.enabled()) snapshot.publish("[]", true, true);
+ 
+   // Get S1-MME and S11 sockets
+   int s1mme = m_s1ap->get_s1_mme();
+@@ -134,7 +135,9 @@ void mme::run_thread()
+     }
+ 
+     m_s1ap_logger.debug("Waiting for S1-MME or S11 Message");
+-    int n = select(max_fd + 1, &m_set, NULL, NULL, NULL);
++    struct timeval timeout = {1, 0};
++    int n = select(max_fd + 1, &m_set, NULL, NULL, &timeout);
++    if (!m_running) break;
+     if (n == -1) {
+       m_s1ap_logger.error("Error from select");
+     } else if (n) {
+@@ -184,7 +187,9 @@ void mme::run_thread()
+     } else {
+       m_s1ap_logger.debug("No data from select.");
+     }
++    if (snapshot.enabled()) snapshot.publish(m_s1ap->snapshot_sessions(snapshot.run_id()), true);
+   }
++  if (snapshot.enabled()) snapshot.publish("[]", false, true);
+   return;
+ }
+ 
+diff --git a/srsepc/src/mme/mme_gtpc.cc b/srsepc/src/mme/mme_gtpc.cc
+index ce09199..97cc15a 100644
+--- a/srsepc/src/mme/mme_gtpc.cc
++++ b/srsepc/src/mme/mme_gtpc.cc
+@@ -192,7 +192,11 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
+   m_imsi_to_gtpc_ctx.emplace(imsi, gtpc_ctx);
+ 
+   // Send msg to SPGW
+-  send_s11_pdu(cs_req_pdu);
++  if (!send_s11_pdu(cs_req_pdu)) {
++    m_mme_ctr_teid_to_imsi.erase(cs_req->sender_f_teid.teid);
++    m_imsi_to_gtpc_ctx.erase(imsi);
++    return false;
++  }
+   return true;
+ }
+ 
+@@ -208,14 +212,29 @@ bool mme_gtpc::handle_create_session_response(srsran::gtpc_pdu* cs_resp_pdu)
+   }
+   if (cs_resp->cause.cause_value != srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED) {
+     m_logger.warning("Could not create GTPC session. Create Session Request not accepted");
+-    // TODO Handle error
++    auto found = m_mme_ctr_teid_to_imsi.find(cs_resp_pdu->header.teid);
++    if (found != m_mme_ctr_teid_to_imsi.end()) {
++      const uint64_t imsi = found->second;
++      m_mme_ctr_teid_to_imsi.erase(found);
++      m_imsi_to_gtpc_ctx.erase(imsi);
++      nas* context = m_s1ap->find_nas_ctx_from_imsi(imsi);
++      if (context) context->reject_initial_pdn(LIBLTE_MME_ESM_CAUSE_INSUFFICIENT_RESOURCES);
++    }
+     return false;
+   }
+ 
+   // Get IMSI from the control TEID
+   std::map<uint32_t, uint64_t>::iterator id_it = m_mme_ctr_teid_to_imsi.find(cs_resp_pdu->header.teid);
+   if (id_it == m_mme_ctr_teid_to_imsi.end()) {
+-    m_logger.warning("Could not find IMSI from Ctrl TEID.");
++    // A response can race Detach/replacement of a pending request. Reclaim the
++    // now-orphan SPGW session using its actual sender TEID, not a zero/old TEID.
++    if (cs_resp->sender_f_teid.teid != 0) {
++      srsran::gtpc_pdu cancel{};
++      cancel.header.type = srsran::GTPC_MSG_TYPE_DELETE_SESSION_REQUEST;
++      cancel.header.teid_present = true;
++      cancel.header.teid = cs_resp->sender_f_teid.teid;
++      send_s11_pdu(cancel);
++    }
+     return false;
+   }
+   uint64_t imsi = id_it->second;
+@@ -224,7 +243,7 @@ bool mme_gtpc::handle_create_session_response(srsran::gtpc_pdu* cs_resp_pdu)
+ 
+   // Get S-GW Control F-TEID
+   srsran::gtp_fteid_t sgw_ctr_fteid = {};
+-  sgw_ctr_fteid.teid                = cs_resp_pdu->header.teid;
++  sgw_ctr_fteid.teid                = cs_resp->sender_f_teid.teid;
+   sgw_ctr_fteid.ipv4 = 0; // TODO This is not used for now. In the future it will be obtained from the socket addr_info
+ 
+   // Get S-GW S1-u F-TEID
+@@ -244,7 +263,7 @@ bool mme_gtpc::handle_create_session_response(srsran::gtpc_pdu* cs_resp_pdu)
+     m_logger.error("PDN Adress Allocation not present");
+     return false;
+   }
+-  if (cs_resp->paa.pdn_type != srsran::GTPC_PDN_TYPE_IPV4) {
++  if (cs_resp->paa.pdn_type != srsran::GTPC_PDN_TYPE_IPV4 || !cs_resp->paa.ipv4_present || cs_resp->paa.ipv4 == 0) {
+     m_logger.error("IPv6 not supported yet");
+     return false;
+   }
+@@ -333,6 +352,10 @@ void mme_gtpc::handle_modify_bearer_response(srsran::gtpc_pdu* mb_resp_pdu)
+ 
+ bool mme_gtpc::send_delete_session_request(uint64_t imsi)
+ {
++  // The NAS context may survive Detach; it must stop advertising the freed IP.
++  nas* context = m_s1ap->find_nas_ctx_from_imsi(imsi);
++  if (context) context->clear_pdn_session();
++
+   m_logger.info("Sending GTP-C Delete Session Request request. IMSI %" PRIu64 "", imsi);
+   srsran::gtpc_pdu del_req_pdu;
+   std::memset(&del_req_pdu, 0, sizeof(del_req_pdu));
+diff --git a/srsepc/src/mme/nas.cc b/srsepc/src/mme/nas.cc
+index 9b45cf9..63be254 100644
+--- a/srsepc/src/mme/nas.cc
++++ b/srsepc/src/mme/nas.cc
+@@ -24,6 +24,8 @@
+ #include "srsran/common/liblte_security.h"
+ #include "srsran/common/security.h"
+ #include <cmath>
++#include <atomic>
++#include "srsepc/hdr/mme/apn_policy.h"
+ #include <inttypes.h> // for printing uint64_t
+ #include <netinet/sctp.h>
+ #include <sys/timerfd.h>
+@@ -34,6 +36,7 @@ namespace srsepc {
+ namespace {
+ 
+ const uint32_t nas_security_header_len = 6;
++std::atomic<uint64_t> next_session_generation{1};
+ 
+ bool unpack_pdn_connectivity_request_header(const uint8_t* msg, uint32_t len, uint8_t* eps_bearer_id, uint8_t* pti)
+ {
+@@ -67,6 +70,7 @@ nas::nas(const nas_init_t& args, const nas_if_t& itf) :
+   m_request_imeisv(args.request_imeisv),
+   m_lac(args.lac)
+ {
++  m_session_generation = next_session_generation.fetch_add(1);
+   m_sec_ctx.integ_algo  = args.integ_algo;
+   m_sec_ctx.cipher_algo = args.cipher_algo;
+   m_logger.debug("NAS Context Initialized. MCC: 0x%x, MNC 0x%x", m_mcc, m_mnc);
+@@ -74,6 +78,11 @@ nas::nas(const nas_init_t& args, const nas_if_t& itf) :
+ 
+ void nas::reset()
+ {
++  m_session_generation = next_session_generation.fetch_add(1);
++  m_requested_apn.clear();
++  m_selected_apn.clear();
++  m_apn_source = "omitted";
++  m_apn_present = m_apn_validated = m_security_ready = m_waiting_esm = m_session_requested = m_pdn_rejected = false;
+   m_emm_ctx = {};
+   m_ecm_ctx = {};
+   for (int i = 0; i < MAX_ERABS_PER_UE; ++i) {
+@@ -87,6 +96,91 @@ void nas::reset()
+   m_sec_ctx.cipher_algo                           = cipher_algo;
+ }
+ 
++void nas::set_pdn_apn(const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& request)
++{
++  m_session_generation = next_session_generation.fetch_add(1);
++  m_apn_present = request.apn_present;
++  m_emm_ctx.procedure_transaction_id = request.proc_transaction_id;
++  m_emm_ctx.requested_pdn_type = request.pdn_type;
++  const size_t length = strnlen(request.apn.apn, sizeof(request.apn.apn));
++  m_requested_apn = request.apn_present ? std::string(request.apn.apn, length) : std::string();
++  m_apn_source = request.apn_present ? "pdn_request" : "omitted";
++  m_emm_ctx.ue_ip.s_addr = 0;
++  m_selected_apn.clear();
++  m_apn_validated = m_security_ready = m_waiting_esm = m_session_requested = m_pdn_rejected = false;
++}
++
++bool nas::apn_allowed() const
++{
++  return apn_policy::matches(m_apn_present, m_requested_apn, m_apn);
++}
++
++bool nas::start_pdn_session()
++{
++  if (!m_security_ready || m_waiting_esm || m_session_requested || m_pdn_rejected) return false;
++  if (!apn_allowed()) return reject_initial_pdn(27);
++  apn_policy::normalize(m_apn, m_selected_apn);
++  m_apn_validated = true;
++  m_session_requested = true;
++  if (!m_gtpc->send_create_session_request(m_emm_ctx.imsi)) return reject_initial_pdn(26);
++  return true;
++}
++
++void nas::clear_pdn_session()
++{
++  m_session_requested = m_waiting_esm = m_apn_validated = false;
++  m_selected_apn.clear();
++  m_emm_ctx.state = EMM_STATE_DEREGISTERED;
++  m_emm_ctx.ue_ip.s_addr = 0;
++  m_emm_ctx.sgw_ctrl_fteid = {};
++  for (auto& bearer : m_esm_ctx) {
++    bearer.state = ERAB_DEACTIVATED;
++    bearer.pdn_addr_alloc = {};
++    bearer.enb_fteid = {};
++    bearer.sgw_s1u_fteid = {};
++  }
++}
++
++bool nas::reject_initial_pdn(uint8_t esm_cause)
++{
++  if (m_pdn_rejected) return false;
++  m_pdn_rejected = true;
++  m_apn_validated = false;
++  m_selected_apn.clear();
++  m_waiting_esm = false;
++  if (m_session_requested) m_gtpc->send_delete_session_request(m_emm_ctx.imsi);
++  clear_pdn_session();
++  LIBLTE_MME_PDN_CONNECTIVITY_REJECT_MSG_STRUCT pdn{};
++  pdn.proc_transaction_id = m_emm_ctx.procedure_transaction_id;
++  pdn.esm_cause = esm_cause;
++  LIBLTE_MME_ATTACH_REJECT_MSG_STRUCT reject{};
++  reject.emm_cause = LIBLTE_MME_EMM_CAUSE_ESM_FAILURE;
++  reject.esm_msg_present = true;
++  if (liblte_mme_pack_pdn_connectivity_reject_msg(&pdn, &reject.esm_msg) != LIBLTE_SUCCESS) return false;
++  LIBLTE_BYTE_MSG_STRUCT plain{};
++  if (liblte_mme_pack_attach_reject_msg(&reject, &plain) != LIBLTE_SUCCESS) return false;
++  auto tx = srsran::make_byte_buffer();
++  if (!tx || plain.N_bytes + 6 > tx->get_tailroom()) return false;
++  if (m_security_ready) {
++    tx->msg[0] = (LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED << 4) | LIBLTE_MME_PD_EPS_MOBILITY_MANAGEMENT;
++    memset(tx->msg + 1, 0, 4);
++    tx->msg[5] = ++m_sec_ctx.dl_nas_count & 255;
++    memcpy(tx->msg + 6, plain.msg, plain.N_bytes);
++    tx->N_bytes = plain.N_bytes + 6;
++    cipher_encrypt(tx.get());
++    uint8_t mac[4]{};
++    integrity_generate(tx.get(), mac);
++    memcpy(tx->msg + 1, mac, 4);
++  } else {
++    memcpy(tx->msg, plain.msg, plain.N_bytes);
++    tx->N_bytes = plain.N_bytes;
++  }
++  const bool sent = m_s1ap->send_downlink_nas_transport(
++      m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, tx.get(), m_ecm_ctx.enb_sri);
++  m_s1ap->send_ue_context_release_command(m_ecm_ctx.mme_ue_s1ap_id);
++  return sent;
++}
++
+ /**********************************
+  *
+  * Handle UE Initiating Messages
+@@ -110,13 +204,14 @@ bool nas::handle_attach_request(uint32_t                enb_ue_s1ap_id,
+   gtpc_interface_nas* gtpc = itf.gtpc;
+ 
+   // Get NAS Attach Request and PDN connectivity request messages
++  if (!nas_rx || !apn_policy::validate_attach(nas_rx->msg, nas_rx->N_bytes)) return false;
+   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_attach_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &attach_req);
+   if (err != LIBLTE_SUCCESS) {
+     nas_logger.error("Error unpacking NAS attach request. Error: %s", liblte_error_text[err]);
+     return false;
+   }
+   // Get PDN Connectivity Request*/
+-  err = liblte_mme_unpack_pdn_connectivity_request_msg(&attach_req.esm_msg, &pdn_con_req);
++  err = apn_policy::unpack_pdn(&attach_req.esm_msg, &pdn_con_req);
+   if (err != LIBLTE_SUCCESS) {
+     nas_logger.error("Error unpacking NAS PDN Connectivity Request. Error: %s", liblte_error_text[err]);
+     return false;
+@@ -264,6 +359,7 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t
+   uint8_t eps_bearer_id                       = pdn_con_req.eps_bearer_id; // TODO: Unused
+   nas_ctx->m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
+   nas_ctx->m_emm_ctx.requested_pdn_type        = pdn_con_req.pdn_type;
++  nas_ctx->set_pdn_apn(pdn_con_req);
+ 
+   // Initialize NAS count
+   nas_ctx->m_sec_ctx.ul_nas_count = 0;
+@@ -273,7 +369,8 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t
+   memcpy(&nas_ctx->m_ecm_ctx.enb_sri, enb_sri, sizeof(struct sctp_sndrcvinfo));
+ 
+   // Save whether secure ESM information transfer is necessary
+-  nas_ctx->m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present;
++  nas_ctx->m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present &&
++      pdn_con_req.esm_info_transfer_flag == LIBLTE_MME_ESM_INFO_TRANSFER_FLAG_REQUIRED;
+ 
+   // Initialize E-RABs
+   for (uint i = 0; i < MAX_ERABS_PER_UE; i++) {
+@@ -392,6 +489,7 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t
+   nas_ctx->m_sec_ctx.dl_nas_count             = 0;
+   nas_ctx->m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
+   nas_ctx->m_emm_ctx.requested_pdn_type        = pdn_con_req.pdn_type;
++  nas_ctx->set_pdn_apn(pdn_con_req);
+ 
+   // Set ECM context
+   nas_ctx->m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
+@@ -403,7 +501,8 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t
+   nas_ctx->m_emm_ctx.attach_type = attach_req.eps_attach_type;
+ 
+   // Save whether ESM information transfer is necessary
+-  nas_ctx->m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present;
++  nas_ctx->m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present &&
++      pdn_con_req.esm_info_transfer_flag == LIBLTE_MME_ESM_INFO_TRANSFER_FLAG_REQUIRED;
+ 
+   // Add eNB info to UE ctxt
+   memcpy(&nas_ctx->m_ecm_ctx.enb_sri, enb_sri, sizeof(struct sctp_sndrcvinfo));
+@@ -472,6 +571,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+ 
+     emm_ctx->procedure_transaction_id = pdn_con_req.proc_transaction_id;
+     emm_ctx->requested_pdn_type        = pdn_con_req.pdn_type;
++    nas_ctx->set_pdn_apn(pdn_con_req);
+ 
+     // Save Attach type
+     emm_ctx->attach_type = attach_req.eps_attach_type;
+@@ -481,7 +581,8 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+     memcpy(&ecm_ctx->enb_sri, enb_sri, sizeof(struct sctp_sndrcvinfo));
+ 
+     // Save whether secure ESM information transfer is necessary
+-    ecm_ctx->eit = pdn_con_req.esm_info_transfer_flag_present;
++    ecm_ctx->eit = pdn_con_req.esm_info_transfer_flag_present &&
++      pdn_con_req.esm_info_transfer_flag == LIBLTE_MME_ESM_INFO_TRANSFER_FLAG_REQUIRED;
+ 
+     // Initialize E-RABs
+     for (uint i = 0; i < MAX_ERABS_PER_UE; i++) {
+@@ -505,6 +606,11 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+       nas_logger.error("Couldn't allocate PDU in %s().", __FUNCTION__);
+       return false;
+     }
++    nas_ctx->m_security_ready = true;
++    if (!nas_ctx->apn_allowed()) {
++      ++sec_ctx->ul_nas_count;
++      return nas_ctx->reject_initial_pdn(27);
++    }
+     if (ecm_ctx->eit) {
+       srsran::console("Secure ESM information transfer requested.\n");
+       nas_logger.info("Secure ESM information transfer requested.");
+@@ -516,7 +622,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+       hss->gen_update_loc_answer(emm_ctx->imsi, &nas_ctx->m_esm_ctx[default_bearer].qci);
+       nas_logger.debug("Getting subscription information -- QCI %d", nas_ctx->m_esm_ctx[default_bearer].qci);
+       srsran::console("Getting subscription information -- QCI %d\n", nas_ctx->m_esm_ctx[default_bearer].qci);
+-      gtpc->send_create_session_request(emm_ctx->imsi);
++      nas_ctx->start_pdn_session();
+     }
+     sec_ctx->ul_nas_count++;
+     return true;
+@@ -549,12 +655,14 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+     // Save Attach type
+     emm_ctx->attach_type        = attach_req.eps_attach_type;
+     emm_ctx->requested_pdn_type = pdn_con_req.pdn_type;
++    nas_ctx->set_pdn_apn(pdn_con_req);
+ 
+     // Set eNB information
+     ecm_ctx->enb_ue_s1ap_id = enb_ue_s1ap_id;
+     memcpy(&ecm_ctx->enb_sri, enb_sri, sizeof(struct sctp_sndrcvinfo));
+     // Save whether secure ESM information transfer is necessary
+-    ecm_ctx->eit = pdn_con_req.esm_info_transfer_flag_present;
++    ecm_ctx->eit = pdn_con_req.esm_info_transfer_flag_present &&
++      pdn_con_req.esm_info_transfer_flag == LIBLTE_MME_ESM_INFO_TRANSFER_FLAG_REQUIRED;
+ 
+     // Initialize E-RABs
+     for (uint i = 0; i < MAX_ERABS_PER_UE; i++) {
+@@ -889,13 +997,14 @@ bool nas::handle_attach_request(srsran::byte_buffer_t* nas_rx)
+   LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT pdn_con_req = {};
+ 
+   // Get NAS Attach Request and PDN connectivity request messages
++  if (!nas_rx || !apn_policy::validate_attach(nas_rx->msg, nas_rx->N_bytes)) return false;
+   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_attach_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &attach_req);
+   if (err != LIBLTE_SUCCESS) {
+     m_logger.error("Error unpacking NAS attach request. Error: %s", liblte_error_text[err]);
+     return false;
+   }
+   // Get PDN Connectivity Request*/
+-  err = liblte_mme_unpack_pdn_connectivity_request_msg(&attach_req.esm_msg, &pdn_con_req);
++  err = apn_policy::unpack_pdn(&attach_req.esm_msg, &pdn_con_req);
+   if (err != LIBLTE_SUCCESS) {
+     m_logger.error("Error unpacking NAS PDN Connectivity Request. Error: %s", liblte_error_text[err]);
+     return false;
+@@ -941,13 +1050,15 @@ bool nas::handle_attach_request(srsran::byte_buffer_t* nas_rx)
+     uint8_t eps_bearer_id              = pdn_con_req.eps_bearer_id; // TODO: Unused
+     m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
+     m_emm_ctx.requested_pdn_type        = pdn_con_req.pdn_type;
++    set_pdn_apn(pdn_con_req);
+ 
+     // Initialize NAS count
+     m_sec_ctx.ul_nas_count = 0;
+     m_sec_ctx.dl_nas_count = 0;
+ 
+     // Save whether secure ESM information transfer is necessary
+-    m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present;
++    m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present &&
++      pdn_con_req.esm_info_transfer_flag == LIBLTE_MME_ESM_INFO_TRANSFER_FLAG_REQUIRED;
+ 
+     // Initialize E-RABs
+     for (uint i = 0; i < MAX_ERABS_PER_UE; i++) {
+@@ -1024,6 +1135,10 @@ bool nas::handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx, uint8_t
+     return false;
+   }
+ 
++  apn_policy::request extra;
++  if (!apn_policy::parse(nas_rx->msg + nas_security_header_len, inner_len, false, extra)) return false;
++  const bool requested_apn_allowed = apn_policy::matches(extra.present, extra.apn, m_apn);
++
+   // Send PDN connectivity reject
+   srsran::unique_byte_buffer_t nas_tx = srsran::make_byte_buffer();
+   if (nas_tx == nullptr) {
+@@ -1034,7 +1149,7 @@ bool nas::handle_pdn_connectivity_request(srsran::byte_buffer_t* nas_rx, uint8_t
+   LIBLTE_MME_PDN_CONNECTIVITY_REJECT_MSG_STRUCT pdn_con_reject = {};
+   pdn_con_reject.eps_bearer_id                                 = eps_bearer_id;
+   pdn_con_reject.proc_transaction_id                           = proc_transaction_id;
+-  pdn_con_reject.esm_cause                                     = LIBLTE_MME_ESM_CAUSE_SERVICE_OPTION_NOT_SUPPORTED;
++  pdn_con_reject.esm_cause = requested_apn_allowed ? LIBLTE_MME_ESM_CAUSE_SERVICE_OPTION_NOT_SUPPORTED : 27;
+ 
+   LIBLTE_BYTE_MSG_STRUCT reject_msg = {};
+   LIBLTE_ERROR_ENUM err = liblte_mme_pack_pdn_connectivity_reject_msg(&pdn_con_reject, &reject_msg);
+@@ -1130,6 +1245,10 @@ bool nas::handle_authentication_response(srsran::byte_buffer_t* nas_rx)
+ 
+ bool nas::handle_security_mode_complete(srsran::byte_buffer_t* nas_rx)
+ {
++  if (m_pdn_rejected || m_session_requested) return false;
++  m_security_ready = true;
++  if (!apn_allowed()) return reject_initial_pdn(27);
++
+   LIBLTE_MME_SECURITY_MODE_COMPLETE_MSG_STRUCT sm_comp = {};
+ 
+   // Get NAS security mode complete
+@@ -1165,13 +1284,14 @@ bool nas::handle_security_mode_complete(srsran::byte_buffer_t* nas_rx)
+     m_hss->gen_update_loc_answer(m_emm_ctx.imsi, &m_esm_ctx[default_bearer].qci);
+     m_logger.debug("Getting subscription information -- QCI %d", m_esm_ctx[default_bearer].qci);
+     srsran::console("Getting subscription information -- QCI %d\n", m_esm_ctx[default_bearer].qci);
+-    m_gtpc->send_create_session_request(m_emm_ctx.imsi);
++    start_pdn_session();
+   }
+   return true;
+ }
+ 
+ bool nas::handle_attach_complete(srsran::byte_buffer_t* nas_rx)
+ {
++  if (!m_apn_validated || m_pdn_rejected || m_emm_ctx.ue_ip.s_addr == 0) return false;
+   LIBLTE_MME_ATTACH_COMPLETE_MSG_STRUCT                            attach_comp;
+   uint8_t                                                          pd, msg_type;
+   LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_ACCEPT_MSG_STRUCT act_bearer;
+@@ -1223,36 +1343,23 @@ bool nas::handle_attach_complete(srsran::byte_buffer_t* nas_rx)
+ 
+ bool nas::handle_esm_information_response(srsran::byte_buffer_t* nas_rx)
+ {
+-  LIBLTE_MME_ESM_INFORMATION_RESPONSE_MSG_STRUCT esm_info_resp;
+-
+-  // Get NAS authentication response
+-  LIBLTE_ERROR_ENUM err =
+-      srsran_mme_unpack_esm_information_response_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &esm_info_resp);
+-  if (err != LIBLTE_SUCCESS) {
+-    m_logger.error("Error unpacking NAS authentication response. Error: %s", liblte_error_text[err]);
+-    return false;
+-  }
+-
+-  m_logger.info("ESM Info: EPS bearer id %d", esm_info_resp.eps_bearer_id);
+-  if (esm_info_resp.apn_present) {
+-    m_logger.info("ESM Info: APN %s", esm_info_resp.apn.apn);
+-    srsran::console("ESM Info: APN %s\n", esm_info_resp.apn.apn);
+-  }
+-  if (esm_info_resp.protocol_cnfg_opts_present) {
+-    m_logger.info("ESM Info: %d Protocol Configuration Options", esm_info_resp.protocol_cnfg_opts.N_opts);
+-    srsran::console("ESM Info: %d Protocol Configuration Options\n", esm_info_resp.protocol_cnfg_opts.N_opts);
+-  }
+-
+-  // Get subscriber info from HSS
+-  uint8_t default_bearer = 5;
+-  m_hss->gen_update_loc_answer(m_emm_ctx.imsi, &m_esm_ctx[default_bearer].qci);
+-  m_logger.debug("Getting subscription information -- QCI %d", m_esm_ctx[default_bearer].qci);
+-  srsran::console("Getting subscription information -- QCI %d\n", m_esm_ctx[default_bearer].qci);
+-
+-  // TODO The packging of GTP-C messages is not ready.
+-  // This means that GTP-U tunnels are created with function calls, as opposed to GTP-C.
+-  m_gtpc->send_create_session_request(m_emm_ctx.imsi);
+-  return true;
++  if (!m_waiting_esm || !m_security_ready || m_pdn_rejected || m_session_requested ||
++      !nas_rx || nas_rx->N_bytes < 9 || nas_rx->N_bytes > LIBLTE_MAX_MSG_SIZE_BYTES ||
++      nas_rx->msg[0] != ((LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED << 4) |
++                         LIBLTE_MME_PD_EPS_MOBILITY_MANAGEMENT)) return false;
++  apn_policy::request response;
++  const uint8_t* inner = nas_rx->msg + nas_security_header_len;
++  if (inner[1] != m_emm_ctx.procedure_transaction_id ||
++      !apn_policy::parse(inner, nas_rx->N_bytes - nas_security_header_len, true, response)) return false;
++  if (response.present) {
++    m_requested_apn = response.apn;
++    m_apn_present = true;
++    m_apn_source = "esm_information_response";
++  }
++  m_waiting_esm = false;
++  if (!apn_allowed()) return reject_initial_pdn(27);
++  m_hss->gen_update_loc_answer(m_emm_ctx.imsi, &m_esm_ctx[5].qci);
++  return start_pdn_session();
+ }
+ 
+ bool nas::handle_identity_response(srsran::byte_buffer_t* nas_rx)
+@@ -1527,6 +1634,7 @@ bool nas::pack_security_mode_command(srsran::byte_buffer_t* nas_buffer)
+ 
+ bool nas::pack_esm_information_request(srsran::byte_buffer_t* nas_buffer)
+ {
++  m_waiting_esm = true;
+   m_logger.info("Packing ESM Information request");
+ 
+   LIBLTE_MME_ESM_INFORMATION_REQUEST_MSG_STRUCT esm_info_req;
+diff --git a/srsepc/src/mme/s1ap.cc b/srsepc/src/mme/s1ap.cc
+index ae07fb2..db70154 100644
+--- a/srsepc/src/mme/s1ap.cc
++++ b/srsepc/src/mme/s1ap.cc
+@@ -27,6 +27,7 @@
+ #include <cmath>
+ #include <inttypes.h> // for printing uint64_t
+ #include <random>
++#include "srsepc/hdr/mme/ue_snapshot.h"
+ 
+ namespace srsepc {
+ 
+@@ -394,6 +395,13 @@ bool s1ap::add_nas_ctx_to_mme_ue_s1ap_id_map(nas* nas_ctx)
+       return false;
+     }
+   }
++  // Re-attach may reuse a NAS object with a new S1AP ID. Remove its old aliases.
++  for (auto it = m_mme_ue_s1ap_id_to_nas_ctx.begin(); it != m_mme_ue_s1ap_id_to_nas_ctx.end();) {
++    if (it->second == nas_ctx) {
++      for (auto& association : m_enb_assoc_to_ue_ids) association.second.erase(it->first);
++      it = m_mme_ue_s1ap_id_to_nas_ctx.erase(it);
++    } else ++it;
++  }
+   m_mme_ue_s1ap_id_to_nas_ctx.emplace(nas_ctx->m_ecm_ctx.mme_ue_s1ap_id, nas_ctx);
+   m_logger.debug("Saved UE context corresponding to MME UE S1AP Id %d", nas_ctx->m_ecm_ctx.mme_ue_s1ap_id);
+   return true;
+@@ -438,62 +446,35 @@ nas* s1ap::find_nas_ctx_from_imsi(uint64_t imsi)
+ 
+ void s1ap::release_ues_ecm_ctx_in_enb(int32_t enb_assoc)
+ {
+-  srsran::console("Releasing UEs context\n");
+-  std::map<int32_t, std::set<uint32_t> >::iterator ues_in_enb = m_enb_assoc_to_ue_ids.find(enb_assoc);
+-  std::set<uint32_t>::iterator                     ue_id      = ues_in_enb->second.begin();
+-  if (ue_id == ues_in_enb->second.end()) {
+-    srsran::console("No UEs to be released\n");
+-  } else {
+-    while (ue_id != ues_in_enb->second.end()) {
+-      std::map<uint32_t, nas*>::iterator nas_ctx = m_mme_ue_s1ap_id_to_nas_ctx.find(*ue_id);
+-      emm_ctx_t*                         emm_ctx = &nas_ctx->second->m_emm_ctx;
+-      ecm_ctx_t*                         ecm_ctx = &nas_ctx->second->m_ecm_ctx;
+-
+-      m_logger.info(
+-          "Releasing UE context. IMSI: %015" PRIu64 ", UE-MME S1AP Id: %d", emm_ctx->imsi, ecm_ctx->mme_ue_s1ap_id);
+-      if (emm_ctx->state == EMM_STATE_REGISTERED) {
+-        m_mme_gtpc->send_delete_session_request(emm_ctx->imsi);
+-        emm_ctx->state = EMM_STATE_DEREGISTERED;
+-      }
+-      srsran::console("Releasing UE ECM context. UE-MME S1AP Id: %d\n", ecm_ctx->mme_ue_s1ap_id);
+-      ecm_ctx->state          = ECM_STATE_IDLE;
+-      ecm_ctx->mme_ue_s1ap_id = 0;
+-      ecm_ctx->enb_ue_s1ap_id = 0;
+-      ues_in_enb->second.erase(ue_id++);
++  auto association = m_enb_assoc_to_ue_ids.find(enb_assoc);
++  if (association == m_enb_assoc_to_ue_ids.end()) return;
++  const std::set<uint32_t> ids = association->second;
++  for (uint32_t id : ids) {
++    nas* context = find_nas_ctx_from_mme_ue_s1ap_id(id);
++    if (!context) { association->second.erase(id); continue; }
++    if (context->m_ecm_ctx.enb_sri.sinfo_assoc_id != enb_assoc || context->m_ecm_ctx.mme_ue_s1ap_id != id) {
++      association->second.erase(id);
++      m_mme_ue_s1ap_id_to_nas_ctx.erase(id);
++      continue;
+     }
++    if (context->m_emm_ctx.state == EMM_STATE_REGISTERED || context->m_session_requested)
++      m_mme_gtpc->send_delete_session_request(context->m_emm_ctx.imsi);
++    context->clear_pdn_session();
++    release_ue_ecm_ctx(id);
+   }
+ }
+ 
+ bool s1ap::release_ue_ecm_ctx(uint32_t mme_ue_s1ap_id)
+ {
+-  nas* nas_ctx = find_nas_ctx_from_mme_ue_s1ap_id(mme_ue_s1ap_id);
+-  if (nas_ctx == NULL) {
+-    m_logger.error("Cannot release UE ECM context, UE not found. MME-UE S1AP Id: %d", mme_ue_s1ap_id);
+-    return false;
+-  }
+-  ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
+-
+-  // Delete UE within eNB UE set
+-  std::map<int32_t, uint16_t>::iterator it = m_sctp_to_enb_id.find(ecm_ctx->enb_sri.sinfo_assoc_id);
+-  if (it == m_sctp_to_enb_id.end()) {
+-    m_logger.error("Could not find eNB for UE release request.");
+-    return false;
+-  }
+-  uint16_t                                         enb_id = it->second;
+-  std::map<int32_t, std::set<uint32_t> >::iterator ue_set = m_enb_assoc_to_ue_ids.find(ecm_ctx->enb_sri.sinfo_assoc_id);
+-  if (ue_set == m_enb_assoc_to_ue_ids.end()) {
+-    m_logger.error("Could not find the eNB's UEs.");
+-    return false;
+-  }
+-  ue_set->second.erase(mme_ue_s1ap_id);
+-
+-  // Release UE ECM context
++  nas* context = find_nas_ctx_from_mme_ue_s1ap_id(mme_ue_s1ap_id);
++  if (!context) return false;
++  // Cleanup must work even after the eNB association has already disappeared.
+   m_mme_ue_s1ap_id_to_nas_ctx.erase(mme_ue_s1ap_id);
+-  ecm_ctx->state          = ECM_STATE_IDLE;
+-  ecm_ctx->mme_ue_s1ap_id = 0;
+-  ecm_ctx->enb_ue_s1ap_id = 0;
+-
+-  m_logger.info("Released UE ECM Context.");
++  for (auto& association : m_enb_assoc_to_ue_ids) association.second.erase(mme_ue_s1ap_id);
++  if (context->m_ecm_ctx.mme_ue_s1ap_id != mme_ue_s1ap_id) return false;
++  context->m_ecm_ctx.state = ECM_STATE_IDLE;
++  context->m_ecm_ctx.mme_ue_s1ap_id = 0;
++  context->m_ecm_ctx.enb_ue_s1ap_id = 0;
+   return true;
+ }
+ 
+@@ -510,6 +491,13 @@ bool s1ap::delete_ue_ctx(uint64_t imsi)
+     release_ue_ecm_ctx(nas_ctx->m_ecm_ctx.mme_ue_s1ap_id);
+   }
+ 
++  // Scrub every pointer alias even when an earlier SCTP release reset the ID to zero.
++  for (auto it = m_mme_ue_s1ap_id_to_nas_ctx.begin(); it != m_mme_ue_s1ap_id_to_nas_ctx.end();) {
++    if (it->second == nas_ctx) {
++      for (auto& association : m_enb_assoc_to_ue_ids) association.second.erase(it->first);
++      it = m_mme_ue_s1ap_id_to_nas_ctx.erase(it);
++    } else ++it;
++  }
+   // Delete UE context
+   m_imsi_to_nas_ctx.erase(imsi);
+   delete nas_ctx;
+@@ -675,4 +663,12 @@ bool s1ap::expire_nas_timer(enum nas_timer_type type, uint64_t imsi)
+   return err;
+ }
+ 
++std::string s1ap::snapshot_sessions(const std::string& run_id) const
++{
++  std::set<const nas*> contexts;
++  for (const auto& item : m_imsi_to_nas_ctx) contexts.insert(item.second);
++  for (const auto& item : m_mme_ue_s1ap_id_to_nas_ctx) contexts.insert(item.second);
++  return ue_snapshot::sessions(contexts, run_id);
++}
++
+ } // namespace srsepc
+diff --git a/srsepc/src/spgw/gtpc.cc b/srsepc/src/spgw/gtpc.cc
+index c681310..7706af3 100644
+--- a/srsepc/src/spgw/gtpc.cc
++++ b/srsepc/src/spgw/gtpc.cc
+@@ -205,11 +205,16 @@ void spgw::gtpc::handle_create_session_request(const struct srsran::gtpc_create_
+   // Setup GTP-C header
+   header->piggyback    = false;
+   header->teid_present = true;
+-  header->teid         = tunnel_ctx->dw_ctrl_fteid.teid; // Send create session response to the UE's MME Ctrl TEID
++  header->teid         = cs_req.sender_f_teid.teid; // Send create session response to the UE's MME Ctrl TEID
+   header->type         = srsran::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE;
+ 
+   // Initialize to zero
+   std::memset(cs_resp, 0, sizeof(struct srsran::gtpc_create_session_response));
++  if (tunnel_ctx == nullptr) {
++    cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_ALL_DYNAMIC_ADDRESSES_ARE_OCCUPIED;
++    send_s11_pdu(cs_resp_pdu);
++    return;
++  }
+   // Setup Cause
+   cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
+   // Setup sender F-TEID (ctrl)
+@@ -230,7 +235,7 @@ void spgw::gtpc::handle_create_session_request(const struct srsran::gtpc_create_
+   m_logger.info("Sending Create Session Response");
+ 
+   // Send Create session response to MME
+-  send_s11_pdu(cs_resp_pdu);
++  if (!send_s11_pdu(cs_resp_pdu)) delete_gtpc_ctx(tunnel_ctx->up_ctrl_fteid.teid);
+   return;
+ }
+ 
+@@ -269,7 +274,7 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srsran::gtpc_header&
+   m_logger.info("eNB Rx User TEID 0x%x, eNB Rx User IP %s", tunnel_ctx->dw_user_fteid.teid, inet_ntoa(addr3));
+ 
+   // Setup IP to F-TEID map
+-  m_gtpu->modify_gtpu_tunnel(tunnel_ctx->ue_ipv4, tunnel_ctx->dw_user_fteid, tunnel_ctx->up_ctrl_fteid.teid);
++  m_gtpu->modify_gtpu_tunnel(tunnel_ctx->ue_ipv4, tunnel_ctx->dw_user_fteid, tunnel_ctx->up_ctrl_fteid.teid, tunnel_ctx->up_user_fteid.teid);
+ 
+   // Mark paging as done & send queued packets
+   if (tunnel_ctx->paging_pending == true) {
+@@ -440,7 +445,10 @@ spgw_tunnel_ctx_t* spgw::gtpc::create_gtpc_ctx(const struct srsran::gtpc_create_
+   // Setup uplink user TEID
+   uint64_t spgw_uplink_user_teid = get_new_user_teid();
+   // Allocate UE IP
++  if (m_imsi_to_ctr_teid.count(cs_req.imsi) || spgw_uplink_ctrl_teid > UINT32_MAX ||
++      spgw_uplink_user_teid > UINT32_MAX) return nullptr;
+   in_addr_t ue_ip = get_new_ue_ipv4(cs_req.imsi);
++  if (ue_ip == 0) return nullptr;
+ 
+   uint8_t default_bearer_id = 5;
+ 
+@@ -486,6 +494,8 @@ bool spgw::gtpc::delete_gtpc_ctx(uint32_t ctrl_teid)
+ 
+   // Remove GTP context from control TEID mapping
+   m_teid_to_tunnel_ctx.erase(ctrl_teid);
++  // Static reservations are never returned to the dynamic pool.
++  if (m_dynamic_ip_in_use.erase(tunnel_ctx->ue_ipv4)) m_ue_ip_addr_pool.insert(tunnel_ctx->ue_ipv4);
+   delete tunnel_ctx;
+   return true;
+ }
+@@ -537,6 +547,20 @@ bool spgw::gtpc::free_all_queued_packets(spgw_tunnel_ctx_t* tunnel_ctx)
+ 
+ int spgw::gtpc::init_ue_ip(spgw_args_t* args, const std::map<std::string, uint64_t>& ip_to_imsi)
+ {
++  if (!m_teid_to_tunnel_ctx.empty()) return SRSRAN_ERROR;
++  m_ue_ip_addr_pool.clear();
++  m_dynamic_ip_in_use.clear();
++  m_imsi_to_ip.clear();
++  in_addr gateway{};
++  if (inet_pton(AF_INET, args->sgi_if_addr.c_str(), &gateway) != 1 ||
++      (ntohl(gateway.s_addr) & 255) != 1) return SRSRAN_ERROR;
++  const uint32_t network = ntohl(gateway.s_addr) & 0xffffff00;
++  for (const auto& item : ip_to_imsi) {
++    in_addr address{};
++    if (inet_pton(AF_INET, item.first.c_str(), &address) != 1 ||
++        (ntohl(address.s_addr) & 0xffffff00) != network ||
++        (ntohl(address.s_addr) & 255) < 2 || (ntohl(address.s_addr) & 255) == 255) return SRSRAN_ERROR;
++  }
+   std::map<std::string, uint64_t>::const_iterator iter = ip_to_imsi.find(args->sgi_if_addr);
+ 
+   // check for collision w/our ip address
+@@ -601,6 +625,7 @@ in_addr_t spgw::gtpc::get_new_ue_ipv4(uint64_t imsi)
+     } else {
+       ue_addr.s_addr = *m_ue_ip_addr_pool.begin();
+       m_ue_ip_addr_pool.erase(ue_addr.s_addr);
++      m_dynamic_ip_in_use.insert(ue_addr.s_addr);
+       m_logger.info("SPGW: get_new_ue_ipv4 pool ip addr %s", inet_ntoa(ue_addr));
+     }
+   }
+diff --git a/srsepc/src/spgw/gtpu.cc b/srsepc/src/spgw/gtpu.cc
+index 0ddf2bc..6c8b17f 100644
+--- a/srsepc/src/spgw/gtpu.cc
++++ b/srsepc/src/spgw/gtpu.cc
+@@ -205,6 +205,9 @@ int spgw::gtpu::init_s1u(spgw_args_t* args)
+ 
+ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
+ {
++  if (!msg || msg->N_bytes < 20 ||
++      msg->N_bytes > SRSRAN_MAX_BUFFER_SIZE_BYTES - SRSRAN_BUFFER_HEADER_OFFSET) return;
++  std::unique_lock<std::mutex> lock(m_tunnel_mutex);
+   bool usr_found = false;
+   bool ctr_found = false;
+ 
+@@ -219,7 +222,7 @@ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
+     m_logger.info("IPv6 not supported yet.");
+     return;
+   }
+-  if (ntohs(iph->tot_len) < 20) {
++  if (iph->ihl < 5 || unsigned(iph->ihl) * 4 > msg->N_bytes || ntohs(iph->tot_len) != msg->N_bytes) {
+     m_logger.warning("Invalid IP header length. IP length %d.", ntohs(iph->tot_len));
+     return;
+   }
+@@ -245,6 +248,7 @@ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
+     spgw_teid = gtpc_teid_it->second;
+   }
+ 
++  lock.unlock();
+   // Handle SGi packet
+   if (usr_found == false && ctr_found == false) {
+     m_logger.debug("Packet for unknown UE.");
+@@ -261,20 +265,41 @@ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
+   }
+ }
+ 
+-void spgw::gtpu::handle_s1u_pdu(srsran::byte_buffer_t* msg)
++bool spgw::gtpu::valid_uplink(uint32_t teid, const uint8_t* data, size_t size)
+ {
+-  srsran::gtpu_header_t header;
+-  srsran::gtpu_read_header(msg, &header, m_logger);
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  return valid_uplink_locked(teid, data, size);
++}
+ 
+-  m_logger.debug("Received PDU from S1-U. Bytes=%d", msg->N_bytes);
+-  m_logger.debug("TEID 0x%x. Bytes=%d", header.teid, msg->N_bytes);
+-  int n = write(m_sgi, msg->msg, msg->N_bytes);
+-  if (n < 0) {
+-    m_logger.error("Could not write to TUN interface.");
+-  } else {
+-    m_logger.debug("Forwarded packet to TUN interface. Bytes= %d/%d", n, msg->N_bytes);
+-  }
+-  return;
++bool spgw::gtpu::valid_uplink_locked(uint32_t teid, const uint8_t* data, size_t size)
++{
++  if (!data || size < 20 || (data[0] >> 4) != 4) return false;
++  const size_t ihl = (data[0] & 15) * 4;
++  const size_t total = (size_t(data[2]) << 8) | data[3];
++  if (ihl < 20 || ihl > size || total != size) return false;
++  uint32_t checksum = 0;
++  for (size_t i = 0; i < ihl; i += 2) checksum += (uint32_t(data[i]) << 8) | data[i + 1];
++  while (checksum >> 16) checksum = (checksum & 0xffff) + (checksum >> 16);
++  if (checksum != 0xffff) return false;
++  in_addr_t source;
++  memcpy(&source, data + 12, sizeof(source));
++  auto it = m_up_teid_to_ip.find(teid);
++  return it != m_up_teid_to_ip.end() && it->second == source;
++}
++
++void spgw::gtpu::handle_s1u_pdu(srsran::byte_buffer_t* msg)
++{
++  // Base GTPv1-U data headers only: reject unchecked extension chains.
++  if (!msg || msg->N_bytes < 28 || msg->N_bytes > SRSRAN_MAX_BUFFER_SIZE_BYTES - SRSRAN_BUFFER_HEADER_OFFSET ||
++      msg->msg[0] != 0x30 || msg->msg[1] != 0xff ||
++      ((uint32_t(msg->msg[2]) << 8) | msg->msg[3]) != msg->N_bytes - 8) return;
++  uint32_t teid;
++  memcpy(&teid, msg->msg + 4, sizeof(teid));
++  teid = ntohl(teid);
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  if (!valid_uplink_locked(teid, msg->msg + 8, msg->N_bytes - 8)) return;
++  // Runtime GTP-C and GTP-U dispatch share one SPGW event loop.
++  if (write(m_sgi, msg->msg + 8, msg->N_bytes - 8) < 0) m_logger.error("Could not write to TUN interface.");
+ }
+ 
+ void spgw::gtpu::send_s1u_pdu(srsran::gtp_fteid_t enb_fteid, srsran::byte_buffer_t* msg)
+@@ -330,8 +355,13 @@ void spgw::gtpu::send_all_queued_packets(srsran::gtp_fteid_t
+ /*
+  * Tunnel managment
+  */
+-bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw_user_fteid, uint32_t up_ctrl_teid)
++bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw_user_fteid, uint32_t up_ctrl_teid, uint32_t up_user_teid)
+ {
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  for (auto it = m_up_teid_to_ip.begin(); it != m_up_teid_to_ip.end();) {
++    if (it->second == ue_ipv4) it = m_up_teid_to_ip.erase(it); else ++it;
++  }
++  m_up_teid_to_ip[up_user_teid] = ue_ipv4;
+   m_logger.info("Modifying GTP-U Tunnel.");
+   fmt::memory_buffer buffer;
+   srsran::gtpu_ntoa(buffer, ue_ipv4);
+@@ -347,26 +377,18 @@ bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw
+ 
+ bool spgw::gtpu::delete_gtpu_tunnel(in_addr_t ue_ipv4)
+ {
+-  // Remove GTP-U connections, if any.
+-  if (m_ip_to_usr_teid.count(ue_ipv4)) {
+-    m_ip_to_usr_teid.erase(ue_ipv4);
+-  } else {
+-    m_logger.error("Could not find GTP-U Tunnel to delete.");
+-    return false;
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  for (auto it = m_up_teid_to_ip.begin(); it != m_up_teid_to_ip.end();) {
++    if (it->second == ue_ipv4) it = m_up_teid_to_ip.erase(it); else ++it;
+   }
+-  return true;
++  return m_ip_to_usr_teid.erase(ue_ipv4) != 0;
+ }
+ 
+ bool spgw::gtpu::delete_gtpc_tunnel(in_addr_t ue_ipv4)
+ {
+-  // Remove Ctrl TEID from IP mapping.
+-  if (m_ip_to_ctr_teid.count(ue_ipv4)) {
+-    m_ip_to_ctr_teid.erase(ue_ipv4);
+-  } else {
+-    m_logger.error("Could not find GTP-C Tunnel info to delete.");
+-    return false;
+-  }
+-  return true;
++  delete_gtpu_tunnel(ue_ipv4);
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  return m_ip_to_ctr_teid.erase(ue_ipv4) != 0;
+ }
+ 
+ } // namespace srsepc

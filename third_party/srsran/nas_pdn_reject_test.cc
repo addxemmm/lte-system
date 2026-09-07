@@ -124,6 +124,7 @@ int check_reject_round_trip(srsran::CIPHERING_ALGORITHM_ID_ENUM cipher_algo, uin
 {
   s1ap_spy spy;
   nas_init_t args = {};
+  args.apn = "addxLTE";
   args.cipher_algo = cipher_algo;
   args.integ_algo  = srsran::INTEGRITY_ALGORITHM_ID_128_EIA2;
   nas_if_t interfaces = {};
@@ -198,6 +199,7 @@ int check_malformed_inputs_are_not_sent()
 {
   s1ap_spy spy;
   nas_init_t args = {};
+  args.apn = "addxLTE";
   args.cipher_algo = srsran::CIPHERING_ALGORITHM_ID_EEA0;
   args.integ_algo  = srsran::INTEGRITY_ALGORITHM_ID_128_EIA2;
   nas_if_t interfaces = {};
@@ -238,6 +240,7 @@ int check_invalid_mac_is_not_dispatched()
 {
   s1ap_spy spy;
   nas_init_t args = {};
+  args.apn = "addxLTE";
   args.cipher_algo = srsran::CIPHERING_ALGORITHM_ID_EEA0;
   args.integ_algo  = srsran::INTEGRITY_ALGORITHM_ID_128_EIA2;
   nas_if_t interfaces = {};
