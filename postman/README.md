@@ -1,20 +1,34 @@
-# Postman Collection — LTE-System API v3
+# Postman Collections — LTE-System API v3
 
-导入 `postman/lte-system.postman_collection.json`。集合只含 `/api/v1/*` 标准接口；根路径旧接口与 `/api/v1/ue` 已删除。
+## 导入 Import
 
-Import `postman/lte-system.postman_collection.json`. The collection contains only the standard `/api/v1/*` API; root legacy routes and `/api/v1/ue` were removed.
+先删除或替换 Postman 中旧的 `lte-system` collection，再按用途导入：
 
-## 使用 Use
+1. `lte-system.postman_collection.json`：完整集合，共 **21 requests / 20 unique operations**。包含启动、停止、subscriber/SIM 写操作与 crack；这些请求只能人工按需执行，不要将整个集合当作无副作用 smoke run。
+2. `lte-system.readonly-smoke.postman_collection.json`：只读冒烟集合，共 **6 个 GET**：`cell`、`network`、`ues`、`subscribers`、`profile`、`diagnostics/connectivity`。它不包含 health、capture、crack、RF 启停、写卡或 CRUD。
 
-1. 在 collection variables 设置 `base_url=http://HOST:8081`；服务端启用 `LTE_API_TOKEN` 时填写 `token`。
-2. 日常启动用第一项 **default: inherit verified profile**，body 固定 `{}`。它继承上次验证可用的 `network`、DNS、UE subnet 与 access policy，不会把现场配置覆盖成 Postman 示例值。
-3. 只有首次安装且没有存档时才使用 **first installation template**。先确认 `first_dns` 从 UE 路径可达；`network=auto` 默认解析容器/主机当前命名空间默认路由。
-4. 在线状态先查 `GET /api/v1/ues`；`missing|stale|invalid|cell_stopped` 且 `sessions=[]` 表示缺少可靠当前快照，不表示没有 UE。配置授权查 `/subscribers`，两者不是同一概念。
-5. “已入网但不能上网”先调用只读 `GET /api/v1/diagnostics/connectivity`。200 是证据结果；并发检查可能返回 429 `diagnostic_busy`。不要用会停止小区的 crack 请求替代状态诊断。
-6. subscriber 新增、修改、删除、批量替换和 SIM 写卡都要求小区已停止，否则 409。响应不回显 Key、OP/OPc、AMF、SQN；批量替换保留现有 IMSI 的磁盘最新 SQN。
-7. 集合中的 subscriber 凭据变量是不可用占位符；只在本地变量中填入测试卡资料，不要提交真实凭据。
+Remove or replace any older `lte-system` collection in Postman before importing. The full collection has **21 requests covering 20 unique operations** and includes mutating operations that must be run manually. The read-only smoke collection has exactly **six non-mutating GET requests**.
 
-完整语义与错误码见 [`docs/API.md`](../docs/API.md)，机器契约见 [`docs/api/openapi.yaml`](../docs/api/openapi.yaml)。
+## 变量 Variables
+
+- `base_url` 默认是不可路由占位符 `http://HOST:8081`；改成 API origin，不要附加 `/api/v1`。
+- 服务端启用 `LTE_API_TOKEN` 时填写 `token`；开放模式保持空值。
+- 完整集合中的 DNS、IMSI、Key、OPc、SQN 默认均为 `REPLACE_WITH_*` 占位符，不含现场 IP 或凭据。只在 Postman 本地变量中填写测试环境值，不要提交。
+- 日常启动使用第一个 Start 请求，其 body 精确为 `{}`，继承已验证 profile。只有首次安装且没有 profile 时才填写并使用独立首次配置模板。
+
+`base_url` is a non-routable placeholder. Configure `token` only when authentication is enabled. Credential and deployment-specific variables are deliberately unusable placeholders; set them locally. The default Start body is exactly `{}` so it does not overwrite a verified saved profile.
+
+## 断言 Assertions
+
+完整集合为安全 JSON GET 提供状态、标准包络及关键 schema 断言。UE/subscriber 详情只接受契约允许的成功或 404；非法占位符产生 422 时测试会失败，避免把配置错误当成功。Diagnostics 严格区分：
+
+- HTTP 200 必须 `code=0`，并包含 registration/PDN/CHAP/user-plane/DNS/network 证据层；
+- HTTP 429 必须 `code=42901` 且 `data.reason=diagnostic_busy`；
+- 其他状态均失败。
+
+只读 smoke 的六个请求均带断言，但它只验证 API 契约、Manager 配置和已有采样证据；**不发送外网/DNS 探测，也不证明手机实际能上网、域名可解析或无线链路稳定**。小米等终端的偶发掉线仍需结合实时 eNB/EPC/射频日志诊断。
+
+The assertions validate API envelopes and bounded evidence only. They do not probe Internet/DNS reachability or prove UE radio stability.
 
 ---
-**导航 Navigation:** [仓库根](../README.md) · [API v3](../docs/API.md)
+**导航 Navigation:** [仓库根](../README.md) · [API v3](../docs/API.md) · [OpenAPI](../docs/api/openapi.yaml)

@@ -1,0 +1,223 @@
+{
+  "info": {
+    "name": "lte-system API v3 — read-only smoke",
+    "description": "Six non-mutating GET checks for API envelopes and configuration/session evidence only. This collection does not start or stop RF, write SIM/subscriber data, download captures, run crack jobs, or prove that a phone can reach the Internet or DNS.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://HOST:8081",
+      "description": "Set to the lte-system API origin; do not include /api/v1"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "description": "Set only when LTE_API_TOKEN is enabled"
+    }
+  ],
+  "item": [
+    {
+      "name": "Read-only smoke",
+      "item": [
+        {
+          "name": "GET /api/v1/cell",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/cell",
+            "description": "network is the requested policy; resolved_network is the selected interface."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('cell status schema', () => {",
+                  "  pm.expect(typeof j.data.running === 'boolean').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/network",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/network",
+            "description": "Read-only effective Manager plan: active, ue_subnet, sgi_address, ue_access, resolved_network. Configuration only; it does not assert Internet or DNS reachability."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('network plan is configuration-only', () => {",
+                  "  const required = ['active', 'ue_subnet', 'sgi_address', 'ue_access'];",
+                  "  pm.expect(required.every(k => Object.prototype.hasOwnProperty.call(j.data, k))).to.eql(true);",
+                  "  pm.expect(typeof j.data.active === 'boolean').to.eql(true);",
+                  "  pm.expect(!Object.prototype.hasOwnProperty.call(j.data, 'internet_reachable')).to.eql(true);",
+                  "  pm.expect(!Object.prototype.hasOwnProperty.call(j.data, 'dns_reachable')).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/ues",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/ues",
+            "description": "Authoritative bounded multi-UE snapshot. missing/stale/invalid/cell_stopped with sessions=[] means no current snapshot, not no UE."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('bounded UE snapshot schema', () => {",
+                  "  const allowed = ['current', 'missing', 'stale', 'invalid', 'cell_stopped'];",
+                  "  pm.expect(allowed.includes(j.data.state)).to.eql(true);",
+                  "  pm.expect(Array.isArray(j.data.sessions)).to.eql(true);",
+                  "  pm.expect(Number.isInteger(j.data.count) && j.data.count === j.data.sessions.length).to.eql(true);",
+                  "  if (j.data.state === 'current') pm.expect(j.data.cell_state === 'running').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/subscribers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/subscribers?limit=50&offset=0",
+            "description": "Redacted authorization config. active=null is distinct from authorized=true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('redacted subscriber page schema', () => {",
+                  "  pm.expect(Array.isArray(j.data.items)).to.eql(true);",
+                  "  pm.expect(Number.isInteger(j.data.total) && Number.isInteger(j.data.limit) && Number.isInteger(j.data.offset)).to.eql(true);",
+                  "  pm.expect(j.data.items.every(x => !['key','sqn','op','opc','amf'].some(k => Object.prototype.hasOwnProperty.call(x, k)))).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profile",
+            "description": "Saved cell profile only; use /subscribers and /ues for their separate resources."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('profile schema', () => {",
+                  "  pm.expect(typeof j.data.has_profile === 'boolean').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/diagnostics/connectivity",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/diagnostics/connectivity",
+            "description": "Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('diagnostics has an exact evidence-or-busy envelope', () => {",
+                  "  pm.expect([200, 429].includes(pm.response.code)).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  if (pm.response.code === 200) {",
+                  "    pm.expect(j.code === 0).to.eql(true);",
+                  "    pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "    pm.expect(['registration','pdn','chap','user_plane','dns','network'].every(k => Object.prototype.hasOwnProperty.call(j.data, k))).to.eql(true);",
+                  "  } else {",
+                  "    pm.expect(j.code === 42901).to.eql(true);",
+                  "    pm.expect(j.data && j.data.reason === 'diagnostic_busy').to.eql(true);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

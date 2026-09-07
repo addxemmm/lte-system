@@ -1,26 +1,71 @@
 {
   "info": {
     "name": "lte-system API v3",
-    "description": "Standard /api/v1 API only. Root legacy routes and /api/v1/ue were removed. Default Start sends {} so it cannot overwrite a verified saved network/DNS profile.",
+    "description": "Standard /api/v1 API only. Import this file after removing/replacing any older lte-system collection. It contains 21 requests covering 20 unique operations, including mutating operations that must be run manually. The default Start sends {} so it cannot overwrite a verified saved profile.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
-    "bearer": [{"key":"token","value":"{{token}}","type":"string"}]
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
   },
   "variable": [
-    {"key":"base_url","value":"http://192.0.2.10:8081","description":"SDR server URL"},
-    {"key":"token","value":"","description":"LTE_API_TOKEN; empty only when the server uses open LAN mode"},
-    {"key":"first_band","value":"7"},
-    {"key":"first_apn","value":"srsapn"},
-    {"key":"first_mcc","value":"001"},
-    {"key":"first_mnc","value":"01"},
-    {"key":"first_dns","value":"192.168.100.1","description":"Resolver verified reachable from the UE path"},
-    {"key":"first_ue_subnet","value":"172.16.0.0/24"},
-    {"key":"subscriber_imsi","value":"001010123456789"},
-    {"key":"subscriber_key","value":"REPLACE_WITH_32_HEX"},
-    {"key":"subscriber_opc","value":"REPLACE_WITH_32_HEX"},
-    {"key":"subscriber_sqn","value":"000000000000"}
+    {
+      "key": "base_url",
+      "value": "http://HOST:8081",
+      "description": "SDR server URL"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "description": "LTE_API_TOKEN; empty only when the server uses open LAN mode"
+    },
+    {
+      "key": "first_band",
+      "value": "7"
+    },
+    {
+      "key": "first_apn",
+      "value": "srsapn"
+    },
+    {
+      "key": "first_mcc",
+      "value": "001"
+    },
+    {
+      "key": "first_mnc",
+      "value": "01"
+    },
+    {
+      "key": "first_dns",
+      "value": "REPLACE_WITH_REACHABLE_IPV4_DNS",
+      "description": "Resolver verified reachable from the UE path"
+    },
+    {
+      "key": "first_ue_subnet",
+      "value": "172.16.0.0/24"
+    },
+    {
+      "key": "subscriber_imsi",
+      "value": "REPLACE_WITH_15_DIGIT_IMSI"
+    },
+    {
+      "key": "subscriber_key",
+      "value": "REPLACE_WITH_32_HEX"
+    },
+    {
+      "key": "subscriber_opc",
+      "value": "REPLACE_WITH_32_HEX"
+    },
+    {
+      "key": "subscriber_sqn",
+      "value": "REPLACE_WITH_12_HEX"
+    }
   ],
   "item": [
     {
@@ -29,79 +74,513 @@
         {
           "name": "POST /api/v1/cell (default: inherit verified profile)",
           "request": {
-            "method":"POST",
-            "header":[{"key":"Content-Type","value":"application/json"}],
-            "body":{"mode":"raw","raw":"{}","options":{"raw":{"language":"json"}}},
-            "url":"{{base_url}}/api/v1/cell",
-            "description":"Safe default. Inherits the saved network, resolved DNS, UE subnet, and access policy rather than overwriting the live profile."
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/cell",
+            "description": "Safe default. Inherits the saved network, resolved DNS, UE subnet, and access policy rather than overwriting the live profile."
           },
-          "response":[]
+          "response": []
         },
         {
           "name": "POST /api/v1/cell (first installation template)",
           "request": {
-            "method":"POST",
-            "header":[{"key":"Content-Type","value":"application/json"}],
-            "body":{"mode":"raw","raw":"{\n  \"band\": \"{{first_band}}\",\n  \"apn\": \"{{first_apn}}\",\n  \"mcc\": \"{{first_mcc}}\",\n  \"mnc\": \"{{first_mnc}}\",\n  \"network\": \"auto\",\n  \"dns\": \"{{first_dns}}\",\n  \"ue_subnet\": \"{{first_ue_subnet}}\",\n  \"ue_access\": \"isolated\"\n}","options":{"raw":{"language":"json"}}},
-            "url":"{{base_url}}/api/v1/cell",
-            "description":"Use only when no saved profile exists. Verify first_dns before sending. network=auto avoids host/container interface-name coupling."
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"band\": \"{{first_band}}\",\n  \"apn\": \"{{first_apn}}\",\n  \"mcc\": \"{{first_mcc}}\",\n  \"mnc\": \"{{first_mnc}}\",\n  \"network\": \"auto\",\n  \"dns\": \"{{first_dns}}\",\n  \"ue_subnet\": \"{{first_ue_subnet}}\",\n  \"ue_access\": \"isolated\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/cell",
+            "description": "Use only when no saved profile exists. Verify first_dns before sending. network=auto avoids host/container interface-name coupling."
           },
-          "response":[]
+          "response": []
         },
-        {"name":"GET /api/v1/cell","request":{"method":"GET","url":"{{base_url}}/api/v1/cell","description":"network is the requested policy; resolved_network is the selected interface."},"response":[]},
-        {"name":"GET /api/v1/network","request":{"method":"GET","url":"{{base_url}}/api/v1/network","description":"Read-only effective Manager plan: active, ue_subnet, sgi_address, ue_access, resolved_network. Configuration only; it does not assert Internet or DNS reachability."},"response":[]},
-        {"name":"DELETE /api/v1/cell","request":{"method":"DELETE","url":"{{base_url}}/api/v1/cell","description":"Idempotent stop."},"response":[]}
+        {
+          "name": "GET /api/v1/cell",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/cell",
+            "description": "network is the requested policy; resolved_network is the selected interface."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('cell status schema', () => {",
+                  "  pm.expect(typeof j.data.running === 'boolean').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/network",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/network",
+            "description": "Read-only effective Manager plan: active, ue_subnet, sgi_address, ue_access, resolved_network. Configuration only; it does not assert Internet or DNS reachability."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('network plan is configuration-only', () => {",
+                  "  const required = ['active', 'ue_subnet', 'sgi_address', 'ue_access'];",
+                  "  pm.expect(required.every(k => Object.prototype.hasOwnProperty.call(j.data, k))).to.eql(true);",
+                  "  pm.expect(typeof j.data.active === 'boolean').to.eql(true);",
+                  "  pm.expect(!Object.prototype.hasOwnProperty.call(j.data, 'internet_reachable')).to.eql(true);",
+                  "  pm.expect(!Object.prototype.hasOwnProperty.call(j.data, 'dns_reachable')).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/cell",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/cell",
+            "description": "Idempotent stop."
+          },
+          "response": []
+        }
       ]
     },
     {
       "name": "UE sessions",
       "item": [
-        {"name":"GET /api/v1/ues","request":{"method":"GET","url":"{{base_url}}/api/v1/ues","description":"Authoritative bounded multi-UE snapshot. missing/stale/invalid/cell_stopped with sessions=[] means no current snapshot, not no UE."},"response":[]},
-        {"name":"GET /api/v1/ues/{imsi}","request":{"method":"GET","url":"{{base_url}}/api/v1/ues/{{subscriber_imsi}}","description":"Detail is only available for a current session with an authoritative IMSI association."},"response":[]}
+        {
+          "name": "GET /api/v1/ues",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/ues",
+            "description": "Authoritative bounded multi-UE snapshot. missing/stale/invalid/cell_stopped with sessions=[] means no current snapshot, not no UE."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('bounded UE snapshot schema', () => {",
+                  "  const allowed = ['current', 'missing', 'stale', 'invalid', 'cell_stopped'];",
+                  "  pm.expect(allowed.includes(j.data.state)).to.eql(true);",
+                  "  pm.expect(Array.isArray(j.data.sessions)).to.eql(true);",
+                  "  pm.expect(Number.isInteger(j.data.count) && j.data.count === j.data.sessions.length).to.eql(true);",
+                  "  if (j.data.state === 'current') pm.expect(j.data.cell_state === 'running').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/ues/{imsi}",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/ues/{{subscriber_imsi}}",
+            "description": "Detail is only available for a current session with an authoritative IMSI association."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('UE detail has an exact success/not-found envelope', () => {",
+                  "  pm.expect([200, 404].includes(pm.response.code)).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  if (pm.response.code === 404) {",
+                  "    pm.expect(j.code === 40401).to.eql(true);",
+                  "  } else {",
+                  "    pm.expect(j.code === 0 && j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "    const noCurrent = ['missing', 'stale', 'invalid', 'cell_stopped'].includes(j.data.state);",
+                  "    pm.expect(noCurrent || (j.data.state === 'current' && j.data.session && typeof j.data.session === 'object')).to.eql(true);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
       ]
     },
     {
       "name": "Subscribers",
       "item": [
-        {"name":"GET /api/v1/subscribers","request":{"method":"GET","url":"{{base_url}}/api/v1/subscribers?limit=50&offset=0","description":"Redacted authorization config. active=null is distinct from authorized=true."},"response":[]},
-        {"name":"GET /api/v1/subscribers/{imsi}","request":{"method":"GET","url":"{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}"},"response":[]},
         {
-          "name":"POST /api/v1/subscribers",
-          "request":{
-            "method":"POST","header":[{"key":"Content-Type","value":"application/json"}],
-            "body":{"mode":"raw","raw":"{\n  \"name\": \"phone\",\n  \"auth\": \"mil\",\n  \"imsi\": \"{{subscriber_imsi}}\",\n  \"key\": \"{{subscriber_key}}\",\n  \"op_type\": \"opc\",\n  \"opc\": \"{{subscriber_opc}}\",\n  \"amf\": \"8001\",\n  \"sqn\": \"{{subscriber_sqn}}\",\n  \"qci\": 7,\n  \"ip_alloc\": \"dynamic\"\n}","options":{"raw":{"language":"json"}}},
-            "url":"{{base_url}}/api/v1/subscribers","description":"Cell must be stopped. Replace placeholder credential variables locally; responses never echo them."
-          },"response":[]
+          "name": "GET /api/v1/subscribers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/subscribers?limit=50&offset=0",
+            "description": "Redacted authorization config. active=null is distinct from authorized=true."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('redacted subscriber page schema', () => {",
+                  "  pm.expect(Array.isArray(j.data.items)).to.eql(true);",
+                  "  pm.expect(Number.isInteger(j.data.total) && Number.isInteger(j.data.limit) && Number.isInteger(j.data.offset)).to.eql(true);",
+                  "  pm.expect(j.data.items.every(x => !['key','sqn','op','opc','amf'].some(k => Object.prototype.hasOwnProperty.call(x, k)))).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name":"PATCH /api/v1/subscribers/{imsi}",
-          "request":{"method":"PATCH","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"phone-renamed\",\n  \"qci\": 7\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}","description":"Cell must be stopped. Only name/qci/ip_alloc; auth fields and SQN are rejected."},"response":[]
+          "name": "GET /api/v1/subscribers/{imsi}",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('subscriber detail has an exact success/not-found envelope', () => {",
+                  "  pm.expect([200, 404].includes(pm.response.code)).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  if (pm.response.code === 404) {",
+                  "    pm.expect(j.code === 40401).to.eql(true);",
+                  "  } else {",
+                  "    pm.expect(j.code === 0 && typeof j.data.imsi === 'string').to.eql(true);",
+                  "    pm.expect(!['key','sqn','op','opc','amf'].some(k => Object.prototype.hasOwnProperty.call(j.data, k))).to.eql(true);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
-        {"name":"DELETE /api/v1/subscribers/{imsi}","request":{"method":"DELETE","url":"{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}","description":"Cell must be stopped. Removes authorization; it does not disconnect a UE."},"response":[]},
-        {"name":"POST /api/v1/config/subscribers (validated replacement)","request":{"method":"POST","body":{"mode":"formdata","formdata":[{"key":"userdb","type":"file","src":"user_db.csv"}]},"url":"{{base_url}}/api/v1/config/subscribers","description":"Cell must be stopped. Validates all rows and preserves current on-disk SQN for every existing IMSI."},"response":[]}
+        {
+          "name": "POST /api/v1/subscribers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"phone\",\n  \"auth\": \"mil\",\n  \"imsi\": \"{{subscriber_imsi}}\",\n  \"key\": \"{{subscriber_key}}\",\n  \"op_type\": \"opc\",\n  \"opc\": \"{{subscriber_opc}}\",\n  \"amf\": \"8001\",\n  \"sqn\": \"{{subscriber_sqn}}\",\n  \"qci\": 7,\n  \"ip_alloc\": \"dynamic\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/subscribers",
+            "description": "Cell must be stopped. Replace placeholder credential variables locally; responses never echo them."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/v1/subscribers/{imsi}",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"phone-renamed\",\n  \"qci\": 7\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}",
+            "description": "Cell must be stopped. Only name/qci/ip_alloc; auth fields and SQN are rejected."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/subscribers/{imsi}",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/subscribers/{{subscriber_imsi}}",
+            "description": "Cell must be stopped. Removes authorization; it does not disconnect a UE."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/config/subscribers (validated replacement)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "userdb",
+                  "type": "file",
+                  "src": "user_db.csv"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/config/subscribers",
+            "description": "Cell must be stopped. Validates all rows and preserves current on-disk SQN for every existing IMSI."
+          },
+          "response": []
+        }
       ]
     },
     {
       "name": "Diagnostics",
       "item": [
         {
-          "name":"GET /api/v1/diagnostics/connectivity",
-          "request":{"method":"GET","url":"{{base_url}}/api/v1/diagnostics/connectivity","description":"Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap."},
-          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('200 evidence or 429 busy', () => pm.expect([200, 429]).to.include(pm.response.code));","pm.test('standard envelope', () => { const j=pm.response.json(); pm.expect(j).to.have.property('code'); pm.expect(j).to.have.property('request_id'); });"]}}],
-          "response":[]
+          "name": "GET /api/v1/diagnostics/connectivity",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/diagnostics/connectivity",
+            "description": "Read-only layered evidence. Does not stop the cell, capture new traffic, probe outside, or return credentials. 429 diagnostic_busy is expected for overlap."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('diagnostics has an exact evidence-or-busy envelope', () => {",
+                  "  pm.expect([200, 429].includes(pm.response.code)).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  if (pm.response.code === 200) {",
+                  "    pm.expect(j.code === 0).to.eql(true);",
+                  "    pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "    pm.expect(['registration','pdn','chap','user_plane','dns','network'].every(k => Object.prototype.hasOwnProperty.call(j.data, k))).to.eql(true);",
+                  "  } else {",
+                  "    pm.expect(j.code === 42901).to.eql(true);",
+                  "    pm.expect(j.data && j.data.reason === 'diagnostic_busy').to.eql(true);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
         }
       ]
     },
     {
       "name": "Other standard endpoints",
       "item": [
-        {"name":"GET /api/v1/profile","request":{"method":"GET","url":"{{base_url}}/api/v1/profile","description":"Saved cell profile only; use /subscribers and /ues for their separate resources."},"response":[]},
-        {"name":"GET /api/v1/health","request":{"method":"GET","url":"{{base_url}}/api/v1/health"},"response":[]},
-        {"name":"GET /api/v1/captures/lte-data","request":{"method":"GET","url":"{{base_url}}/api/v1/captures/lte-data"},"response":[]},
-        {"name":"POST /api/v1/simcards","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"imsi\":\"{{subscriber_imsi}}\"}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/simcards","description":"Cell must be stopped. Requires a reader and card."},"response":[]},
-        {"name":"POST /api/v1/config/wordlist","request":{"method":"POST","body":{"mode":"formdata","formdata":[{"key":"wordlist","type":"file","src":"wordlist.list"}]},"url":"{{base_url}}/api/v1/config/wordlist"},"response":[]},
-        {"name":"POST /api/v1/crack/jobs (stops cell)","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/crack/jobs","description":"Not a status API. Uses only an already captured CHAP exchange and stops the cell."},"response":[]},
-        {"name":"GET /api/v1/crack/result","request":{"method":"GET","url":"{{base_url}}/api/v1/crack/result"},"response":[]}
+        {
+          "name": "GET /api/v1/profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profile",
+            "description": "Saved cell profile only; use /subscribers and /ues for their separate resources."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('profile schema', () => {",
+                  "  pm.expect(typeof j.data.has_profile === 'boolean').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/health"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('HTTP 200 with successful standard envelope', () => {",
+                  "  pm.expect(pm.response.code === 200).to.eql(true);",
+                  "  pm.expect(j.code === 0).to.eql(true);",
+                  "  pm.expect(typeof j.request_id === 'string' && j.request_id.length > 0).to.eql(true);",
+                  "  pm.expect(j.data !== null && typeof j.data === 'object').to.eql(true);",
+                  "});",
+                  "pm.test('health schema', () => {",
+                  "  pm.expect(j.data.ok === true && typeof j.data.running === 'boolean').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/captures/lte-data",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/captures/lte-data"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/simcards",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"imsi\":\"{{subscriber_imsi}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/simcards",
+            "description": "Cell must be stopped. Requires a reader and card."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/config/wordlist",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "wordlist",
+                  "type": "file",
+                  "src": "wordlist.list"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/config/wordlist"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/crack/jobs (stops cell)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/crack/jobs",
+            "description": "Not a status API. Uses only an already captured CHAP exchange and stops the cell."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/crack/result",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/crack/result"
+          },
+          "response": []
+        }
       ]
     }
   ]
