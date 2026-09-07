@@ -37,12 +37,25 @@ type PAPCredential struct {
 
 // ExtractPAP runs tshark over the S1AP capture and returns the first
 // complete PAP Authenticate-Request credential pair.
+//
+// Like ExtractCHAP it inspects a bounded private immutable complete-record
+// prefix so a concurrently appended tail cannot poison the verdict.
 func ExtractPAP(ctx context.Context, cfg config.Config) (PAPCredential, error) {
 	var zero PAPCredential
-	s1ap := cfg.LogPath(cfg.PcapS1AP)
+	snapshotPath, cleanup, err := snapshotForExtraction(ctx, cfg)
+	if err != nil {
+		return zero, err
+	}
+	defer cleanup()
+	return ExtractPAPFromFile(ctx, cfg, snapshotPath)
+}
+
+// ExtractPAPFromFile runs tshark over one immutable pcap path.
+func ExtractPAPFromFile(ctx context.Context, cfg config.Config, pcapPath string) (PAPCredential, error) {
+	var zero PAPCredential
 	args := []string{
 		"-o", `uat:user_dlts:"User 3 (DLT=150)","s1ap","0","","0",""`,
-		"-r", s1ap, "-Y", "pap", "-V",
+		"-r", pcapPath, "-Y", "pap", "-V",
 	}
 	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

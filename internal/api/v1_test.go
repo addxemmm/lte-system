@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -548,5 +549,207 @@ func TestV1_Auth(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != 401 {
 		t.Fatalf("unknown route must also require token: %d", rec.Code)
+	}
+}
+
+func createOwnedSubscriber(t *testing.T, s *Server, imsi string) {
+	t.Helper()
+	body := `{"name":"ownerphone","auth":"mil","imsi":"` + imsi + `","key":"00112233445566778899aabbccddeeff","opc":"63bfa50ee6523365ff14c1f45f88737d","op_type":"opc","amf":"8001","sqn":"000000001234","qci":7,"ip_alloc":"dynamic"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subscribers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("seed subscriber: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestV1_CrackJobsConsentValidation(t *testing.T) {
+	s, cfg := testServer(t)
+	owned := "001010123456789"
+	createOwnedSubscriber(t, s, owned)
+	if err := os.WriteFile(cfg.LogPath(cfg.EPCLogName), []byte("ESM Info: APN srsapn\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Malformed JSON -> 400, no credential handling.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs", strings.NewReader("{bad"))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed consent: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Bad IMSI shape -> 422 with field detail.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs",
+		strings.NewReader(`{"imsi":"001","confirm_ownership":true}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "imsi") {
+		t.Fatalf("bad imsi: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Missing confirm_ownership -> 422 (no silent third-party audit).
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs",
+		strings.NewReader(`{"imsi":"`+owned+`"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "confirm_ownership") {
+		t.Fatalf("missing consent: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Unknown IMSI (not provisioned here) -> 404, not a handshake verdict.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs",
+		strings.NewReader(`{"imsi":"001010999999999","confirm_ownership":true}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown owned imsi: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Subscriber membership cannot bind the capture: return 412 before extraction.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/crack/jobs",
+		strings.NewReader(`{"imsi":"`+owned+`","confirm_ownership":true}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	m := decodeEnvelope(t, rec)
+	if rec.Code != http.StatusPreconditionFailed || m["message"] != "target binding unavailable" {
+		t.Fatalf("owned target must fail binding: %d %v", rec.Code, m)
+	}
+	if strings.Contains(rec.Body.String(), `"password"`) {
+		t.Fatalf("failure must not carry a password: %s", rec.Body.String())
+	}
+}
+
+func TestV1_CrackResultIMSIQuery(t *testing.T) {
+	s, cfg := testServer(t)
+	owned := "001010123456780"
+	createOwnedSubscriber(t, s, owned)
+	if err := os.WriteFile(cfg.LogPath(cfg.EPCLogName), []byte("ESM Info: APN srsapn\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/crack/result?imsi=001010999999999", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown query imsi: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Owned query with no capture -> 412, still credential-free.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/crack/result?imsi="+owned, nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusPreconditionFailed || strings.Contains(rec.Body.String(), `"password"`) {
+		t.Fatalf("owned empty result: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestV1AuditTargetDatabaseFailure(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		for _, broken := range []string{"malformed", "directory"} {
+			t.Run(method+"/"+broken, func(t *testing.T) {
+				s, cfg := testServer(t)
+				if broken == "directory" {
+					if err := os.Mkdir(cfg.UserDBPath(), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := os.WriteFile(cfg.UserDBPath(), []byte("invalid,row\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				url, body := "/api/v1/crack/jobs", `{"imsi":"001010123456789","confirm_ownership":true}`
+				if method == http.MethodGet {
+					url, body = "/api/v1/crack/result?imsi=001010123456789", ""
+				}
+				rec := httptest.NewRecorder()
+				s.Handler().ServeHTTP(rec, httptest.NewRequest(method, url, strings.NewReader(body)))
+				m := decodeEnvelope(t, rec)
+				if rec.Code != http.StatusInternalServerError || m["code"] != float64(CodeInternal) || m["message"] != "subscriber database unavailable" {
+					t.Fatalf("DB failure must be an independent server error: %d %v", rec.Code, m)
+				}
+				for _, key := range []string{`"username"`, `"password"`, `"hash"`} {
+					if strings.Contains(rec.Body.String(), key) {
+						t.Fatalf("DB error exposes %s", key)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestV1AuditResultValidatesTargetShape(t *testing.T) {
+	s, _ := testServer(t)
+	for _, query := range []string{"imsi=001", "imsi=", "imsi=%20001010123456789", "imsi=001010123456789&imsi=001010123456788"} {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/crack/result?"+query, nil))
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("invalid target %s: %d %s", query, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestV1AuditTargetBlocksAllExternalWork(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable traps")
+	}
+	s, cfg := testServer(t)
+	const imsi = "001010123456789"
+	createOwnedSubscriber(t, s, imsi)
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "called")
+	t.Setenv("AUDIT_TEST_MARKER", marker)
+	trap := "#!/bin/sh\nprintf 'called' >> \"$AUDIT_TEST_MARKER\"\nexit 1\n"
+	for _, name := range []string{"ps", "tshark", "hashcat", "kill"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(trap), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	s.cfg.TsharkBin = filepath.Join(bin, "tshark")
+	s.cfg.HashcatBin = filepath.Join(bin, "hashcat")
+	s.mgr = nil // Any attempted cell stop is a test failure via the panic/500 path.
+	capture := diagnosticPCAPFixture()
+	if err := os.WriteFile(cfg.LogPath(cfg.PcapS1AP), capture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.WordlistPath(), []byte("synthetic-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		url, body := "/api/v1/crack/jobs", `{"imsi":"`+imsi+`","confirm_ownership":true}`
+		if method == http.MethodGet {
+			url, body = "/api/v1/crack/result?imsi="+imsi, ""
+		}
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(method, url, strings.NewReader(body)))
+		m := decodeEnvelope(t, rec)
+		data, _ := m["data"].(map[string]any)
+		if rec.Code != http.StatusPreconditionFailed || m["message"] != "target binding unavailable" || data["reason"] != "target_binding_unavailable" || data["ownership_verified"] != false {
+			t.Fatalf("target must fail closed before all external work: %d %v", rec.Code, m)
+		}
+		for _, key := range []string{`"username"`, `"password"`, `"hash"`} {
+			if strings.Contains(rec.Body.String(), key) {
+				t.Fatalf("target exposes %s", key)
+			}
+		}
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("external tool invoked: %v", err)
+	}
+	got, err := os.ReadFile(cfg.LogPath(cfg.PcapS1AP))
+	if err != nil || !bytes.Equal(got, capture) {
+		t.Fatalf("capture changed: %v", err)
+	}
+
+	// Legacy result still runs the aggregate flow, with ownership always false.
+	ps := "#!/bin/sh\nprintf '123 S hashcat\\n'\n"
+	if err := os.WriteFile(filepath.Join(bin, "ps"), []byte(ps), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/crack/result", nil))
+	m := decodeEnvelope(t, rec)
+	data, _ := m["data"].(map[string]any)
+	if rec.Code != http.StatusOK || data["state"] != "running" || data["ownership_verified"] != false {
+		t.Fatalf("legacy flow changed: %d %v", rec.Code, m)
 	}
 }

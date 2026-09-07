@@ -1,6 +1,7 @@
 #include "srsepc/hdr/mme/apn_policy.h"
 #include "srsepc/hdr/mme/nas.h"
 #include "srsran/common/test_common.h"
+#include <arpa/inet.h>
 #include <cstring>
 #include <set>
 #include <vector>
@@ -59,7 +60,11 @@ public:
 class gtpc_spy : public gtpc_interface_nas {
 public:
   unsigned creates = 0, deletes = 0;
-  bool send_create_session_request(uint64_t) override { ++creates; return true; }
+  uint64_t last_generation = 0;
+  srsran::access_policy_t last_policy = srsran::ACCESS_POLICY_DENY;
+  bool send_create_session_request(uint64_t, uint64_t generation, srsran::access_policy_t policy) override {
+    ++creates; last_generation = generation; last_policy = policy; return true;
+  }
   bool send_delete_session_request(uint64_t) override { ++deletes; return true; }
   bool send_modify_bearer_request(uint64_t, uint16_t, srsran::gtp_fteid_t*) override { return true; }
   bool send_downlink_data_notification_failure_indication(uint64_t, srsran::gtpc_cause_value) override { return true; }
@@ -76,6 +81,7 @@ nas_init_t args() {
   nas_init_t a{}; a.apn = "addxLTE";
   a.cipher_algo = srsran::CIPHERING_ALGORITHM_ID_EEA0;
   a.integ_algo = srsran::INTEGRITY_ALGORITHM_ID_128_EIA2;
+  a.apn_mismatch_policy = apn_policy::mismatch_policy_t::strict;
   return a;
 }
 LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT request(const char* apn, bool eit = false) {
@@ -143,7 +149,11 @@ int decision_tests() {
   TESTASSERT(!n.start_pdn_session() && n.m_sec_ctx.dl_nas_count==256);
   for (const char* allowed : {"ADDXlte", static_cast<const char*>(nullptr)}) {
     n.reset(); n.set_pdn_apn(request(allowed)); n.m_security_ready=true;
-    TESTASSERT(n.start_pdn_session() && n.m_apn_validated && n.m_selected_apn=="addxlte");
+    TESTASSERT(n.start_pdn_session() && !n.m_apn_validated && n.m_selected_apn.empty());
+    TESTASSERT(n.m_access_policy==srsran::ACCESS_POLICY_DENY && g.last_policy==srsran::ACCESS_POLICY_NORMAL);
+    n.m_emm_ctx.ue_ip.s_addr=inet_addr("172.16.0.2");
+    TESTASSERT(n.confirm_pdn_session(n.m_session_generation,g.last_policy));
+    TESTASSERT(n.m_apn_validated && n.m_selected_apn=="addxlte");
   }
   TESTASSERT(g.creates==2);
   LIBLTE_MME_SECURITY_MODE_COMPLETE_MSG_STRUCT complete{};
@@ -183,13 +193,85 @@ int decision_tests() {
         LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED,0,&information_wire)==LIBLTE_SUCCESS);
     memcpy(response->msg,information_wire.msg,information_wire.N_bytes); response->N_bytes=information_wire.N_bytes;
     TESTASSERT(n.handle_esm_information_response(response.get()));
-    TESTASSERT(g.creates==before+1 && n.m_apn_validated && n.m_selected_apn=="addxlte");
+    TESTASSERT(g.creates==before+1 && !n.m_apn_validated && n.m_selected_apn.empty());
+    TESTASSERT(g.last_generation==n.m_session_generation && g.last_policy==srsran::ACCESS_POLICY_NORMAL);
+    n.m_emm_ctx.ue_ip.s_addr=inet_addr("172.16.0.2");
+    TESTASSERT(n.confirm_pdn_session(n.m_session_generation,g.last_policy));
+    TESTASSERT(n.m_apn_validated && n.m_selected_apn=="addxlte");
     TESTASSERT(!n.m_waiting_esm && n.m_session_requested);
     TESTASSERT(n.m_apn_source==(apn ? "esm_information_response" : "omitted"));
     TESTASSERT(!n.handle_esm_information_response(response.get()) && g.creates==before+1);
   }
   return 0;
 }
+int restricted_decision_tests() {
+  s1ap_spy s; gtpc_spy g; hss_spy h;
+  nas_if_t it{}; it.s1ap=&s; it.gtpc=&g; it.hss=&h;
+  auto config=args(); config.apn_mismatch_policy=apn_policy::mismatch_policy_t::restricted;
+  config.dns="192.0.2.53"; // Encoded fixture only; no DNS lookup is performed.
+  apn_policy::mismatch_policy_t parsed{};
+  TESTASSERT(apn_policy::parse_mismatch_policy(nullptr,parsed) && parsed==apn_policy::mismatch_policy_t::strict);
+  TESTASSERT(apn_policy::parse_mismatch_policy("restricted",parsed) && parsed==config.apn_mismatch_policy);
+  for (const char* invalid : {" ","allow","RESTRICTED"}) TESTASSERT(!apn_policy::parse_mismatch_policy(invalid,parsed));
+  for (const char* apn : {"wrong.apn","ADDXlte",static_cast<const char*>(nullptr),"bad..apn"}) {
+    nas n(config,it); n.set_pdn_apn(request(apn)); n.m_emm_ctx.imsi=100000000000001;
+    const unsigned before=g.creates;
+    TESTASSERT(!n.start_pdn_session() && g.creates==before); // Security stays mandatory.
+    n.m_security_ready=true;
+    if (apn && std::strcmp(apn,"bad..apn")==0) {
+      TESTASSERT(!n.apn_attach_allowed()); n.start_pdn_session();
+      TESTASSERT(n.m_pdn_rejected && g.creates==before); continue;
+    }
+    const bool restricted=apn && std::strcmp(apn,"wrong.apn")==0;
+    const auto policy=restricted ? srsran::ACCESS_POLICY_RESTRICTED : srsran::ACCESS_POLICY_NORMAL;
+    TESTASSERT(n.start_pdn_session() && g.creates==before+1 && g.last_policy==policy);
+    auto packed=srsran::make_byte_buffer();
+    TESTASSERT(!n.pack_attach_accept(packed.get()) && n.m_access_policy==srsran::ACCESS_POLICY_DENY);
+    TESTASSERT(!n.confirm_pdn_session(n.m_session_generation+1,policy));
+    TESTASSERT(!n.confirm_pdn_session(n.m_session_generation,srsran::ACCESS_POLICY_DENY));
+    n.m_emm_ctx.ue_ip.s_addr=inet_addr(restricted ? "172.16.0.250" : "172.16.0.2");
+    n.m_emm_ctx.attach_type=1; n.m_esm_ctx[5].qci=9;
+    TESTASSERT(n.confirm_pdn_session(n.m_session_generation,policy));
+    TESTASSERT(n.m_apn_validated==!restricted && n.m_selected_apn=="addxlte");
+    TESTASSERT(n.pack_attach_accept(packed.get()));
+    LIBLTE_MME_ATTACH_ACCEPT_MSG_STRUCT accepted{};
+    LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_REQUEST_MSG_STRUCT bearer{};
+    TESTASSERT(liblte_mme_unpack_attach_accept_msg(reinterpret_cast<LIBLTE_BYTE_MSG_STRUCT*>(packed.get()),&accepted)==LIBLTE_SUCCESS);
+    TESTASSERT(liblte_mme_unpack_activate_default_eps_bearer_context_request_msg(&accepted.esm_msg,&bearer)==LIBLTE_SUCCESS);
+    TESTASSERT(apn_policy::matches(true,bearer.apn.apn,config.apn));
+    LIBLTE_MME_ATTACH_COMPLETE_MSG_STRUCT complete{};
+    LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_ACCEPT_MSG_STRUCT activation{};
+    activation.eps_bearer_id=5; activation.proc_transaction_id=11;
+    TESTASSERT(liblte_mme_pack_activate_default_eps_bearer_context_accept_msg(&activation,&complete.esm_msg)==LIBLTE_SUCCESS);
+    LIBLTE_BYTE_MSG_STRUCT wire{};
+    TESTASSERT(liblte_mme_pack_attach_complete_msg(&complete,LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED,0,&wire)==LIBLTE_SUCCESS);
+    memcpy(packed->msg,wire.msg,wire.N_bytes); packed->N_bytes=wire.N_bytes;
+    TESTASSERT(n.handle_attach_complete(packed.get()) && n.m_emm_ctx.state==EMM_STATE_REGISTERED);
+    TESTASSERT(n.m_access_policy==policy && n.m_apn_validated==!restricted);
+    n.clear_pdn_session(); TESTASSERT(!n.handle_attach_complete(packed.get()));
+  }
+  // Exercise both actual SMC branches, including the separate ESM information response.
+  for (bool eit : {false,true}) {
+    nas n(config,it); n.set_pdn_apn(request(eit ? nullptr : "wrong.apn",eit)); n.m_ecm_ctx.eit=eit;
+    const unsigned before=g.creates;
+    LIBLTE_MME_SECURITY_MODE_COMPLETE_MSG_STRUCT smc{}; LIBLTE_BYTE_MSG_STRUCT wire{};
+    TESTASSERT(liblte_mme_pack_security_mode_complete_msg(&smc,
+      LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED_WITH_NEW_EPS_SECURITY_CONTEXT,0,&wire)==LIBLTE_SUCCESS);
+    auto input=srsran::make_byte_buffer(); memcpy(input->msg,wire.msg,wire.N_bytes); input->N_bytes=wire.N_bytes;
+    TESTASSERT(n.handle_security_mode_complete(input.get()) && !n.m_pdn_rejected);
+    if (eit) {
+      TESTASSERT(g.creates==before && n.m_waiting_esm);
+      LIBLTE_MME_ESM_INFORMATION_RESPONSE_MSG_STRUCT info{}; info.proc_transaction_id=11;
+      info.apn_present=true; std::strcpy(info.apn.apn,"wrong.apn");
+      TESTASSERT(liblte_mme_pack_esm_information_response_msg(&info,LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED,0,&wire)==LIBLTE_SUCCESS);
+      memcpy(input->msg,wire.msg,wire.N_bytes); input->N_bytes=wire.N_bytes;
+      TESTASSERT(n.handle_esm_information_response(input.get()));
+    }
+    TESTASSERT(g.creates==before+1 && g.last_policy==srsran::ACCESS_POLICY_RESTRICTED && !n.m_apn_validated);
+  }
+  return 0;
+}
+
 int attach_paths() {
   s1ap_spy s; gtpc_spy g; hss_spy h;
   nas_if_t it{}; it.s1ap=&s; it.gtpc=&g; it.hss=&h;
@@ -233,5 +315,6 @@ int attach_paths() {
 int main(int argc,char** argv) {
   srsran::test_init(argc,argv);
   TESTASSERT(parser_tests()==0); TESTASSERT(decision_tests()==0); TESTASSERT(attach_paths()==0);
+  TESTASSERT(restricted_decision_tests()==0);
   return 0;
 }

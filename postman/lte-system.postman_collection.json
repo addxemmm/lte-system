@@ -222,6 +222,33 @@
                   "  pm.expect(Array.isArray(j.data.sessions)).to.eql(true);",
                   "  pm.expect(Number.isInteger(j.data.count) && j.data.count === j.data.sessions.length).to.eql(true);",
                   "  if (j.data.state === 'current') pm.expect(j.data.cell_state === 'running').to.eql(true);",
+                  "  if (j.data.state !== 'current') {",
+                  "    pm.expect(j.data.sessions.length === 0 && !Object.prototype.hasOwnProperty.call(j.data, 'schema_version')).to.eql(true);",
+                  "    return;",
+                  "  }",
+                  "  pm.expect([1, 2].includes(j.data.schema_version)).to.eql(true);",
+                  "  for (const s of j.data.sessions) {",
+                  "    pm.expect(typeof s.apn_validated === 'boolean' && ['omitted', 'pdn_request', 'esm_information_response'].includes(s.apn_source)).to.eql(true);",
+                  "    for (const field of ['requested_apn', 'selected_apn']) if (Object.prototype.hasOwnProperty.call(s, field)) pm.expect(typeof s[field] === 'string').to.eql(true);",
+                  "    const selected = typeof s.selected_apn === 'string' ? s.selected_apn : '';",
+                  "    const requested = typeof s.requested_apn === 'string' ? s.requested_apn : '';",
+                  "    if (j.data.schema_version === 1) {",
+                  "      pm.expect(!Object.prototype.hasOwnProperty.call(s, 'access_policy') && !Object.prototype.hasOwnProperty.call(s, 'access_reason')).to.eql(true);",
+                  "      pm.expect(!selected || s.apn_validated === true).to.eql(true);",
+                  "      continue;",
+                  "    }",
+                  "    pm.expect(['normal', 'restricted', 'deny'].includes(s.access_policy)).to.eql(true);",
+                  "    if (s.access_policy === 'normal') {",
+                  "      pm.expect(s.apn_validated === true && selected.length > 0).to.eql(true);",
+                  "      if (s.apn_source === 'omitted') pm.expect(requested === '' && s.access_reason === 'apn_omitted').to.eql(true);",
+                  "      else pm.expect(['pdn_request', 'esm_information_response'].includes(s.apn_source) && requested.length > 0 && requested.toLowerCase() === selected.toLowerCase() && s.access_reason === 'apn_match').to.eql(true);",
+                  "    } else if (s.access_policy === 'restricted') {",
+                  "      pm.expect(s.apn_validated === false && s.access_reason === 'apn_mismatch').to.eql(true);",
+                  "      pm.expect(['pdn_request', 'esm_information_response'].includes(s.apn_source) && requested.length > 0 && selected.length > 0 && requested.toLowerCase() !== selected.toLowerCase()).to.eql(true);",
+                  "    } else {",
+                  "      pm.expect(s.apn_validated === false && s.access_reason === 'session_unavailable' && selected === '').to.eql(true);",
+                  "    }",
+                  "  }",
                   "});"
                 ]
               }
@@ -595,7 +622,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\"imsi\":\"001010123456789\",\"confirm_ownership\":true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -603,7 +630,7 @@
               }
             },
             "url": "{{base_url}}/api/v1/crack/jobs",
-            "description": "Not a status API. Uses only an already captured CHAP exchange and stops the cell."
+            "description": "Explicit IMSI requests return 404 if unknown, 500 on database failure, or 412 while reliable per-UE credential binding is unavailable; no credential extraction or cell/job side effect occurs for targeted calls. Empty body retains legacy capture-wide behavior with ownership_verified=false; only its CHAP job stops the cell."
           },
           "response": []
         },

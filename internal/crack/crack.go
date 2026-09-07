@@ -7,6 +7,7 @@ package crack
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -31,12 +32,27 @@ type Result struct {
 func HashcatRunning() bool { return sysop.Running("hashcat") }
 
 // ExtractCHAP parses the S1AP pcap via tshark and returns username + "resp:chall:id" hash.
-// It runs: tshark -o uat:user_dlts:... -r <pcap> -Y chap -V
+//
+// The live capture may still be appended by tcpdump, so extraction runs on a
+// bounded private immutable complete-record prefix (see pcap_snapshot.go):
+// a short trailing record is omitted rather than handed to tshark. The
+// snapshot is mode 0600 and removed before return. Record completeness does
+// not establish per-UE binding; CHAP identifier reuse can mix exchanges.
 func ExtractCHAP(ctx context.Context, cfg config.Config) (username, hash string, err error) {
-	s1ap := cfg.LogPath(cfg.PcapS1AP)
+	snapshotPath, cleanup, err := snapshotForExtraction(ctx, cfg)
+	if err != nil {
+		return "", "", err
+	}
+	defer cleanup()
+	return ExtractCHAPFromFile(ctx, cfg, snapshotPath)
+}
+
+// ExtractCHAPFromFile runs tshark over one immutable pcap path. It is the
+// testable core of ExtractCHAP; callers must pass a snapshot, not the live file.
+func ExtractCHAPFromFile(ctx context.Context, cfg config.Config, pcapPath string) (username, hash string, err error) {
 	args := []string{
 		"-o", `uat:user_dlts:"User 3 (DLT=150)","s1ap","0","","0",""`,
-		"-r", s1ap, "-Y", "chap", "-V",
+		"-r", pcapPath, "-Y", "chap", "-V",
 	}
 	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -151,6 +167,9 @@ func StartAsync(cfg config.Config, hash string) error {
 	if !isHashFormat(hash) {
 		return fmt.Errorf("bad hash format")
 	}
+	if err := CheckWordlist(cfg); err != nil {
+		return err
+	}
 	logPath := cfg.LogPath("hashcat.log")
 	// #nosec G204 -- binary path from config, args are validated hex + known file.
 	cmd := exec.Command(cfg.HashcatBin, "-m", "4800", "-a", "0", hash, cfg.WordlistPath(),
@@ -264,4 +283,126 @@ func isHexBlob(s string) bool {
 		}
 	}
 	return float64(hex)/float64(len(s)) > 0.8
+}
+
+// snapshotForExtraction copies a bounded immutable complete-record prefix of
+// the live S1AP capture and returns its temp path plus cleanup. The original
+// file is never modified. A changed/incomplete source still yields its
+// complete prefix (best effort). This preserves record boundaries only;
+// CHAP identifier reuse remains an existing correlation limitation.
+func snapshotForExtraction(ctx context.Context, cfg config.Config) (string, func(), error) {
+	nop := func() {}
+	snapshot, err := snapshotClassicPCAP(ctx, cfg.LogPath(cfg.PcapS1AP), CHAPObservationMaxCaptureBytes)
+	if err != nil {
+		return "", nop, err
+	}
+	if snapshot == nil || snapshot.path == "" {
+		if snapshot != nil && snapshot.path == "" {
+			// Empty source: no temp file was materialized; nothing to clean.
+			return "", nop, fmt.Errorf("capture_empty: S1AP capture has no data yet")
+		}
+		return "", nop, fmt.Errorf("capture_missing: S1AP capture not collected")
+	}
+	return snapshot.path, snapshot.cleanup, nil
+}
+
+// AuditConsent records the requested target and caller assertion. IMSI is
+// optional for legacy aggregate capture access. Neither caller consent nor
+// subscriber membership establishes a capture-to-UE credential binding.
+// The API rejects explicit targets until reliable per-UE binding is available.
+type AuditConsent struct {
+	IMSI             string `json:"imsi,omitempty"`
+	ConfirmOwnership bool   `json:"confirm_ownership,omitempty"`
+}
+
+// ValidateAuditConsent checks the consent shape (format only; subscriber-DB
+// membership is verified by the API layer which owns that store).
+func ValidateAuditConsent(c AuditConsent) (field, reason string) {
+	if c.IMSI == "" && !c.ConfirmOwnership {
+		return "", ""
+	}
+	if c.IMSI == "" && c.ConfirmOwnership {
+		return "imsi", "imsi is required when confirm_ownership is true"
+	}
+	if !ValidAuditIMSI(c.IMSI) {
+		return "imsi", "must contain exactly 15 digits"
+	}
+	if !c.ConfirmOwnership {
+		return "confirm_ownership", "must be true to audit an owned device (no third-party auditing)"
+	}
+	return "", ""
+}
+
+// ValidAuditIMSI reports whether s is a 15-digit IMSI.
+func ValidAuditIMSI(s string) bool {
+	if len(s) != 15 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// maxWordlistBytes bounds the dictionary read for the pre-flight check. The
+// upload path already enforces MaxUploadBytes; this is only a fail-closed
+// guard for hand-placed dictionaries.
+const maxWordlistBytes = 512 << 20
+
+// CheckWordlist fails closed when the hashcat dictionary is missing, not a
+// regular file, empty, or absurdly large. It prevents obscure hashcat
+// failures after the cell was already stopped.
+func CheckWordlist(cfg config.Config) error {
+	path := cfg.WordlistPath()
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("wordlist_missing: upload a dictionary via POST /api/v1/config/wordlist first")
+		}
+		return fmt.Errorf("wordlist_unreadable: %w", err)
+	}
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("wordlist_unreadable: not a regular file")
+	}
+	if st.Size() == 0 {
+		return fmt.Errorf("wordlist_empty: uploaded dictionary has no entries")
+	}
+	if st.Size() > maxWordlistBytes {
+		return fmt.Errorf("wordlist_too_large: dictionary exceeds audit limit")
+	}
+	return nil
+}
+
+// AuditEnrichment carries EPC-log evidence (APN/IMSI/IP) alongside a
+// credential verdict. Fields are aggregate-only: the EPC log has no stable
+// per-UE join key with the S1AP CHAP/PAP handshake, so enrichment is
+// best-effort context, not proof that the credential belongs to that IMSI.
+type AuditEnrichment struct {
+	APN   string `json:"apn,omitempty"`
+	IMSI  string `json:"imsi,omitempty"`
+	IP    string `json:"ip,omitempty"`
+	Found bool   `json:"-"`
+}
+
+// EnrichAudit loads APN/IMSI/IP from the EPC log for audit responses.
+func EnrichAudit(cfg config.Config) AuditEnrichment {
+	info := UEData(cfg)
+	return AuditEnrichment{APN: info.APN, IMSI: info.IMSI, IP: info.IP, Found: info.Found}
+}
+
+// AuditLimitations documents the fixed caveats of the owned-device audit
+// loop so callers do not over-interpret a verdict.
+func AuditLimitations(_ bool) []string {
+	out := []string{
+		"EPC log carries APN name/IMSI/IP only; the APN username and password hash come from the S1AP capture via tshark, not from the EPC log",
+		"PAP carries plaintext and needs no cracking; only CHAP uses hashcat -m 4800 dictionary attack",
+		"enrichment is aggregate-only: EPC APN/IMSI/IP and S1AP username/hash have no stable per-UE join key in concurrent sessions",
+		"a complete-record snapshot preserves record boundaries, not UE identity; CHAP identifier reuse can mix exchanges and remains an existing parser limitation",
+		"dictionary hit means weak password; no hit (404 no_password) means not in dictionary, not strong",
+	}
+	out = append(out,
+		"ownership not verified: subscriber membership does not bind capture credentials to an IMSI; explicit target requests return 412 target binding unavailable; legacy results are aggregate-only")
+	return out
 }

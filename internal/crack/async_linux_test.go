@@ -24,6 +24,9 @@ func TestStartAsyncClosesLogsAndReaps(t *testing.T) {
 	}
 	cfg := config.Default()
 	cfg.LogDir, cfg.DataDir, cfg.HashcatBin = dir, dir, helper
+	if err := os.WriteFile(cfg.WordlistPath(), []byte("synthetic-test-placeholder\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	before, err := os.ReadDir("/proc/self/fd")
 	if err != nil {
 		t.Fatal(err)

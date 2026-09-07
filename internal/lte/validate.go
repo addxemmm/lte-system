@@ -33,6 +33,9 @@ func (p StartParams) ValidateDetailed() []FieldIssue {
 	} else if err := validateAPN(p.APN); err != nil {
 		add("apn", err.Error())
 	}
+	if err := validateAPNMismatchPolicy(p.APNMismatchPolicy); err != nil {
+		add("apn_mismatch_policy", err.Error())
+	}
 	if len(p.MCC) != 3 || !isDigits(p.MCC) {
 		add("mcc", "must be 3 digits")
 	}

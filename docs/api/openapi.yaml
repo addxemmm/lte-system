@@ -36,11 +36,12 @@ components:
       properties:
         band: { type: string, enum: ['1','3','5','7','8','34','39','40','41'] }
         apn: { type: string }
+        apn_mismatch_policy: { type: string, enum: [strict, restricted], default: strict, description: 'Unreleased: strict rejects an explicit mismatch; restricted retains AKA and admits a restricted default bearer with bidirectional SPGW drops. Inherited and persisted with the profile.' }
         mcc: { type: string, pattern: '^[0-9]{3}$' }
         mnc: { type: string, pattern: '^[0-9]{2,3}$' }
         network: { type: string, default: auto, description: 'auto resolves the current namespace default route' }
         dns: { type: string, format: ipv4 }
-        ue_subnet: { type: string, default: 172.16.0.0/24, description: 'RFC1918 /24; one pool for the single APN' }
+        ue_subnet: { type: string, default: 172.16.0.0/24, description: 'RFC1918 /24 SGi subnet for one configured APN; restricted mode separates normal/restricted address classes within it.' }
         ue_access: { type: string, enum: [isolated, allow], default: isolated }
         sdr: { type: string, enum: [auto, uhd, bladerf, zmq] }
         device_args: { type: string }
@@ -102,7 +103,7 @@ components:
         ebi: { type: integer, minimum: 5, maximum: 15 }
         qci: { type: integer, minimum: 0, maximum: 9, description: '0 means not known yet and is allowed only for deactivated/requested bearers' }
         state: { type: string, enum: [deactivated, requested, setup, active] }
-    UESession:
+    UESessionBase:
       type: object
       required: [session_id, mme_ue_s1ap_id, enb_ue_s1ap_id, sctp_assoc_id, emm_state, ecm_state, apn_source, apn_validated, bearers]
       properties:
@@ -118,10 +119,49 @@ components:
         apn_source: { type: string, enum: [omitted, pdn_request, esm_information_response] }
         selected_apn: { type: string, maxLength: 99 }
         apn_validated: { type: boolean }
+        access_policy: { type: string, enum: [normal, restricted, deny] }
+        access_reason: { type: string, enum: [apn_match, apn_omitted, apn_mismatch, session_unavailable] }
         bearers:
           type: array
           maxItems: 16
           items: { $ref: '#/components/schemas/Bearer' }
+    UESessionV1:
+      allOf:
+        - $ref: '#/components/schemas/UESessionBase'
+        - not:
+            anyOf:
+              - required: [access_policy]
+              - required: [access_reason]
+      description: 'Legacy session contract; policy fields are absent and a selected APN requires apn_validated=true.'
+    UESessionV2:
+      allOf:
+        - $ref: '#/components/schemas/UESessionBase'
+        - required: [access_policy, access_reason]
+          oneOf:
+            - required: [selected_apn]
+              properties:
+                access_policy: { enum: [normal] }
+                access_reason: { enum: [apn_match, apn_omitted] }
+                apn_validated: { enum: [true] }
+                selected_apn: { type: string, minLength: 1 }
+            - required: [requested_apn, selected_apn]
+              properties:
+                access_policy: { enum: [restricted] }
+                access_reason: { enum: [apn_mismatch] }
+                apn_validated: { enum: [false] }
+                apn_source: { enum: [pdn_request, esm_information_response] }
+                requested_apn: { type: string, minLength: 1 }
+                selected_apn: { type: string, minLength: 1 }
+            - properties:
+                access_policy: { enum: [deny] }
+                access_reason: { enum: [session_unavailable] }
+                apn_validated: { enum: [false] }
+                selected_apn: { type: string, maxLength: 0 }
+      description: 'Policy is confirmed by SPGW before normal/restricted is published. Restricted APNs must differ case-insensitively from selected_apn; normal APN source/reason must agree. Runtime additionally checks these cross-field relationships.'
+    UESession:
+      oneOf:
+        - $ref: '#/components/schemas/UESessionV1'
+        - $ref: '#/components/schemas/UESessionV2'
     UESnapshotData:
       type: object
       required: [state, sessions, count]
@@ -129,7 +169,7 @@ components:
         state: { type: string, enum: [current, missing, stale, invalid, cell_stopped] }
         cell_state: { type: string, enum: [running] }
         reason: { type: string }
-        schema_version: { type: integer, enum: [1] }
+        schema_version: { type: integer, enum: [1, 2] }
         run_id: { type: string }
         sequence: { type: integer, format: int64 }
         started_at_unix_ms: { type: integer, format: int64 }
@@ -139,6 +179,20 @@ components:
           type: array
           maxItems: 256
           items: { $ref: '#/components/schemas/UESession' }
+      oneOf:
+        - required: [schema_version]
+          properties:
+            state: { enum: [current] }
+            schema_version: { enum: [1] }
+            sessions: { type: array, items: { $ref: '#/components/schemas/UESessionV1' } }
+        - required: [schema_version]
+          properties:
+            state: { enum: [current] }
+            schema_version: { enum: [2] }
+            sessions: { type: array, items: { $ref: '#/components/schemas/UESessionV2' } }
+        - properties:
+            state: { enum: [missing, stale, invalid, cell_stopped] }
+          not: { required: [schema_version] }
     Subscriber:
       type: object
       required: [name, auth, imsi, op_type, qci, ip_alloc, authorized, active, credential_status]
@@ -239,7 +293,7 @@ paths:
     get:
       summary: Bounded authoritative multi-UE snapshot
       description: >-
-        Reads the EPC's atomic once-per-second schema-v1 telemetry. Only a matching
+        Reads the EPC's atomic once-per-second schema-v1/v2 telemetry. Only a matching
         run_id/PID snapshot no older than five seconds is current. Missing/stale/
         invalid/cell_stopped states carry sessions=[] and never fall back to log joins.
       responses:
@@ -332,20 +386,55 @@ paths:
         '429': { description: diagnostic_busy }
   /api/v1/crack/jobs:
     post:
-      summary: Audit APN password strength (PAP instant verdict, else CHAP hashcat job; stops the cell only for CHAP)
+      summary: Audit own-device APN password strength (PAP instant verdict, else CHAP hashcat job; stops the cell only for CHAP)
+      description: >-
+        Empty body preserves the legacy capture-wide call without ownership verification. A targeted audit sends
+        {"imsi":"15 digits","confirm_ownership":true}; imsi must already be an authorized
+        subscriber or the call returns 404; database failures return 500. Even a known IMSI returns
+        412 because reliable per-UE credential binding is unavailable, without extracting
+        credentials, stopping the cell or starting a job. Legacy success always reports
+        ownership_verified=false. Complete-record snapshots do not resolve CHAP identifier
+        reuse or prove credential ownership. EPC log contributes only
+        APN name/IMSI/IP enrichment (aggregate-only); the APN username and password hash
+        come from a bounded immutable S1AP snapshot via tshark. PAP needs no cracking;
+        CHAP uses hashcat -m 4800 dictionary attack. Dictionary hits return weak:true with
+        the password; no hit is 404 no_password, not proof of strength.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                imsi: { type: string, pattern: '^[0-9]{15}$', description: 'Owned subscriber IMSI already authorized in this cell' }
+                confirm_ownership: { type: boolean, description: 'Must be true when imsi is present; no third-party auditing' }
       responses:
         '200': { description: PAP plaintext recovered (no cracking needed, cell untouched) }
         '202': { description: CHAP job accepted }
+        '400': { description: Malformed JSON body }
+        '404': { description: Owned IMSI is not an authorized subscriber }
         '409': { description: Job conflict }
-        '412': { description: No suitable observed handshake/capture }
-        '422': { description: Capture cannot be interpreted }
+        '412': { description: Target binding unavailable or no suitable handshake/capture/wordlist }
+        '500': { description: Subscriber database read failed }
+        '413': { description: Consent body exceeds limit }
+        '422': { description: Consent validation failed or capture cannot be interpreted }
         '503': { description: Decoder unavailable }
   /api/v1/crack/result:
     get:
       summary: Poll crack job result (PAP verdict or CHAP password when weak)
+      parameters:
+        - in: query
+          name: imsi
+          required: false
+          schema: { type: string, pattern: '^[0-9]{15}$' }
+          description: 'Optional target; unknown subscriber returns 404, database failure 500, known target 412 until per-UE credential binding exists'
       responses:
         '200': { description: running or ready }
-        '404': { description: Result not found }
+        '404': { description: Result not found or owned IMSI unknown }
+        '412': { description: Target binding unavailable; no credentials returned }
+        '422': { description: Invalid target IMSI }
+        '500': { description: Subscriber database read failed }
   /api/v1/config/subscribers:
     post:
       summary: Validate and replace user_db.csv while stopped, preserving existing SQNs

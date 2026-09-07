@@ -7,8 +7,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -18,6 +22,7 @@ import (
 	"github.com/addxemmm/lte-system/internal/lte"
 	"github.com/addxemmm/lte-system/internal/sdr"
 	"github.com/addxemmm/lte-system/internal/sim"
+	"github.com/addxemmm/lte-system/internal/subscriber"
 	"github.com/addxemmm/lte-system/internal/sysop"
 )
 
@@ -201,22 +206,133 @@ func (s *Server) handleV1Network(w http.ResponseWriter, r *http.Request) {
 
 // ---- POST /api/v1/crack/jobs ----
 
+// crackAuditBodyLimit bounds the optional owned-device consent document.
+const crackAuditBodyLimit = 4 << 10
+
+// parseCrackConsent reads the optional {imsi, confirm_ownership} document.
+// Empty body preserves the legacy call shape; a present body must be exactly
+// one JSON object with no unknown fields.
+func parseCrackConsent(r *http.Request) (crack.AuditConsent, bool, error) {
+	var zero crack.AuditConsent
+	if r.Body == nil {
+		return zero, false, nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, crackAuditBodyLimit+1))
+	if err != nil {
+		return zero, true, err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return zero, false, nil
+	}
+	if int64(len(raw)) > crackAuditBodyLimit {
+		return zero, true, errors.New("JSON body exceeds limit")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var probe json.RawMessage
+	if err := dec.Decode(&probe); err != nil {
+		return zero, true, err
+	}
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err == nil {
+		return zero, true, errors.New("JSON body must contain exactly one value")
+	} else if err != io.EOF {
+		return zero, true, err
+	}
+	trimmed := bytes.TrimSpace(probe)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return zero, true, errors.New("JSON body must be an object")
+	}
+	obj := json.NewDecoder(bytes.NewReader(probe))
+	obj.DisallowUnknownFields()
+	var consent crack.AuditConsent
+	if err := obj.Decode(&consent); err != nil {
+		return zero, true, err
+	}
+	return consent, true, nil
+}
+
+// verifyAuditOwnership checks consent shape and subscriber membership only.
+// Membership does not bind capture credentials to a UE; targeted audits must
+// fail before extraction, process checks, cell shutdown or task creation.
+func (s *Server) verifyAuditOwnership(consent crack.AuditConsent, hadBody bool) (int, string, string) {
+	if !hadBody && consent.IMSI == "" {
+		return 0, "", ""
+	}
+	if field, reason := crack.ValidateAuditConsent(consent); field != "" {
+		return CodeInvalid, field, reason
+	}
+	if consent.IMSI == "" {
+		return 0, "", ""
+	}
+	records, err := subscriber.Load(s.cfg.UserDBPath(), s.cfg.MaxUploadBytes)
+	if err != nil {
+		return CodeInternal, "", "subscriber database unavailable"
+	}
+	if _, ok := subscriber.Find(records, consent.IMSI); !ok {
+		return CodeNotFound, "imsi", "subscriber not found"
+	}
+	return CodePrecondition, "", "target binding unavailable"
+}
+
+func (s *Server) rejectUnboundAuditTarget(w http.ResponseWriter, r *http.Request, consent crack.AuditConsent, hadBody bool) bool {
+	code, field, reason := s.verifyAuditOwnership(consent, hadBody)
+	if code == 0 {
+		return false
+	}
+	data := map[string]any{"ownership_verified": false}
+	if field != "" {
+		data["errors"] = []FieldError{{Field: field, Reason: reason}}
+	}
+	if code == CodePrecondition {
+		data["reason"] = "target_binding_unavailable"
+	}
+	writeV1(w, r, code, reason, data)
+	return true
+}
+
 func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
+	consent, hadBody, err := parseCrackConsent(r)
+	if err != nil {
+		if err.Error() == "JSON body exceeds limit" {
+			writeV1(w, r, CodeTooLarge, "JSON body exceeds limit", map[string]any{"max_bytes": crackAuditBodyLimit})
+			return
+		}
+		writeV1(w, r, CodeMalformed, "malformed JSON body", nil)
+		return
+	}
+	if s.rejectUnboundAuditTarget(w, r, consent, hadBody) {
+		return
+	}
+	ownershipVerified := false // Aggregate capture has no reliable per-UE binding.
+	enrich := crack.EnrichAudit(s.cfg)
+	limitations := crack.AuditLimitations(ownershipVerified)
 	if crack.HashcatRunning() {
 		writeV1(w, r, CodeConflict, "a crack job is already running", nil)
 		return
 	}
 	// PAP first: plaintext credentials need no cracking and no cell stop.
 	if cred, err := crack.ExtractPAP(r.Context(), s.cfg); err == nil {
+		log.Printf("rid=%s crack start pap weak=true ownership_verified=%v apn=%q", RequestID(r), ownershipVerified, enrich.APN)
 		writeV1(w, r, CodeOK, "weak password recovered (PAP plaintext)", map[string]any{
 			"auth": "pap", "username": cred.Username,
 			"password": cred.Password, "weak": true,
+			"apn": enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+			"audit_imsi": consent.IMSI, "ownership_verified": ownershipVerified,
+			"limitations": limitations,
 		})
 		return
 	}
-	_, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
+	username, hash, err := crack.ExtractCHAP(r.Context(), s.cfg)
 	if err != nil || hash == "" {
 		s.writeV1CHAPFailure(w, r)
+		return
+	}
+	_ = username
+	if err := crack.CheckWordlist(s.cfg); err != nil {
+		writeV1(w, r, CodePrecondition, err.Error(), map[string]any{
+			"apn": enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+			"ownership_verified": ownershipVerified, "limitations": limitations,
+		})
 		return
 	}
 	// Cracking needs the cell stopped (frees CPU, freezes the pcap).
@@ -227,25 +343,57 @@ func (s *Server) handleV1CrackStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := crack.StartAsync(s.cfg, hash); err != nil {
+		msg := err.Error()
+		if strings.HasPrefix(msg, "wordlist_") {
+			writeV1(w, r, CodePrecondition, msg, map[string]any{
+				"ownership_verified": ownershipVerified, "limitations": limitations,
+			})
+			return
+		}
 		writeV1(w, r, CodeInternal, "could not launch hashcat", nil)
 		return
 	}
+	log.Printf("rid=%s crack start chap running ownership_verified=%v apn=%q", RequestID(r), ownershipVerified, enrich.APN)
 	writeV1Status(w, r, http.StatusAccepted, CodeOK, "crack job running",
-		map[string]any{"state": "running", "auth": "chap", "poll": "/api/v1/crack/result"})
+		map[string]any{"state": "running", "auth": "chap",
+			"username": username, "hash": hash,
+			"apn": enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+			"audit_imsi": consent.IMSI, "ownership_verified": ownershipVerified,
+			"limitations": limitations, "poll": "/api/v1/crack/result"})
 }
 
 // ---- GET /api/v1/crack/result ----
 
 func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
+	ownershipVerified := false // Aggregate capture has no reliable per-UE binding.
+	if values, present := r.URL.Query()["imsi"]; present {
+		raw := ""
+		if len(values) == 1 {
+			raw = values[0]
+		}
+		consent := crack.AuditConsent{IMSI: raw, ConfirmOwnership: true}
+		if s.rejectUnboundAuditTarget(w, r, consent, true) {
+			return
+		}
+	}
+	enrich := crack.EnrichAudit(s.cfg)
+	limitations := crack.AuditLimitations(ownershipVerified)
 	if crack.HashcatRunning() {
-		writeV1(w, r, CodeOK, "ok", map[string]any{"state": "running"})
+		writeV1(w, r, CodeOK, "ok", map[string]any{
+			"state": "running",
+			"apn":   enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+			"ownership_verified": ownershipVerified, "limitations": limitations,
+		})
 		return
 	}
 	// PAP first: no cracking was ever needed.
 	if cred, err := crack.ExtractPAP(r.Context(), s.cfg); err == nil {
+		log.Printf("rid=%s crack result pap weak=true ownership_verified=%v", RequestID(r), ownershipVerified)
 		writeV1(w, r, CodeOK, "ok", map[string]any{
 			"state": "ready", "auth": "pap", "username": cred.Username,
 			"password": cred.Password, "weak": true,
+			"apn": enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+			"ownership_verified": ownershipVerified, "limitations": limitations,
 		})
 		return
 	}
@@ -261,12 +409,17 @@ func (s *Server) handleV1CrackResult(w http.ResponseWriter, r *http.Request) {
 	}
 	if password == "" {
 		writeV1(w, r, CodeNotFound, "password not in dictionary",
-			map[string]any{"state": "no_password", "auth": "chap", "username": username})
+			map[string]any{"state": "no_password", "auth": "chap", "username": username,
+				"hash": hash, "apn": enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+				"ownership_verified": ownershipVerified, "limitations": limitations})
 		return
 	}
+	log.Printf("rid=%s crack result chap weak=true ownership_verified=%v", RequestID(r), ownershipVerified)
 	writeV1(w, r, CodeOK, "ok", map[string]any{
 		"state": "ready", "auth": "chap", "username": username,
-		"password": password, "weak": true,
+		"password": password, "weak": true, "hash": hash,
+		"apn": enrich.APN, "imsi": enrich.IMSI, "ue_ipv4": enrich.IP,
+		"ownership_verified": ownershipVerified, "limitations": limitations,
 	})
 }
 

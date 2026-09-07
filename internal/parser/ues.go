@@ -40,6 +40,8 @@ type UESession struct {
 	APNSource    string     `json:"apn_source"`
 	SelectedAPN  string     `json:"selected_apn,omitempty"`
 	APNValidated bool       `json:"apn_validated"`
+	AccessPolicy string     `json:"access_policy,omitempty"`
+	AccessReason string     `json:"access_reason,omitempty"`
 	Bearers      []UEBearer `json:"bearers"`
 }
 
@@ -106,15 +108,9 @@ func ReadUESnapshot(path, runID string, pid int, running bool, now time.Time) UE
 	if err := rejectDuplicateJSONKeys(payload); errors.Is(err, errDuplicateJSONField) {
 		return empty("invalid", "telemetry snapshot contains duplicate JSON fields")
 	}
-	var snapshot UESnapshot
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&snapshot); err != nil {
-		return empty("invalid", "telemetry snapshot is not valid schema v1 JSON")
-	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return empty("invalid", "telemetry snapshot contains trailing data")
+	snapshot, err := decodeUESnapshot(payload)
+	if err != nil {
+		return empty("invalid", "telemetry snapshot is not valid schema JSON")
 	}
 	if reason := validateUESnapshot(snapshot, runID, pid, now); reason != "" {
 		state := "invalid"
@@ -129,9 +125,75 @@ func ReadUESnapshot(path, runID string, pid int, running bool, now time.Time) UE
 	return UESnapshotResult{State: "current", Snapshot: &snapshot}
 }
 
+func decodeUESnapshot(payload []byte) (UESnapshot, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil || fields == nil {
+		return UESnapshot{}, errors.New("telemetry root must be an object")
+	}
+
+	var snapshot UESnapshot
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&snapshot); err != nil {
+		return UESnapshot{}, err
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return UESnapshot{}, errors.New("telemetry snapshot contains trailing data")
+	}
+
+	var rawSessions []json.RawMessage
+	if raw, exists := fields["sessions"]; exists && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		if err := json.Unmarshal(raw, &rawSessions); err != nil {
+			return UESnapshot{}, err
+		}
+	}
+	if len(rawSessions) != len(snapshot.Sessions) {
+		return UESnapshot{}, errors.New("telemetry sessions could not be decoded")
+	}
+	for _, raw := range rawSessions {
+		var sessionFields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &sessionFields); err != nil || sessionFields == nil {
+			return UESnapshot{}, errors.New("telemetry session must be an object")
+		}
+		switch snapshot.SchemaVersion {
+		case 1:
+			for name := range sessionFields {
+				if strings.EqualFold(name, "access_policy") || strings.EqualFold(name, "access_reason") {
+					return UESnapshot{}, errors.New("schema v1 session contains a schema v2 access field")
+				}
+			}
+		case 2:
+			for _, name := range []string{"access_policy", "access_reason", "apn_validated"} {
+				rawValue, exists := sessionFields[name]
+				if !exists || jsonValueIsNull(rawValue) {
+					return UESnapshot{}, fmt.Errorf("schema v2 session requires non-null %s", name)
+				}
+			}
+			for name, rawValue := range sessionFields {
+				if !jsonValueIsNull(rawValue) {
+					continue
+				}
+				// Match encoding/json's case-insensitive field lookup.
+				for _, stringField := range []string{
+					"session_id", "imsi", "emm_state", "ecm_state", "ue_ipv4",
+					"requested_apn", "apn_source", "selected_apn", "access_policy", "access_reason",
+				} {
+					if strings.EqualFold(name, stringField) {
+						return UESnapshot{}, fmt.Errorf("schema v2 session field %s must not be null", name)
+					}
+				}
+			}
+		}
+	}
+	return snapshot, nil
+}
+func jsonValueIsNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
 func validateUESnapshot(snapshot UESnapshot, runID string, pid int, now time.Time) string {
 	switch {
-	case snapshot.SchemaVersion != 1:
+	case snapshot.SchemaVersion != 1 && snapshot.SchemaVersion != 2:
 		return "unsupported telemetry schema version"
 	case snapshot.RunID != runID || snapshot.PID != pid:
 		return "telemetry snapshot does not belong to the current cell run"
@@ -157,7 +219,7 @@ func validateUESnapshot(snapshot UESnapshot, runID string, pid int, now time.Tim
 	}
 	seenSession, seenIMSI, seenIPv4 := map[string]struct{}{}, map[string]struct{}{}, map[string]struct{}{}
 	for i, session := range snapshot.Sessions {
-		if reason := validateUESession(session); reason != "" {
+		if reason := validateUESession(session, snapshot.SchemaVersion); reason != "" {
 			return fmt.Sprintf("session %d is invalid: %s", i, reason)
 		}
 		if _, exists := seenSession[session.SessionID]; exists {
@@ -183,7 +245,7 @@ func validateUESnapshot(snapshot UESnapshot, runID string, pid int, now time.Tim
 	return ""
 }
 
-func validateUESession(session UESession) string {
+func validateUESession(session UESession, schemaVersion int) string {
 	if len(session.SessionID) == 0 || len(session.SessionID) > 128 || strings.ContainsAny(session.SessionID, "\r\n") {
 		return "session_id must be 1-128 characters"
 	}
@@ -217,11 +279,15 @@ func validateUESession(session UESession) string {
 	if strings.ContainsAny(session.RequestedAPN+session.SelectedAPN, "\x00\r\n") {
 		return "apn contains control characters"
 	}
-	if session.SelectedAPN != "" && !session.APNValidated {
-		return "selected_apn requires apn_validated"
-	}
-	if session.APNValidated && session.SelectedAPN == "" {
-		return "apn_validated requires selected_apn"
+	if schemaVersion == 1 {
+		if session.SelectedAPN != "" && !session.APNValidated {
+			return "selected_apn requires apn_validated"
+		}
+		if session.APNValidated && session.SelectedAPN == "" {
+			return "apn_validated requires selected_apn"
+		}
+	} else if reason := validateUESessionAccess(session); reason != "" {
+		return reason
 	}
 	if len(session.Bearers) > UEBearerMaxItems {
 		return "bearer limit exceeded"
@@ -244,6 +310,64 @@ func validateUESession(session UESession) string {
 	return ""
 }
 
+func validateUESessionAccess(session UESession) string {
+	if session.RequestedAPN != "" {
+		if err := validateTelemetryAPN(session.RequestedAPN); err != nil {
+			return "requested_apn is invalid"
+		}
+	}
+	if session.SelectedAPN != "" {
+		if err := validateTelemetryAPN(session.SelectedAPN); err != nil {
+			return "selected_apn is invalid"
+		}
+	}
+
+	switch session.AccessPolicy {
+	case "normal":
+		if !session.APNValidated || session.SelectedAPN == "" {
+			return "normal access requires a validated selected_apn"
+		}
+		if session.APNSource == "omitted" {
+			if session.AccessReason != "apn_omitted" {
+				return "normal omitted APN requires apn_omitted reason"
+			}
+		} else if !strings.EqualFold(session.RequestedAPN, session.SelectedAPN) || session.AccessReason != "apn_match" {
+			return "normal requested APN requires matching selection and apn_match reason"
+		}
+	case "restricted":
+		if session.APNValidated || session.APNSource == "omitted" || session.RequestedAPN == "" || session.SelectedAPN == "" {
+			return "restricted access requires explicit unvalidated requested and selected APNs"
+		}
+		if strings.EqualFold(session.RequestedAPN, session.SelectedAPN) || session.AccessReason != "apn_mismatch" {
+			return "restricted access requires an APN mismatch and apn_mismatch reason"
+		}
+	case "deny":
+		if session.APNValidated || session.SelectedAPN != "" || session.AccessReason != "session_unavailable" {
+			return "deny access requires empty selection and session_unavailable reason"
+		}
+	default:
+		return "unknown access_policy"
+	}
+	return ""
+}
+
+func validateTelemetryAPN(apn string) error {
+	if len(apn) == 0 || len(apn) > 99 {
+		return errors.New("APN length is invalid")
+	}
+	for _, label := range strings.Split(apn, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return errors.New("APN label length is invalid")
+		}
+		for i, r := range label {
+			alphaNum := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+			if !alphaNum && !(r == '-' && i > 0 && i < len(label)-1) {
+				return errors.New("APN label contains an invalid character")
+			}
+		}
+	}
+	return nil
+}
 func strictIMSI(value string) bool {
 	if len(value) != 15 {
 		return false

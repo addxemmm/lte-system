@@ -1,0 +1,1601 @@
+diff --git a/lib/include/srsran/asn1/gtpc_msg.h b/lib/include/srsran/asn1/gtpc_msg.h
+index f14c4fb..6708f20 100644
+--- a/lib/include/srsran/asn1/gtpc_msg.h
++++ b/lib/include/srsran/asn1/gtpc_msg.h
+@@ -25,6 +25,27 @@
+ 
+ namespace srsran {
+ 
++// Local S11 is an in-process-version UNIX datagram protocol in srsepc. Keep
++// access metadata explicit: a zero-initialized or legacy datagram is deny.
++enum access_policy_t : uint8_t { ACCESS_POLICY_DENY = 0, ACCESS_POLICY_NORMAL = 1, ACCESS_POLICY_RESTRICTED = 2 };
++
++static const uint32_t S11_ACCESS_METADATA_VERSION = 1;
++
++struct gtpc_access_metadata {
++  uint32_t        version;
++  access_policy_t policy;
++  uint8_t         reserved[3];
++  uint64_t        session_generation;
++};
++
++inline bool valid_access_metadata(const gtpc_access_metadata& metadata)
++{
++  return metadata.version == S11_ACCESS_METADATA_VERSION &&
++         (metadata.policy == ACCESS_POLICY_NORMAL || metadata.policy == ACCESS_POLICY_RESTRICTED) &&
++         metadata.session_generation != 0 && metadata.reserved[0] == 0 && metadata.reserved[1] == 0 &&
++         metadata.reserved[2] == 0;
++}
++
+ /****************************************************************
+  *
+  * GTP-C Message Types
+@@ -149,6 +170,7 @@ const char* gtpc_msg_type_to_str(uint8_t type);
+  *
+  ***************************************************************************/
+ struct gtpc_create_session_request {
++  struct gtpc_access_metadata access; // Local S11 fail-closed extension.
+   bool     imsi_present;
+   uint64_t imsi; // C
+   // bool msidn_present;
+@@ -240,6 +262,7 @@ struct gtpc_create_session_request {
+  *
+  ***************************************************************************/
+ struct gtpc_create_session_response {
++  struct gtpc_access_metadata access; // Echoes the accepted/requested local policy and generation.
+   struct gtpc_cause_ie cause; // M
+   // Change Reporting Action //C
+   // CSG Information Reporting Action //CO
+diff --git a/lib/include/srsran/interfaces/epc_interfaces.h b/lib/include/srsran/interfaces/epc_interfaces.h
+index c3c160c..05a2d6a 100644
+--- a/lib/include/srsran/interfaces/epc_interfaces.h
++++ b/lib/include/srsran/interfaces/epc_interfaces.h
+@@ -23,6 +23,7 @@
+ #define SRSRAN_EPC_INTERFACES_H
+ 
+ #include "srsran/asn1/gtpc_ies.h"
++#include "srsran/asn1/gtpc_msg.h"
+ #include "srsran/common/common.h"
+ #include <netinet/sctp.h>
+ #include <queue>
+@@ -41,7 +42,9 @@ enum nas_timer_type {
+ class gtpc_interface_nas // NAS -> GTP-C
+ {
+ public:
+-  virtual bool send_create_session_request(uint64_t imsi)                                                         = 0;
++  virtual bool send_create_session_request(uint64_t imsi,
++                                           uint64_t session_generation,
++                                           srsran::access_policy_t access_policy)                                  = 0;
+   virtual bool send_modify_bearer_request(uint64_t imsi, uint16_t erab_to_modify, srsran::gtp_fteid_t* enb_fteid) = 0;
+   virtual bool send_delete_session_request(uint64_t imsi)                                                         = 0;
+   virtual bool send_downlink_data_notification_failure_indication(uint64_t                      imsi,
+@@ -113,18 +116,31 @@ class gtpu_interface_gtpc // GTP-C -> GTP-U
+ public:
+   virtual in_addr_t get_s1u_addr() = 0;
+ 
+-  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw_user_fteid, uint32_t up_ctrl_teid, uint32_t up_user_teid) = 0;
+-  virtual bool delete_gtpu_tunnel(in_addr_t ue_ipv4)                                                              = 0;
+-  virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4)                                                              = 0;
+-  virtual void send_all_queued_packets(srsran::gtp_fteid_t                       dw_user_fteid,
+-                                       std::queue<srsran::unique_byte_buffer_t>& pkt_queue)                       = 0;
++  virtual bool install_gtpc_tunnel(in_addr_t ue_ipv4,
++                                   uint32_t up_ctrl_teid,
++                                   uint32_t up_user_teid,
++                                   uint64_t session_generation,
++                                   srsran::access_policy_t access_policy) = 0;
++  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4,
++                                  srsran::gtpc_f_teid_ie dw_user_fteid,
++                                  uint32_t up_ctrl_teid,
++                                  uint32_t up_user_teid,
++                                  uint64_t session_generation,
++                                  srsran::access_policy_t access_policy) = 0;
++  virtual bool delete_gtpu_tunnel(in_addr_t ue_ipv4) = 0;
++  virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4) = 0;
++  virtual void send_all_queued_packets(in_addr_t ue_ipv4,
++                                       uint64_t session_generation,
++                                       std::queue<srsran::unique_byte_buffer_t>& pkt_queue) = 0;
+ };
+ 
+ class gtpc_interface_gtpu // GTP-U -> GTP-C
+ {
+ public:
+-  virtual bool queue_downlink_packet(uint32_t spgw_ctr_teid, srsran::unique_byte_buffer_t msg) = 0;
+-  virtual bool send_downlink_data_notification(uint32_t spgw_ctr_teid)                         = 0;
++  virtual bool queue_downlink_packet(uint32_t spgw_ctr_teid,
++                                      uint64_t session_generation,
++                                      srsran::unique_byte_buffer_t msg) = 0;
++  virtual bool send_downlink_data_notification(uint32_t spgw_ctr_teid, uint64_t session_generation) = 0;
+ };
+ 
+ } // namespace srsepc
+diff --git a/srsepc/hdr/mme/apn_policy.h b/srsepc/hdr/mme/apn_policy.h
+index 958c00e..8d2903c 100644
+--- a/srsepc/hdr/mme/apn_policy.h
++++ b/srsepc/hdr/mme/apn_policy.h
+@@ -8,6 +8,21 @@
+ namespace srsepc {
+ namespace apn_policy {
+ 
++enum class mismatch_policy_t : uint8_t { strict = 0, restricted = 1 };
++
++inline bool parse_mismatch_policy(const char* value, mismatch_policy_t& out)
++{
++  if (value == nullptr || value[0] == '\0' || std::strcmp(value, "strict") == 0) {
++    out = mismatch_policy_t::strict;
++    return true;
++  }
++  if (std::strcmp(value, "restricted") == 0) {
++    out = mismatch_policy_t::restricted;
++    return true;
++  }
++  return false;
++}
++
+ inline bool normalize(const std::string& input, std::string& out)
+ {
+   out.clear();
+diff --git a/srsepc/hdr/mme/mme_gtpc.h b/srsepc/hdr/mme/mme_gtpc.h
+index b5e1827..c0eafda 100644
+--- a/srsepc/hdr/mme/mme_gtpc.h
++++ b/srsepc/hdr/mme/mme_gtpc.h
+@@ -24,6 +24,7 @@
+ #include "nas.h"
+ #include "srsran/asn1/gtpc.h"
+ #include "srsran/common/buffer_pool.h"
++#include <chrono>
+ #include <sys/socket.h>
+ #include <sys/un.h>
+ 
+@@ -38,6 +39,8 @@ public:
+   typedef struct gtpc_ctx {
+     srsran::gtp_fteid_t mme_ctr_fteid;
+     srsran::gtp_fteid_t sgw_ctr_fteid;
++    uint64_t session_generation;
++    srsran::access_policy_t access_policy;
+   } gtpc_ctx_t;
+ 
+   virtual ~mme_gtpc() = default;
+@@ -47,8 +50,9 @@ public:
+   bool init();
+   bool send_s11_pdu(const srsran::gtpc_pdu& pdu);
+   void handle_s11_pdu(srsran::byte_buffer_t* msg);
++  void retry_pending_deletes();
+ 
+-  virtual bool send_create_session_request(uint64_t imsi);
++  virtual bool send_create_session_request(uint64_t imsi, uint64_t session_generation, srsran::access_policy_t access_policy);
+   bool         handle_create_session_response(srsran::gtpc_pdu* cs_resp_pdu);
+   virtual bool send_modify_bearer_request(uint64_t imsi, uint16_t erab_to_modify, srsran::gtp_fteid_t* enb_fteid);
+   void         handle_modify_bearer_response(srsran::gtpc_pdu* mb_resp_pdu);
+@@ -69,11 +73,16 @@ private:
+   uint32_t                            m_next_ctrl_teid;
+   std::map<uint32_t, uint64_t>        m_mme_ctr_teid_to_imsi;
+   std::map<uint64_t, struct gtpc_ctx> m_imsi_to_gtpc_ctx;
++  // Pending Creates outlive a local Detach. Retain ownership until their
++  // response can reclaim the remote context without touching a newer IMSI run.
++  std::map<uint32_t, gtpc_ctx_t> m_cancelled_creates;
++  std::chrono::steady_clock::time_point m_next_delete_retry{};
+ 
+   int                m_s11;
+   struct sockaddr_un m_mme_addr, m_spgw_addr;
+ 
+   bool     init_s11();
++  bool     send_delete_session_teid(uint32_t teid);
+   uint32_t get_new_ctrl_teid();
+ };
+ 
+diff --git a/srsepc/hdr/mme/nas.h b/srsepc/hdr/mme/nas.h
+index 99a57cf..1d9ba0c 100644
+--- a/srsepc/hdr/mme/nas.h
++++ b/srsepc/hdr/mme/nas.h
+@@ -22,6 +22,7 @@
+ #ifndef SRSEPC_NAS_H
+ #define SRSEPC_NAS_H
+ 
++#include "srsepc/hdr/mme/apn_policy.h"
+ #include "srsran/asn1/gtpc_ies.h"
+ #include "srsran/asn1/liblte_mme.h"
+ #include "srsran/common/buffer_pool.h"
+@@ -77,6 +78,13 @@ static const char esm_state_text[ESM_STATE_N_ITEMS][100] = {"CONTEXT INACTIVE",
+ */
+ typedef enum { ERAB_DEACTIVATED, ERAB_CTX_REQUESTED, ERAB_CTX_SETUP, ERAB_ACTIVE } esm_state_t;
+ 
++enum access_reason_t : uint8_t {
++  ACCESS_REASON_SESSION_UNAVAILABLE = 0,
++  ACCESS_REASON_APN_MATCH,
++  ACCESS_REASON_APN_OMITTED,
++  ACCESS_REASON_APN_MISMATCH
++};
++
+ /*
+  * EMM, ECM, ESM and EPS Security context definitions
+  */
+@@ -144,6 +152,7 @@ typedef struct {
+   srsran::INTEGRITY_ALGORITHM_ID_ENUM integ_algo;
+   bool                                request_imeisv;
+   uint16_t                            lac;
++  apn_policy::mismatch_policy_t       apn_mismatch_policy;
+ } nas_init_t;
+ 
+ typedef struct {
+@@ -160,9 +169,13 @@ public:
+   void reset();
+   void set_pdn_apn(const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& request);
+   bool start_pdn_session();
++  bool confirm_pdn_session(uint64_t generation, srsran::access_policy_t policy);
++  bool fail_pdn_session(uint64_t generation, uint8_t esm_cause);
+   void clear_pdn_session();
+   bool reject_initial_pdn(uint8_t esm_cause);
+   bool apn_allowed() const;
++  bool apn_attach_allowed() const;
++  bool pdn_session_confirmed() const;
+   uint64_t m_session_generation = 0;
+   std::string m_requested_apn;
+   std::string m_apn_source = "omitted";
+@@ -173,6 +186,10 @@ public:
+   bool m_waiting_esm = false;
+   bool m_session_requested = false;
+   bool m_pdn_rejected = false;
++  srsran::access_policy_t m_access_policy = srsran::ACCESS_POLICY_DENY;
++  srsran::access_policy_t m_pending_access_policy = srsran::ACCESS_POLICY_DENY;
++  access_reason_t m_access_reason = ACCESS_REASON_SESSION_UNAVAILABLE;
++  access_reason_t m_pending_access_reason = ACCESS_REASON_SESSION_UNAVAILABLE;
+ 
+ 
+   /***********************
+@@ -299,6 +316,7 @@ private:
+   std::string m_short_net_name;
+   bool        m_request_imeisv = false;
+   uint16_t    m_lac            = 0;
++  apn_policy::mismatch_policy_t m_apn_mismatch_policy = apn_policy::mismatch_policy_t::strict;
+ 
+   // Timers timeout values
+   uint16_t m_t3413 = 0;
+diff --git a/srsepc/hdr/mme/s1ap_common.h b/srsepc/hdr/mme/s1ap_common.h
+index 20726ff..d57f0fd 100644
+--- a/srsepc/hdr/mme/s1ap_common.h
++++ b/srsepc/hdr/mme/s1ap_common.h
+@@ -26,6 +26,7 @@
+ #include "srsran/asn1/liblte_mme.h"
+ #include "srsran/asn1/s1ap.h"
+ #include "srsran/common/security.h"
++#include "srsepc/hdr/mme/apn_policy.h"
+ #include <netinet/sctp.h>
+ #include <string.h>
+ 
+@@ -47,6 +48,7 @@ typedef struct {
+   std::string                         full_net_name;
+   std::string                         short_net_name;
+   std::string                         mme_apn;
++  apn_policy::mismatch_policy_t       apn_mismatch_policy;
+   bool                                pcap_enable;
+   std::string                         pcap_filename;
+   srsran::CIPHERING_ALGORITHM_ID_ENUM encryption_algo;
+diff --git a/srsepc/hdr/mme/ue_snapshot.h b/srsepc/hdr/mme/ue_snapshot.h
+index d6f18b6..d8cf195 100644
+--- a/srsepc/hdr/mme/ue_snapshot.h
++++ b/srsepc/hdr/mme/ue_snapshot.h
+@@ -41,6 +41,8 @@ inline std::string sessions(const std::set<const nas*>& contexts, const std::str
+   if (contexts.size() > 256) return ""; // Fail stale instead of publishing a partial current view.
+   const char* emm[] = {"deregistered", "common_procedure_initiated", "registered", "deregistered_initiated"};
+   const char* bearer[] = {"deactivated", "requested", "setup", "active"};
++  const char* access[] = {"deny", "normal", "restricted"};
++  const char* reason[] = {"session_unavailable", "apn_match", "apn_omitted", "apn_mismatch"};
+   std::ostringstream out;
+   out << '[';
+   bool first = true;
+@@ -48,7 +50,19 @@ inline std::string sessions(const std::set<const nas*>& contexts, const std::str
+     if (!context) continue;
+     const auto& n = *context;
+     if (n.m_emm_ctx.imsi > 999999999999999ULL) return "";
+-    if (unsigned(n.m_emm_ctx.state) >= EMM_STATE_N_ITEMS || unsigned(n.m_ecm_ctx.state) >= ECM_STATE_N_ITEMS) return "";
++    if (unsigned(n.m_emm_ctx.state) >= EMM_STATE_N_ITEMS || unsigned(n.m_ecm_ctx.state) >= ECM_STATE_N_ITEMS ||
++        unsigned(n.m_access_policy) > srsran::ACCESS_POLICY_RESTRICTED ||
++        unsigned(n.m_access_reason) > ACCESS_REASON_APN_MISMATCH) return "";
++    const bool unavailable = n.m_access_policy == srsran::ACCESS_POLICY_DENY &&
++                             n.m_access_reason == ACCESS_REASON_SESSION_UNAVAILABLE &&
++                             n.m_selected_apn.empty() && !n.m_apn_validated;
++    const bool normal = n.m_access_policy == srsran::ACCESS_POLICY_NORMAL &&
++                        (n.m_access_reason == ACCESS_REASON_APN_MATCH || n.m_access_reason == ACCESS_REASON_APN_OMITTED) &&
++                        !n.m_selected_apn.empty() && n.m_apn_validated;
++    const bool restricted = n.m_access_policy == srsran::ACCESS_POLICY_RESTRICTED &&
++                            n.m_access_reason == ACCESS_REASON_APN_MISMATCH &&
++                            !n.m_selected_apn.empty() && !n.m_apn_validated;
++    if (!(unavailable || normal || restricted)) return "";
+     if (!first) out << ',';
+     first = false;
+     char address[INET_ADDRSTRLEN] = {};
+@@ -67,6 +81,8 @@ inline std::string sessions(const std::set<const nas*>& contexts, const std::str
+         << ",\"apn_source\":" << quote(n.m_apn_source)
+         << ",\"selected_apn\":" << quote(n.m_selected_apn)
+         << ",\"apn_validated\":" << (n.m_apn_validated ? "true" : "false")
++        << ",\"access_policy\":" << quote(access[unsigned(n.m_access_policy)])
++        << ",\"access_reason\":" << quote(reason[unsigned(n.m_access_reason)])
+         << ",\"bearers\":[";
+     bool first_bearer = true;
+     for (unsigned i = 5; i < MAX_ERABS_PER_UE; ++i) {
+@@ -106,7 +122,7 @@ public:
+     const int64_t updated = unix_ms();
+     if (updated < started_) return false;
+     std::ostringstream out;
+-    out << "{\"schema_version\":1,\"run_id\":" << quote(run_)
++    out << "{\"schema_version\":2,\"run_id\":" << quote(run_)
+         << ",\"pid\":" << getpid() << ",\"started_at_unix_ms\":" << started_
+         << ",\"updated_at_unix_ms\":" << updated << ",\"sequence\":" << sequence_ + 1
+         << ",\"state\":" << quote(running ? "running" : "stopped") << ",\"sessions\":" << rows << "}\n";
+diff --git a/srsepc/hdr/spgw/gtpc.h b/srsepc/hdr/spgw/gtpc.h
+index 4076508..a63853e 100644
+--- a/srsepc/hdr/spgw/gtpc.h
++++ b/srsepc/hdr/spgw/gtpc.h
+@@ -47,7 +47,7 @@ public:
+   int       get_s11();
+   uint64_t  get_new_ctrl_teid();
+   uint64_t  get_new_user_teid();
+-  in_addr_t get_new_ue_ipv4(uint64_t imsi);
++  in_addr_t get_new_ue_ipv4(uint64_t imsi, srsran::access_policy_t access_policy);
+ 
+   void handle_s11_pdu(srsran::byte_buffer_t* msg);
+   virtual bool send_s11_pdu(const srsran::gtpc_pdu& pdu);
+@@ -66,8 +66,10 @@ public:
+       const srsran::gtpc_header&                                        header,
+       const srsran::gtpc_downlink_data_notification_failure_indication& not_fail);
+ 
+-  virtual bool queue_downlink_packet(uint32_t spgw_ctr_teid, srsran::unique_byte_buffer_t msg) override;
+-  virtual bool send_downlink_data_notification(uint32_t spgw_ctr_teid) override;
++  virtual bool queue_downlink_packet(uint32_t spgw_ctr_teid,
++                                      uint64_t session_generation,
++                                      srsran::unique_byte_buffer_t msg) override;
++  virtual bool send_downlink_data_notification(uint32_t spgw_ctr_teid, uint64_t session_generation) override;
+ 
+   spgw_tunnel_ctx_t* create_gtpc_ctx(const srsran::gtpc_create_session_request& cs_req);
+   bool               delete_gtpc_ctx(uint32_t ctrl_teid);
+@@ -91,8 +93,10 @@ public:
+                                                              // reply ctrl TEID, UE IP, etc.
+ 
+   std::set<uint32_t>                 m_ue_ip_addr_pool;
+-  std::set<uint32_t>                 m_dynamic_ip_in_use;
++  std::set<uint32_t>                 m_restricted_ip_addr_pool;
++  std::map<uint32_t, srsran::access_policy_t> m_dynamic_ip_in_use;
+   std::map<uint64_t, struct in_addr> m_imsi_to_ip;
++  apn_policy::mismatch_policy_t m_apn_mismatch_policy = apn_policy::mismatch_policy_t::strict;
+ 
+   srslog::basic_logger& m_logger = srslog::fetch_basic_logger("SPGW GTPC");
+ };
+diff --git a/srsepc/hdr/spgw/gtpu.h b/srsepc/hdr/spgw/gtpu.h
+index 27ef404..a24d946 100644
+--- a/srsepc/hdr/spgw/gtpu.h
++++ b/srsepc/hdr/spgw/gtpu.h
+@@ -49,19 +49,40 @@ public:
+ 
+   void handle_sgi_pdu(srsran::unique_byte_buffer_t msg);
+   void handle_s1u_pdu(srsran::byte_buffer_t* msg);
+-  void send_s1u_pdu(srsran::gtp_fteid_t enb_fteid, srsran::byte_buffer_t* msg);
++  bool send_s1u_pdu(in_addr_t ue_ipv4, uint64_t session_generation, srsran::byte_buffer_t* msg);
+ 
+   virtual in_addr_t get_s1u_addr();
+ 
+-  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtp_fteid_t dw_user_fteid, uint32_t up_ctr_fteid, uint32_t up_user_teid);
++  virtual bool install_gtpc_tunnel(in_addr_t ue_ipv4,
++                                   uint32_t up_ctrl_teid,
++                                   uint32_t up_user_teid,
++                                   uint64_t session_generation,
++                                   srsran::access_policy_t access_policy);
++  virtual bool modify_gtpu_tunnel(in_addr_t ue_ipv4,
++                                  srsran::gtp_fteid_t dw_user_fteid,
++                                  uint32_t up_ctrl_teid,
++                                  uint32_t up_user_teid,
++                                  uint64_t session_generation,
++                                  srsran::access_policy_t access_policy);
+   virtual bool delete_gtpu_tunnel(in_addr_t ue_ipv4);
+   virtual bool delete_gtpc_tunnel(in_addr_t ue_ipv4);
+-  virtual void send_all_queued_packets(srsran::gtp_fteid_t                       dw_user_fteid,
++  virtual void send_all_queued_packets(in_addr_t ue_ipv4,
++                                       uint64_t session_generation,
+                                        std::queue<srsran::unique_byte_buffer_t>& pkt_queue);
+ 
+   // SPGW owns lifecycle changes; serialize explicit test/control callers too.
++  struct access_owner_t {
++    uint32_t up_ctrl_teid = 0;
++    uint32_t up_user_teid = 0;
++    uint64_t session_generation = 0;
++    srsran::access_policy_t access_policy = srsran::ACCESS_POLICY_DENY;
++    srsran::gtp_fteid_t downlink_fteid = {};
++    bool active = false;
++  };
+   std::mutex m_tunnel_mutex;
++  std::map<in_addr_t, access_owner_t> m_ip_to_access_owner;
+   std::map<uint32_t, in_addr_t> m_up_teid_to_ip;
++  bool send_s1u_pdu_locked(const access_owner_t& owner, srsran::byte_buffer_t* msg);
+   bool valid_uplink(uint32_t teid, const uint8_t* data, size_t size);
+   bool valid_uplink_locked(uint32_t teid, const uint8_t* data, size_t size);
+ 
+diff --git a/srsepc/hdr/spgw/spgw.h b/srsepc/hdr/spgw/spgw.h
+index ed9d579..a921d9b 100644
+--- a/srsepc/hdr/spgw/spgw.h
++++ b/srsepc/hdr/spgw/spgw.h
+@@ -32,6 +32,7 @@
+ #include "srsran/common/buffer_pool.h"
+ #include "srsran/common/threads.h"
+ #include "srsran/srslog/srslog.h"
++#include "srsepc/hdr/mme/apn_policy.h"
+ #include <cstddef>
+ #include <queue>
+ 
+@@ -46,10 +47,13 @@ typedef struct {
+   std::string sgi_if_addr;
+   std::string sgi_if_name;
+   uint32_t    max_paging_queue;
++  apn_policy::mismatch_policy_t apn_mismatch_policy;
+ } spgw_args_t;
+ 
+ typedef struct spgw_tunnel_ctx {
+   uint64_t                                 imsi;
++  uint64_t                                 session_generation;
++  srsran::access_policy_t                  access_policy;
+   in_addr_t                                ue_ipv4;
+   uint8_t                                  ebi;
+   srsran::gtp_fteid_t                      up_ctrl_fteid;
+diff --git a/srsepc/src/main.cc b/srsepc/src/main.cc
+index 982f085..83ca9f0 100644
+--- a/srsepc/src/main.cc
++++ b/srsepc/src/main.cc
+@@ -32,6 +32,7 @@
+ #include "srsran/support/emergency_handlers.h"
+ #include "srsran/support/signal_handler.h"
+ #include <boost/program_options.hpp>
++#include <cstdlib>
+ #include <iostream>
+ 
+ using namespace std;
+@@ -393,6 +394,15 @@ int main(int argc, char* argv[])
+   srsran_debug_handle_crash(argc, argv);
+ 
+   all_args_t args = {};
++  // Read once before any HSS/MME/SPGW socket, TUN or service initialization.
++  const char* mismatch_value = std::getenv("LTE_APN_MISMATCH_POLICY");
++  apn_policy::mismatch_policy_t mismatch_policy;
++  if (!apn_policy::parse_mismatch_policy(mismatch_value, mismatch_policy)) {
++    cerr << "Invalid LTE_APN_MISMATCH_POLICY; expected strict or restricted" << endl;
++    return SRSRAN_ERROR;
++  }
++  args.mme_args.s1ap_args.apn_mismatch_policy = mismatch_policy;
++  args.spgw_args.apn_mismatch_policy = mismatch_policy;
+   parse_args(&args, argc, argv);
+ 
+   // Setup logging.
+diff --git a/srsepc/src/mme/mme.cc b/srsepc/src/mme/mme.cc
+index 28c0430..6d73d2d 100644
+--- a/srsepc/src/mme/mme.cc
++++ b/srsepc/src/mme/mme.cc
+@@ -187,6 +187,7 @@ void mme::run_thread()
+     } else {
+       m_s1ap_logger.debug("No data from select.");
+     }
++    m_mme_gtpc->retry_pending_deletes();
+     if (snapshot.enabled()) snapshot.publish(m_s1ap->snapshot_sessions(snapshot.run_id()), true);
+   }
+   if (snapshot.enabled()) snapshot.publish("[]", false, true);
+diff --git a/srsepc/src/mme/mme_gtpc.cc b/srsepc/src/mme/mme_gtpc.cc
+index 33b7ad8..021bf27 100644
+--- a/srsepc/src/mme/mme_gtpc.cc
++++ b/srsepc/src/mme/mme_gtpc.cc
+@@ -110,6 +110,10 @@ bool mme_gtpc::send_s11_pdu(const srsran::gtpc_pdu& pdu)
+ void mme_gtpc::handle_s11_pdu(srsran::byte_buffer_t* msg)
+ {
+   m_logger.debug("Received S11 message");
++  if (msg == nullptr || msg->N_bytes != sizeof(srsran::gtpc_pdu)) {
++    m_logger.warning("Discarding S11 datagram with invalid length");
++    return;
++  }
+ 
+   srsran::gtpc_pdu* pdu;
+   pdu = (srsran::gtpc_pdu*)msg->msg;
+@@ -130,8 +134,14 @@ void mme_gtpc::handle_s11_pdu(srsran::byte_buffer_t* msg)
+   return;
+ }
+ 
+-bool mme_gtpc::send_create_session_request(uint64_t imsi)
++bool mme_gtpc::send_create_session_request(uint64_t imsi,
++                                               uint64_t session_generation,
++                                               srsran::access_policy_t access_policy)
+ {
++  if (session_generation == 0 ||
++      (access_policy != srsran::ACCESS_POLICY_NORMAL && access_policy != srsran::ACCESS_POLICY_RESTRICTED)) return false;
++  // Never evict unresolved cancellation ownership to admit another session.
++  if (m_cancelled_creates.size() >= 1024 || m_next_ctrl_teid == 0) return false;
+   m_logger.info("Sending Create Session Request.");
+   srsran::console("Sending Create Session Request.\n");
+   struct srsran::gtpc_pdu cs_req_pdu;
+@@ -147,6 +157,9 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
+   cs_req_pdu.header.type         = srsran::GTPC_MSG_TYPE_CREATE_SESSION_REQUEST;
+ 
+   // Setup GTP-C Create Session Request IEs
++  cs_req->access.version = srsran::S11_ACCESS_METADATA_VERSION;
++  cs_req->access.policy = access_policy;
++  cs_req->access.session_generation = session_generation;
+   cs_req->imsi = imsi;
+   // Control TEID allocated
+   cs_req->sender_f_teid.teid = get_new_ctrl_teid();
+@@ -171,6 +184,8 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
+   if (it != m_imsi_to_gtpc_ctx.end()) {
+     m_logger.warning("Create Session Request being called for an UE with an active GTP-C connection.");
+     m_logger.warning("Deleting previous GTP-C connection.");
++    if (it->second.sgw_ctr_fteid.teid == 0)
++      m_cancelled_creates.emplace(it->second.mme_ctr_fteid.teid, it->second);
+     std::map<uint32_t, uint64_t>::iterator jt = m_mme_ctr_teid_to_imsi.find(it->second.mme_ctr_fteid.teid);
+     if (jt == m_mme_ctr_teid_to_imsi.end()) {
+       m_logger.error("Could not find IMSI from MME Ctrl TEID. MME Ctr TEID: %d", it->second.mme_ctr_fteid.teid);
+@@ -189,6 +204,8 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
+   gtpc_ctx_t gtpc_ctx;
+   std::memset(&gtpc_ctx, 0, sizeof(gtpc_ctx_t));
+   gtpc_ctx.mme_ctr_fteid = cs_req->sender_f_teid;
++  gtpc_ctx.session_generation = session_generation;
++  gtpc_ctx.access_policy = access_policy;
+   m_imsi_to_gtpc_ctx.emplace(imsi, gtpc_ctx);
+ 
+   // Send msg to SPGW
+@@ -202,102 +219,81 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
+ 
+ bool mme_gtpc::handle_create_session_response(srsran::gtpc_pdu* cs_resp_pdu)
+ {
+-  struct srsran::gtpc_create_session_response* cs_resp = &cs_resp_pdu->choice.create_session_response;
+-  m_logger.info("Received Create Session Response");
+-  srsran::console("Received Create Session Response\n");
+-  if (cs_resp_pdu->header.type != srsran::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE) {
+-    m_logger.warning("Could not create GTPC session. Not a create session response");
+-    // TODO Handle error
+-    return false;
+-  }
+-  if (cs_resp->cause.cause_value != srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED) {
+-    m_logger.warning("Could not create GTPC session. Create Session Request not accepted");
+-    auto found = m_mme_ctr_teid_to_imsi.find(cs_resp_pdu->header.teid);
+-    if (found != m_mme_ctr_teid_to_imsi.end()) {
+-      const uint64_t imsi = found->second;
+-      m_mme_ctr_teid_to_imsi.erase(found);
+-      m_imsi_to_gtpc_ctx.erase(imsi);
+-      nas* context = m_s1ap->find_nas_ctx_from_imsi(imsi);
+-      if (context) context->reject_initial_pdn(LIBLTE_MME_ESM_CAUSE_INSUFFICIENT_RESOURCES);
++  if (cs_resp_pdu == nullptr || cs_resp_pdu->header.type != srsran::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE) return false;
++  srsran::gtpc_create_session_response* cs_resp = &cs_resp_pdu->choice.create_session_response;
++  auto id_it = m_mme_ctr_teid_to_imsi.find(cs_resp_pdu->header.teid);
++  if (id_it == m_mme_ctr_teid_to_imsi.end()) {
++    auto cancelled = m_cancelled_creates.find(cs_resp_pdu->header.teid);
++    if (cancelled == m_cancelled_creates.end() || !srsran::valid_access_metadata(cs_resp->access) ||
++        cs_resp->access.session_generation != cancelled->second.session_generation ||
++        cs_resp->access.policy != cancelled->second.access_policy) return false;
++    if (cs_resp->cause.cause_value == srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED) {
++      if (!cs_resp->sender_f_teid_present || cs_resp->sender_f_teid.teid == 0) return false;
++      cancelled->second.sgw_ctr_fteid = cs_resp->sender_f_teid;
++      if (!send_delete_session_teid(cs_resp->sender_f_teid.teid)) return false;
+     }
++    m_cancelled_creates.erase(cancelled);
+     return false;
+   }
++  const uint64_t imsi = id_it->second;
++  auto ctx_it = m_imsi_to_gtpc_ctx.find(imsi);
++  if (ctx_it == m_imsi_to_gtpc_ctx.end() || ctx_it->second.mme_ctr_fteid.teid != cs_resp_pdu->header.teid) return false;
++  const uint64_t generation = ctx_it->second.session_generation;
++  const srsran::access_policy_t expected_policy = ctx_it->second.access_policy;
++  nas* nas_ctx = m_s1ap->find_nas_ctx_from_imsi(imsi);
+ 
+-  // Get IMSI from the control TEID
+-  std::map<uint32_t, uint64_t>::iterator id_it = m_mme_ctr_teid_to_imsi.find(cs_resp_pdu->header.teid);
+-  if (id_it == m_mme_ctr_teid_to_imsi.end()) {
+-    // A response can race Detach/replacement of a pending request. Reclaim the
+-    // now-orphan SPGW session using its actual sender TEID, not a zero/old TEID.
+-    if (cs_resp->sender_f_teid.teid != 0) {
+-      srsran::gtpc_pdu cancel{};
+-      cancel.header.type = srsran::GTPC_MSG_TYPE_DELETE_SESSION_REQUEST;
+-      cancel.header.teid_present = true;
+-      cancel.header.teid = cs_resp->sender_f_teid.teid;
+-      send_s11_pdu(cancel);
++  auto fail = [&](bool delete_remote) {
++    if (delete_remote && cs_resp->sender_f_teid_present && cs_resp->sender_f_teid.teid != 0) {
++      if (!send_delete_session_teid(cs_resp->sender_f_teid.teid)) {
++        gtpc_ctx_t pending = ctx_it->second;
++        pending.sgw_ctr_fteid = cs_resp->sender_f_teid;
++        m_cancelled_creates[cs_resp_pdu->header.teid] = pending;
++      }
+     }
++    m_mme_ctr_teid_to_imsi.erase(id_it);
++    m_imsi_to_gtpc_ctx.erase(ctx_it);
++    // Notify before clearing NAS request state; fail_pdn_session is generation
++    // guarded and sends the reject/release exactly once for this transaction.
++    if (nas_ctx != nullptr) nas_ctx->fail_pdn_session(generation, 26);
+     return false;
+-  }
+-  uint64_t imsi = id_it->second;
+-
+-  m_logger.info("MME GTPC Ctrl TEID %" PRIu64 ", IMSI %" PRIu64 "", cs_resp_pdu->header.teid, imsi);
++  };
+ 
+-  // Get S-GW Control F-TEID
+-  srsran::gtp_fteid_t sgw_ctr_fteid = {};
+-  sgw_ctr_fteid.teid                = cs_resp->sender_f_teid.teid;
+-  sgw_ctr_fteid.ipv4 = 0; // TODO This is not used for now. In the future it will be obtained from the socket addr_info
+-
+-  // Get S-GW S1-u F-TEID
+-  if (cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid_present == false) {
+-    m_logger.error("Did not receive SGW S1-U F-TEID in create session response");
+-    return false;
++  if (!srsran::valid_access_metadata(cs_resp->access) ||
++      cs_resp->access.session_generation != generation || cs_resp->access.policy != expected_policy) {
++    m_logger.warning("Rejecting Create Session Response with stale or invalid access metadata");
++    m_cancelled_creates.emplace(cs_resp_pdu->header.teid, ctx_it->second);
++    return fail(false);
+   }
+-  srsran::console("Create Session Response -- SPGW control TEID %d\n", sgw_ctr_fteid.teid);
+-  m_logger.info("Create Session Response -- SPGW control TEID %d", sgw_ctr_fteid.teid);
+-  in_addr s1u_addr;
+-  s1u_addr.s_addr = cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid.ipv4;
+-  srsran::console("Create Session Response -- SPGW S1-U Address: %s\n", inet_ntoa(s1u_addr));
+-  m_logger.info("Create Session Response -- SPGW S1-U Address: %s", inet_ntoa(s1u_addr));
+-
+-  // Check UE Ipv4 address was allocated
+-  if (cs_resp->paa_present != true) {
+-    m_logger.error("PDN Adress Allocation not present");
+-    return false;
++  if (ctx_it->second.sgw_ctr_fteid.teid != 0) return false; // Duplicate completed response.
++  if (cs_resp->cause.cause_value != srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED) {
++    m_logger.warning("Create Session Request not accepted");
++    return fail(false);
+   }
+-  if (cs_resp->paa.pdn_type != srsran::GTPC_PDN_TYPE_IPV4 || !cs_resp->paa.ipv4_present || cs_resp->paa.ipv4 == 0) {
+-    m_logger.error("IPv6 not supported yet");
+-    return false;
++  if (!cs_resp->sender_f_teid_present || cs_resp->sender_f_teid.teid == 0 ||
++      !cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid_present || !cs_resp->paa_present ||
++      cs_resp->paa.pdn_type != srsran::GTPC_PDN_TYPE_IPV4 || !cs_resp->paa.ipv4_present || cs_resp->paa.ipv4 == 0) {
++    m_logger.warning("Incomplete Create Session Response");
++    return fail(true);
+   }
++  if (nas_ctx == nullptr || nas_ctx->m_session_generation != generation) return fail(true);
+ 
+-  // Save create session response info to E-RAB context
+-  nas* nas_ctx = m_s1ap->find_nas_ctx_from_imsi(imsi);
+-  if (nas_ctx == NULL) {
+-    m_logger.error("Could not find UE context. IMSI %015" PRIu64 "", imsi);
+-    return false;
+-  }
+   emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
+-  ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
+-
+-  // Save UE IP to nas ctxt
+   emm_ctx->ue_ip.s_addr = cs_resp->paa.ipv4;
+-  srsran::console("SPGW Allocated IP %s to IMSI %015" PRIu64 "\n", inet_ntoa(emm_ctx->ue_ip), emm_ctx->imsi);
++  if (!nas_ctx->confirm_pdn_session(generation, expected_policy)) {
++    emm_ctx->ue_ip.s_addr = 0;
++    return fail(true);
++  }
+ 
+-  // Save SGW ctrl F-TEID in GTP-C context
+-  std::map<uint64_t, struct gtpc_ctx>::iterator it_g = m_imsi_to_gtpc_ctx.find(imsi);
+-  if (it_g == m_imsi_to_gtpc_ctx.end()) {
+-    // Could not find GTP-C Context
+-    m_logger.error("Could not find GTP-C context");
+-    return false;
++  srsran::gtp_fteid_t sgw_ctr_fteid = cs_resp->sender_f_teid;
++  ctx_it->second.sgw_ctr_fteid = sgw_ctr_fteid;
++  emm_ctx->sgw_ctrl_fteid = cs_resp->sender_f_teid;
++  const int default_bearer = 5;
++  esm_ctx_t* esm_ctx = &nas_ctx->m_esm_ctx[default_bearer];
++  esm_ctx->pdn_addr_alloc = cs_resp->paa;
++  esm_ctx->sgw_s1u_fteid = cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid;
++  if (!m_s1ap->m_s1ap_ctx_mngmt_proc->send_initial_context_setup_request(nas_ctx, default_bearer)) {
++    return fail(true);
+   }
+-  gtpc_ctx_t* gtpc_ctx    = &it_g->second;
+-  gtpc_ctx->sgw_ctr_fteid = sgw_ctr_fteid;
+-
+-  // Set EPS bearer context
+-  // TODO default EPS bearer is hard-coded
+-  int        default_bearer = 5;
+-  esm_ctx_t* esm_ctx        = &nas_ctx->m_esm_ctx[default_bearer];
+-  esm_ctx->pdn_addr_alloc   = cs_resp->paa;
+-  esm_ctx->sgw_s1u_fteid    = cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid;
+-  m_s1ap->m_s1ap_ctx_mngmt_proc->send_initial_context_setup_request(nas_ctx, default_bearer);
+   return true;
+ }
+ 
+@@ -354,7 +350,9 @@ bool mme_gtpc::send_delete_session_request(uint64_t imsi)
+ {
+   // The NAS context may survive Detach; it must stop advertising the freed IP.
+   nas* context = m_s1ap->find_nas_ctx_from_imsi(imsi);
+-  if (context) context->clear_pdn_session();
++  auto owned = m_imsi_to_gtpc_ctx.find(imsi);
++  if (context && (owned == m_imsi_to_gtpc_ctx.end() ||
++                  context->m_session_generation == owned->second.session_generation)) context->clear_pdn_session();
+ 
+   m_logger.info("Sending GTP-C Delete Session Request request. IMSI %" PRIu64 "", imsi);
+   srsran::gtpc_pdu del_req_pdu;
+@@ -380,8 +378,15 @@ bool mme_gtpc::send_delete_session_request(uint64_t imsi)
+   del_req->cause.cause_value                   = srsran::GTPC_CAUSE_VALUE_ISR_DEACTIVATION;
+   m_logger.info("GTP-C Delete Session Request -- S-GW Control TEID %d", sgw_ctr_fteid.teid);
+ 
+-  // Send msg to SPGW
+-  send_s11_pdu(del_req_pdu);
++  // A pending Create has no known remote TEID yet. Reclaim its eventual
++  // response by the saved transaction instead of sending a Delete to TEID 0.
++  bool sent = true;
++  if (sgw_ctr_fteid.teid == 0)
++    m_cancelled_creates.emplace(mme_ctr_fteid.teid, it_ctx->second);
++  else {
++    sent = send_delete_session_teid(sgw_ctr_fteid.teid);
++    if (!sent) m_cancelled_creates[mme_ctr_fteid.teid] = it_ctx->second;
++  }
+ 
+   // Delete GTP-C context
+   std::map<uint32_t, uint64_t>::iterator it_imsi = m_mme_ctr_teid_to_imsi.find(mme_ctr_fteid.teid);
+@@ -391,7 +396,36 @@ bool mme_gtpc::send_delete_session_request(uint64_t imsi)
+     m_mme_ctr_teid_to_imsi.erase(it_imsi);
+   }
+   m_imsi_to_gtpc_ctx.erase(it_ctx);
+-  return true;
++  return sent;
++}
++
++bool mme_gtpc::send_delete_session_teid(uint32_t teid)
++{
++  if (teid == 0) return false;
++  srsran::gtpc_pdu pdu{};
++  pdu.header.teid_present = true;
++  pdu.header.teid = teid;
++  pdu.header.type = srsran::GTPC_MSG_TYPE_DELETE_SESSION_REQUEST;
++  pdu.choice.delete_session_request.cause.cause_value = srsran::GTPC_CAUSE_VALUE_ISR_DEACTIVATION;
++  // Cleanup must not block the MME event loop when the peer queue is full.
++  return sendto(m_s11, &pdu, sizeof(pdu), MSG_DONTWAIT,
++                (const sockaddr*)&m_spgw_addr, sizeof(m_spgw_addr)) == sizeof(pdu);
++}
++
++void mme_gtpc::retry_pending_deletes()
++{
++  const auto now = std::chrono::steady_clock::now();
++  if (now < m_next_delete_retry) return;
++  m_next_delete_retry = now + std::chrono::seconds(1);
++  size_t attempts = 0;
++  for (auto it = m_cancelled_creates.begin(); it != m_cancelled_creates.end() && attempts < 16;) {
++    if (it->second.sgw_ctr_fteid.teid == 0) { ++it; continue; }
++    ++attempts;
++    if (send_delete_session_teid(it->second.sgw_ctr_fteid.teid))
++      it = m_cancelled_creates.erase(it);
++    else
++      ++it;
++  }
+ }
+ 
+ void mme_gtpc::send_release_access_bearers_request(uint64_t imsi)
+diff --git a/srsepc/src/mme/nas.cc b/srsepc/src/mme/nas.cc
+index 0d22867..b78f1a4 100644
+--- a/srsepc/src/mme/nas.cc
++++ b/srsepc/src/mme/nas.cc
+@@ -68,7 +68,8 @@ nas::nas(const nas_init_t& args, const nas_if_t& itf) :
+   m_short_net_name(args.short_net_name),
+   m_t3413(args.paging_timer),
+   m_request_imeisv(args.request_imeisv),
+-  m_lac(args.lac)
++  m_lac(args.lac),
++  m_apn_mismatch_policy(args.apn_mismatch_policy)
+ {
+   m_session_generation = next_session_generation.fetch_add(1);
+   m_sec_ctx.integ_algo  = args.integ_algo;
+@@ -83,6 +84,8 @@ void nas::reset()
+   m_selected_apn.clear();
+   m_apn_source = "omitted";
+   m_apn_present = m_apn_validated = m_security_ready = m_waiting_esm = m_session_requested = m_pdn_rejected = false;
++  m_access_policy = m_pending_access_policy = srsran::ACCESS_POLICY_DENY;
++  m_access_reason = m_pending_access_reason = ACCESS_REASON_SESSION_UNAVAILABLE;
+   m_emm_ctx = {};
+   m_ecm_ctx = {};
+   for (int i = 0; i < MAX_ERABS_PER_UE; ++i) {
+@@ -108,6 +111,8 @@ void nas::set_pdn_apn(const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& requ
+   m_emm_ctx.ue_ip.s_addr = 0;
+   m_selected_apn.clear();
+   m_apn_validated = m_security_ready = m_waiting_esm = m_session_requested = m_pdn_rejected = false;
++  m_access_policy = m_pending_access_policy = srsran::ACCESS_POLICY_DENY;
++  m_access_reason = m_pending_access_reason = ACCESS_REASON_SESSION_UNAVAILABLE;
+ }
+ 
+ bool nas::apn_allowed() const
+@@ -115,21 +120,66 @@ bool nas::apn_allowed() const
+   return apn_policy::matches(m_apn_present, m_requested_apn, m_apn);
+ }
+ 
++bool nas::apn_attach_allowed() const
++{
++  if (apn_allowed()) return true;
++  std::string requested, configured;
++  return m_apn_present && m_apn_mismatch_policy == apn_policy::mismatch_policy_t::restricted &&
++         apn_policy::normalize(m_requested_apn, requested) && apn_policy::normalize(m_apn, configured);
++}
++
++bool nas::pdn_session_confirmed() const
++{
++  return m_session_requested && m_emm_ctx.ue_ip.s_addr != 0 &&
++         (m_access_policy == srsran::ACCESS_POLICY_NORMAL ||
++          m_access_policy == srsran::ACCESS_POLICY_RESTRICTED);
++}
++
+ bool nas::start_pdn_session()
+ {
+   if (!m_security_ready || m_waiting_esm || m_session_requested || m_pdn_rejected) return false;
+-  if (!apn_allowed()) return reject_initial_pdn(27);
+-  apn_policy::normalize(m_apn, m_selected_apn);
+-  m_apn_validated = true;
++  if (!apn_attach_allowed()) return reject_initial_pdn(27);
++  if (apn_allowed()) {
++    m_pending_access_policy = srsran::ACCESS_POLICY_NORMAL;
++    m_pending_access_reason = m_apn_present ? ACCESS_REASON_APN_MATCH : ACCESS_REASON_APN_OMITTED;
++  } else {
++    m_pending_access_policy = srsran::ACCESS_POLICY_RESTRICTED;
++    m_pending_access_reason = ACCESS_REASON_APN_MISMATCH;
++  }
+   m_session_requested = true;
+-  if (!m_gtpc->send_create_session_request(m_emm_ctx.imsi)) return reject_initial_pdn(26);
++  if (!m_gtpc->send_create_session_request(m_emm_ctx.imsi, m_session_generation, m_pending_access_policy)) {
++    m_session_requested = false;
++    return reject_initial_pdn(26);
++  }
++  return true;
++}
++
++bool nas::confirm_pdn_session(uint64_t generation, srsran::access_policy_t policy)
++{
++  if (!m_session_requested || generation != m_session_generation || policy != m_pending_access_policy ||
++      (policy != srsran::ACCESS_POLICY_NORMAL && policy != srsran::ACCESS_POLICY_RESTRICTED)) return false;
++  std::string selected;
++  if (!apn_policy::normalize(m_apn, selected)) return false;
++  m_selected_apn = selected;
++  m_access_policy = policy;
++  m_access_reason = m_pending_access_reason;
++  m_apn_validated = policy == srsran::ACCESS_POLICY_NORMAL;
+   return true;
+ }
+ 
++bool nas::fail_pdn_session(uint64_t generation, uint8_t esm_cause)
++{
++  if (generation != m_session_generation || !m_session_requested) return false;
++  m_session_requested = false;
++  return reject_initial_pdn(esm_cause);
++}
++
+ void nas::clear_pdn_session()
+ {
+   m_session_requested = m_waiting_esm = m_apn_validated = false;
+   m_selected_apn.clear();
++  m_access_policy = m_pending_access_policy = srsran::ACCESS_POLICY_DENY;
++  m_access_reason = m_pending_access_reason = ACCESS_REASON_SESSION_UNAVAILABLE;
+   m_emm_ctx.state = EMM_STATE_DEREGISTERED;
+   m_emm_ctx.ue_ip.s_addr = 0;
+   m_emm_ctx.sgw_ctrl_fteid = {};
+@@ -607,7 +657,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*
+       return false;
+     }
+     nas_ctx->m_security_ready = true;
+-    if (!nas_ctx->apn_allowed()) {
++    if (!nas_ctx->apn_attach_allowed()) {
+       ++sec_ctx->ul_nas_count;
+       return nas_ctx->reject_initial_pdn(27);
+     }
+@@ -1247,7 +1297,7 @@ bool nas::handle_security_mode_complete(srsran::byte_buffer_t* nas_rx)
+ {
+   if (m_pdn_rejected || m_session_requested) return false;
+   m_security_ready = true;
+-  if (!apn_allowed()) return reject_initial_pdn(27);
++  if (!apn_attach_allowed()) return reject_initial_pdn(27);
+ 
+   LIBLTE_MME_SECURITY_MODE_COMPLETE_MSG_STRUCT sm_comp = {};
+ 
+@@ -1291,7 +1341,7 @@ bool nas::handle_security_mode_complete(srsran::byte_buffer_t* nas_rx)
+ 
+ bool nas::handle_attach_complete(srsran::byte_buffer_t* nas_rx)
+ {
+-  if (!m_apn_validated || m_pdn_rejected || m_emm_ctx.ue_ip.s_addr == 0) return false;
++  if (!pdn_session_confirmed() || m_pdn_rejected) return false;
+   LIBLTE_MME_ATTACH_COMPLETE_MSG_STRUCT                            attach_comp;
+   uint8_t                                                          pd, msg_type;
+   LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_ACCEPT_MSG_STRUCT act_bearer;
+@@ -1357,7 +1407,7 @@ bool nas::handle_esm_information_response(srsran::byte_buffer_t* nas_rx)
+     m_apn_source = "esm_information_response";
+   }
+   m_waiting_esm = false;
+-  if (!apn_allowed()) return reject_initial_pdn(27);
++  if (!apn_attach_allowed()) return reject_initial_pdn(27);
+   m_hss->gen_update_loc_answer(m_emm_ctx.imsi, &m_esm_ctx[5].qci);
+   return start_pdn_session();
+ }
+@@ -1662,6 +1712,7 @@ bool nas::pack_esm_information_request(srsran::byte_buffer_t* nas_buffer)
+ 
+ bool nas::pack_attach_accept(srsran::byte_buffer_t* nas_buffer)
+ {
++  if (!pdn_session_confirmed()) return false;
+   m_logger.info("Packing Attach Accept");
+ 
+   LIBLTE_MME_ATTACH_ACCEPT_MSG_STRUCT                               attach_accept;
+@@ -1749,7 +1800,7 @@ bool nas::pack_attach_accept(srsran::byte_buffer_t* nas_buffer)
+   act_def_eps_bearer_context_req.eps_qos.br_ext_present = false;
+ 
+   // set apn
+-  strncpy(act_def_eps_bearer_context_req.apn.apn, m_apn.c_str(), LIBLTE_STRING_LEN - 1);
++  strncpy(act_def_eps_bearer_context_req.apn.apn, m_selected_apn.c_str(), LIBLTE_STRING_LEN - 1);
+   act_def_eps_bearer_context_req.proc_transaction_id = m_emm_ctx.procedure_transaction_id; // TODO
+ 
+   // Set DNS server
+diff --git a/srsepc/src/mme/s1ap_nas_transport.cc b/srsepc/src/mme/s1ap_nas_transport.cc
+index f23f6d7..0093fe3 100644
+--- a/srsepc/src/mme/s1ap_nas_transport.cc
++++ b/srsepc/src/mme/s1ap_nas_transport.cc
+@@ -74,6 +74,7 @@ void s1ap_nas_transport::init()
+   m_nas_init.mme_group      = m_s1ap->m_s1ap_args.mme_group;
+   m_nas_init.tac            = m_s1ap->m_s1ap_args.tac;
+   m_nas_init.apn            = m_s1ap->m_s1ap_args.mme_apn;
++  m_nas_init.apn_mismatch_policy = m_s1ap->m_s1ap_args.apn_mismatch_policy;
+   m_nas_init.dns            = m_s1ap->m_s1ap_args.dns_addr;
+   m_nas_init.full_net_name  = m_s1ap->m_s1ap_args.full_net_name;
+   m_nas_init.short_net_name = m_s1ap->m_s1ap_args.short_net_name;
+diff --git a/srsepc/src/spgw/gtpc.cc b/srsepc/src/spgw/gtpc.cc
+index 89140ef..08b29de 100644
+--- a/srsepc/src/spgw/gtpc.cc
++++ b/srsepc/src/spgw/gtpc.cc
+@@ -32,6 +32,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/socket.h>
+ #include <sys/un.h>
++#include <vector>
+ 
+ namespace srsepc {
+ 
+@@ -61,6 +62,7 @@ int spgw::gtpc::init(spgw_args_t*                           args,
+   // Init interfaces
+   m_spgw = spgw;
+   m_gtpu = gtpu;
++  m_apn_mismatch_policy = args->apn_mismatch_policy;
+ 
+   // Init S11 interface
+   err = init_s11(args);
+@@ -86,14 +88,12 @@ int spgw::gtpc::init(spgw_args_t*                           args,
+ 
+ void spgw::gtpc::stop()
+ {
+-  std::map<uint32_t, spgw_tunnel_ctx*>::iterator it = m_teid_to_tunnel_ctx.begin();
+-  while (it != m_teid_to_tunnel_ctx.end()) {
++  while (!m_teid_to_tunnel_ctx.empty()) {
++    auto it = m_teid_to_tunnel_ctx.begin();
+     m_logger.info("Deleting SP-GW GTP-C Tunnel. IMSI: %015" PRIu64 "", it->second->imsi);
+     srsran::console("Deleting SP-GW GTP-C Tunnel. IMSI: %015" PRIu64 "\n", it->second->imsi);
+-    delete it->second;
+-    m_teid_to_tunnel_ctx.erase(it++);
++    delete_gtpc_ctx(it->first);
+   }
+-  return;
+ }
+ 
+ int spgw::gtpc::init_s11(spgw_args_t* args)
+@@ -150,7 +150,11 @@ bool spgw::gtpc::send_s11_pdu(const srsran::gtpc_pdu& pdu)
+ 
+ void spgw::gtpc::handle_s11_pdu(srsran::byte_buffer_t* msg)
+ {
+-  // TODO add deserialization code here
++  // Local S11 transports the complete POD and rejects legacy/truncated datagrams.
++  if (msg == nullptr || msg->N_bytes != sizeof(srsran::gtpc_pdu)) {
++    m_logger.warning("Discarding S11 datagram with invalid length");
++    return;
++  }
+   srsran::gtpc_pdu* pdu = (srsran::gtpc_pdu*)msg->msg;
+   srsran::console("Received GTP-C PDU. Message type: %s\n", srsran::gtpc_msg_type_to_str(pdu->header.type));
+   m_logger.debug("Received GTP-C PDU. Message type: %s", srsran::gtpc_msg_type_to_str(pdu->header.type));
+@@ -182,61 +186,53 @@ void spgw::gtpc::handle_s11_pdu(srsran::byte_buffer_t* msg)
+ 
+ void spgw::gtpc::handle_create_session_request(const struct srsran::gtpc_create_session_request& cs_req)
+ {
+-  m_logger.info("SPGW Received Create Session Request");
+-  spgw_tunnel_ctx_t* tunnel_ctx;
+-  int                default_bearer_id = 5;
+-  // Check if IMSI has active GTP-C and/or GTP-U
+-  bool gtpc_present = m_imsi_to_ctr_teid.count(cs_req.imsi);
+-  if (gtpc_present) {
+-    srsran::console("SPGW: GTP-C context for IMSI %015" PRIu64 " already exists.\n", cs_req.imsi);
+-    delete_gtpc_ctx(m_imsi_to_ctr_teid[cs_req.imsi]);
+-    srsran::console("SPGW: Deleted previous context.\n");
+-  }
+-
+-  m_logger.info("Creating new GTP-C context");
+-  tunnel_ctx = create_gtpc_ctx(cs_req);
+-
+-  // Create session response message
+-  srsran::gtpc_pdu cs_resp_pdu;
+-  std::memset(&cs_resp_pdu, 0, sizeof(cs_resp_pdu));
+-  srsran::gtpc_header*                  header  = &cs_resp_pdu.header;
++  srsran::gtpc_pdu cs_resp_pdu{};
++  srsran::gtpc_header* header = &cs_resp_pdu.header;
+   srsran::gtpc_create_session_response* cs_resp = &cs_resp_pdu.choice.create_session_response;
+-
+-  // Setup GTP-C header
+-  header->piggyback    = false;
+   header->teid_present = true;
+-  header->teid         = cs_req.sender_f_teid.teid; // Send create session response to the UE's MME Ctrl TEID
+-  header->type         = srsran::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE;
++  header->teid = cs_req.sender_f_teid.teid;
++  header->type = srsran::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE;
++  cs_resp->access = cs_req.access;
++
++  if (!srsran::valid_access_metadata(cs_req.access) ||
++      (cs_req.access.policy == srsran::ACCESS_POLICY_RESTRICTED &&
++       m_apn_mismatch_policy != apn_policy::mismatch_policy_t::restricted)) {
++    cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_MANDATORY_IE_INCORRECT;
++    send_s11_pdu(cs_resp_pdu);
++    return;
++  }
+ 
+-  // Initialize to zero
+-  std::memset(cs_resp, 0, sizeof(struct srsran::gtpc_create_session_response));
++  auto existing = m_imsi_to_ctr_teid.find(cs_req.imsi);
++  if (existing != m_imsi_to_ctr_teid.end()) {
++    auto tunnel = m_teid_to_tunnel_ctx.find(existing->second);
++    if (tunnel == m_teid_to_tunnel_ctx.end() ||
++        cs_req.access.session_generation <= tunnel->second->session_generation) {
++      cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_REQUEST_REJECTED;
++      send_s11_pdu(cs_resp_pdu);
++      return;
++    }
++    delete_gtpc_ctx(existing->second);
++  }
++
++  spgw_tunnel_ctx_t* tunnel_ctx = create_gtpc_ctx(cs_req);
+   if (tunnel_ctx == nullptr) {
+     cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_ALL_DYNAMIC_ADDRESSES_ARE_OCCUPIED;
+     send_s11_pdu(cs_resp_pdu);
+     return;
+   }
+-  // Setup Cause
+-  cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
+-  // Setup sender F-TEID (ctrl)
+-  cs_resp->sender_f_teid.ipv4_present = true;
+-  cs_resp->sender_f_teid              = tunnel_ctx->up_ctrl_fteid;
+ 
+-  // Bearer context created
+-  cs_resp->eps_bearer_context_created.ebi                     = default_bearer_id;
+-  cs_resp->eps_bearer_context_created.cause.cause_value       = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
++  cs_resp->cause.cause_value = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
++  cs_resp->sender_f_teid_present = true;
++  cs_resp->sender_f_teid = tunnel_ctx->up_ctrl_fteid;
++  cs_resp->eps_bearer_context_created.ebi = 5;
++  cs_resp->eps_bearer_context_created.cause.cause_value = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
+   cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid_present = true;
+-  cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid         = tunnel_ctx->up_user_fteid;
+-
+-  // Fill in the PAA
+-  cs_resp->paa_present      = true;
+-  cs_resp->paa.pdn_type     = srsran::GTPC_PDN_TYPE_IPV4;
++  cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid = tunnel_ctx->up_user_fteid;
++  cs_resp->paa_present = true;
++  cs_resp->paa.pdn_type = srsran::GTPC_PDN_TYPE_IPV4;
+   cs_resp->paa.ipv4_present = true;
+-  cs_resp->paa.ipv4         = tunnel_ctx->ue_ipv4;
+-  m_logger.info("Sending Create Session Response");
+-
+-  // Send Create session response to MME
++  cs_resp->paa.ipv4 = tunnel_ctx->ue_ipv4;
+   if (!send_s11_pdu(cs_resp_pdu)) delete_gtpc_ctx(tunnel_ctx->up_ctrl_fteid.teid);
+-  return;
+ }
+ 
+ void spgw::gtpc::handle_modify_bearer_request(const struct srsran::gtpc_header&                mb_req_hdr,
+@@ -274,14 +270,19 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srsran::gtpc_header&
+   m_logger.info("eNB Rx User TEID 0x%x, eNB Rx User IP %s", tunnel_ctx->dw_user_fteid.teid, inet_ntoa(addr3));
+ 
+   // Setup IP to F-TEID map
+-  m_gtpu->modify_gtpu_tunnel(tunnel_ctx->ue_ipv4, tunnel_ctx->dw_user_fteid, tunnel_ctx->up_ctrl_fteid.teid, tunnel_ctx->up_user_fteid.teid);
++  const bool tunnel_modified = m_gtpu->modify_gtpu_tunnel(tunnel_ctx->ue_ipv4,
++                                                            tunnel_ctx->dw_user_fteid,
++                                                            tunnel_ctx->up_ctrl_fteid.teid,
++                                                            tunnel_ctx->up_user_fteid.teid,
++                                                            tunnel_ctx->session_generation,
++                                                            tunnel_ctx->access_policy);
+ 
+   // Mark paging as done & send queued packets
+   if (tunnel_ctx->paging_pending == true) {
+     tunnel_ctx->paging_pending = false;
+     m_logger.debug("Modify Bearer Request received after Downling Data Notification was sent");
+     srsran::console("Modify Bearer Request received after Downling Data Notification was sent\n");
+-    m_gtpu->send_all_queued_packets(tunnel_ctx->dw_user_fteid, tunnel_ctx->paging_queue);
++    m_gtpu->send_all_queued_packets(tunnel_ctx->ue_ipv4, tunnel_ctx->session_generation, tunnel_ctx->paging_queue);
+   }
+ 
+   // Setting up Modify bearer response PDU
+@@ -296,9 +297,10 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srsran::gtpc_header&
+ 
+   // PDU
+   srsran::gtpc_modify_bearer_response* mb_resp           = &mb_resp_pdu.choice.modify_bearer_response;
+-  mb_resp->cause.cause_value                             = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
+-  mb_resp->eps_bearer_context_modified.ebi               = tunnel_ctx->ebi;
+-  mb_resp->eps_bearer_context_modified.cause.cause_value = srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED;
++  mb_resp->cause.cause_value = tunnel_modified ? srsran::GTPC_CAUSE_VALUE_REQUEST_ACCEPTED :
++                                                   srsran::GTPC_CAUSE_VALUE_REQUEST_REJECTED;
++  mb_resp->eps_bearer_context_modified.ebi = tunnel_ctx->ebi;
++  mb_resp->eps_bearer_context_modified.cause.cause_value = mb_resp->cause.cause_value;
+ 
+   // Send Modify Bearer Response PDU
+   send_s11_pdu(mb_resp_pdu);
+@@ -339,7 +341,7 @@ void spgw::gtpc::handle_release_access_bearers_request(const srsran::gtpc_header
+   return;
+ }
+ 
+-bool spgw::gtpc::send_downlink_data_notification(uint32_t spgw_ctr_teid)
++bool spgw::gtpc::send_downlink_data_notification(uint32_t spgw_ctr_teid, uint64_t session_generation)
+ {
+   m_logger.debug("Sending Downlink Notification Request");
+ 
+@@ -355,11 +357,13 @@ bool spgw::gtpc::send_downlink_data_notification(uint32_t spgw_ctr_teid)
+     return false;
+   }
+   spgw_tunnel_ctx_t* tunnel_ctx = tunnel_it->second;
++  if (tunnel_ctx->session_generation != session_generation ||
++      tunnel_ctx->access_policy != srsran::ACCESS_POLICY_NORMAL) return false;
+ 
+   // Check if there is no Paging already pending.
+   if (tunnel_ctx->paging_pending == true) {
+     m_logger.debug("UE Downlink Data Notification still pending.");
+-    return false;
++    return true; // This owner may still queue packets; do not emit another DDN.
+   }
+ 
+   tunnel_ctx->paging_pending = true;
+@@ -376,7 +380,10 @@ bool spgw::gtpc::send_downlink_data_notification(uint32_t spgw_ctr_teid)
+   dl_not->eps_bearer_id         = 5; // Only default bearer supported.
+ 
+   // Send Downlink Data Notification PDU
+-  send_s11_pdu(dl_not_pdu);
++  if (!send_s11_pdu(dl_not_pdu)) {
++    tunnel_ctx->paging_pending = false;
++    return false;
++  }
+   return true;
+ }
+ 
+@@ -440,40 +447,33 @@ void spgw::gtpc::handle_downlink_data_notification_failure_indication(
+  */
+ spgw_tunnel_ctx_t* spgw::gtpc::create_gtpc_ctx(const struct srsran::gtpc_create_session_request& cs_req)
+ {
+-  // Setup uplink control TEID
+-  uint64_t spgw_uplink_ctrl_teid = get_new_ctrl_teid();
+-  // Setup uplink user TEID
+-  uint64_t spgw_uplink_user_teid = get_new_user_teid();
+-  // Allocate UE IP
+-  if (m_imsi_to_ctr_teid.count(cs_req.imsi) || spgw_uplink_ctrl_teid > UINT32_MAX ||
+-      spgw_uplink_user_teid > UINT32_MAX) return nullptr;
+-  in_addr_t ue_ip = get_new_ue_ipv4(cs_req.imsi);
++  if (!srsran::valid_access_metadata(cs_req.access) || m_imsi_to_ctr_teid.count(cs_req.imsi)) return nullptr;
++  const uint64_t ctrl = get_new_ctrl_teid();
++  const uint64_t user = get_new_user_teid();
++  if (ctrl > UINT32_MAX || user > UINT32_MAX) return nullptr;
++  const in_addr_t ue_ip = get_new_ue_ipv4(cs_req.imsi, cs_req.access.policy);
+   if (ue_ip == 0) return nullptr;
+ 
+-  uint8_t default_bearer_id = 5;
+-
+-  srsran::console("SPGW: Allocated Ctrl TEID %" PRIu64 "\n", spgw_uplink_ctrl_teid);
+-  srsran::console("SPGW: Allocated User TEID %" PRIu64 "\n", spgw_uplink_user_teid);
+-  struct in_addr ue_ip_;
+-  ue_ip_.s_addr = ue_ip;
+-  srsran::console("SPGW: Allocate UE IP %s\n", inet_ntoa(ue_ip_));
+-
+-  // Save the UE IP to User TEID map
+   spgw_tunnel_ctx_t* tunnel_ctx = new spgw_tunnel_ctx_t{};
+-
+   tunnel_ctx->imsi = cs_req.imsi;
+-  tunnel_ctx->ebi  = default_bearer_id;
+-
+-  tunnel_ctx->up_ctrl_fteid.teid = spgw_uplink_ctrl_teid;
+-  tunnel_ctx->ue_ipv4            = ue_ip;
+-  tunnel_ctx->up_user_fteid.teid = spgw_uplink_user_teid;
++  tunnel_ctx->session_generation = cs_req.access.session_generation;
++  tunnel_ctx->access_policy = cs_req.access.policy;
++  tunnel_ctx->ebi = 5;
++  tunnel_ctx->up_ctrl_fteid.teid = ctrl;
++  tunnel_ctx->ue_ipv4 = ue_ip;
++  tunnel_ctx->up_user_fteid.teid = user;
+   tunnel_ctx->up_user_fteid.ipv4 = m_gtpu->get_s1u_addr();
+-  tunnel_ctx->dw_ctrl_fteid.teid = cs_req.sender_f_teid.teid;
+-  tunnel_ctx->dw_ctrl_fteid.ipv4 = cs_req.sender_f_teid.ipv4;
+-  std::memset(&tunnel_ctx->dw_user_fteid, 0, sizeof(srsran::gtp_fteid_t));
+-
+-  m_teid_to_tunnel_ctx.emplace(spgw_uplink_ctrl_teid, tunnel_ctx);
+-  m_imsi_to_ctr_teid.emplace(cs_req.imsi, spgw_uplink_ctrl_teid);
++  tunnel_ctx->dw_ctrl_fteid = cs_req.sender_f_teid;
++  m_teid_to_tunnel_ctx.emplace(static_cast<uint32_t>(ctrl), tunnel_ctx);
++  m_imsi_to_ctr_teid.emplace(cs_req.imsi, static_cast<uint32_t>(ctrl));
++  if (!m_gtpu->install_gtpc_tunnel(ue_ip,
++                                   static_cast<uint32_t>(ctrl),
++                                   static_cast<uint32_t>(user),
++                                   tunnel_ctx->session_generation,
++                                   tunnel_ctx->access_policy)) {
++    delete_gtpc_ctx(static_cast<uint32_t>(ctrl));
++    return nullptr;
++  }
+   return tunnel_ctx;
+ }
+ 
+@@ -494,8 +494,13 @@ bool spgw::gtpc::delete_gtpc_ctx(uint32_t ctrl_teid)
+ 
+   // Remove GTP context from control TEID mapping
+   m_teid_to_tunnel_ctx.erase(ctrl_teid);
+-  // Static reservations are never returned to the dynamic pool.
+-  if (m_dynamic_ip_in_use.erase(tunnel_ctx->ue_ipv4)) m_ue_ip_addr_pool.insert(tunnel_ctx->ue_ipv4);
++  // Static reservations are normal-only and never enter dynamic ownership.
++  auto dynamic = m_dynamic_ip_in_use.find(tunnel_ctx->ue_ipv4);
++  if (dynamic != m_dynamic_ip_in_use.end()) {
++    if (dynamic->second == srsran::ACCESS_POLICY_RESTRICTED) m_restricted_ip_addr_pool.insert(dynamic->first);
++    else m_ue_ip_addr_pool.insert(dynamic->first);
++    m_dynamic_ip_in_use.erase(dynamic);
++  }
+   delete tunnel_ctx;
+   return true;
+ }
+@@ -503,7 +508,7 @@ bool spgw::gtpc::delete_gtpc_ctx(uint32_t ctrl_teid)
+ /*
+  * Queueing functions
+  */
+-bool spgw::gtpc::queue_downlink_packet(uint32_t ctrl_teid, srsran::unique_byte_buffer_t msg)
++bool spgw::gtpc::queue_downlink_packet(uint32_t ctrl_teid, uint64_t session_generation, srsran::unique_byte_buffer_t msg)
+ {
+   spgw_tunnel_ctx_t* tunnel_ctx;
+   if (!m_teid_to_tunnel_ctx.count(ctrl_teid)) {
+@@ -511,6 +516,8 @@ bool spgw::gtpc::queue_downlink_packet(uint32_t ctrl_teid, srsran::unique_byte_b
+     goto pkt_discard;
+   }
+   tunnel_ctx = m_teid_to_tunnel_ctx[ctrl_teid];
++  if (tunnel_ctx->session_generation != session_generation ||
++      tunnel_ctx->access_policy != srsran::ACCESS_POLICY_NORMAL) goto pkt_discard;
+   if (!tunnel_ctx->paging_pending) {
+     m_logger.error("Paging not pending. Not queueing packet");
+     goto pkt_discard;
+@@ -549,6 +556,7 @@ int spgw::gtpc::init_ue_ip(spgw_args_t* args, const std::map<std::string, uint64
+ {
+   if (!m_teid_to_tunnel_ctx.empty()) return SRSRAN_ERROR;
+   m_ue_ip_addr_pool.clear();
++  m_restricted_ip_addr_pool.clear();
+   m_dynamic_ip_in_use.clear();
+   m_imsi_to_ip.clear();
+   in_addr gateway{};
+@@ -585,50 +593,35 @@ int spgw::gtpc::init_ue_ip(spgw_args_t* args, const std::map<std::string, uint64
+     }
+   }
+ 
+-  // XXX TODO add an upper bound to ip addr range via config, use 254 for now
+-  // first address is allocated to the epc tun interface, start w/next addr
++  std::vector<uint32_t> available;
+   for (uint32_t n = 1; n < 254; ++n) {
+-    struct in_addr ue_addr;
+-    if (inet_pton(AF_INET, args->sgi_if_addr.c_str(), &ue_addr.s_addr) != 1) {
+-      m_logger.error("Invalid sgi_if_addr: %s", args->sgi_if_addr.c_str());
+-      srsran::console("Invalid sgi_if_addr: %s\n", args->sgi_if_addr.c_str());
+-      perror("inet_pton");
+-      return SRSRAN_ERROR;
+-    }
+-    ue_addr.s_addr = ue_addr.s_addr + htonl(n);
+-
+-    std::map<std::string, uint64_t>::const_iterator iter = ip_to_imsi.find(inet_ntoa(ue_addr));
+-    if (iter != ip_to_imsi.end()) {
+-      m_logger.debug("SPGW: init_ue_ip ue ip addr %s is reserved for imsi %015" PRIu64 ", not adding to pool",
+-                     iter->first.c_str(),
+-                     iter->second);
+-    } else {
+-      m_ue_ip_addr_pool.insert(ue_addr.s_addr);
+-      m_logger.debug("SPGW: init_ue_ip ue ip addr %s is added to pool", inet_ntoa(ue_addr));
+-    }
++    in_addr ue_addr{};
++    ue_addr.s_addr = gateway.s_addr + htonl(n);
++    if (ip_to_imsi.count(inet_ntoa(ue_addr)) == 0) available.push_back(ue_addr.s_addr);
+   }
++  size_t restricted_count = 0;
++  if (m_apn_mismatch_policy == apn_policy::mismatch_policy_t::restricted && available.size() > 1) {
++    restricted_count = std::min<size_t>(16, available.size() - 1);
++  }
++  const size_t normal_count = available.size() - restricted_count;
++  m_ue_ip_addr_pool.insert(available.begin(), available.begin() + normal_count);
++  m_restricted_ip_addr_pool.insert(available.begin() + normal_count, available.end());
+   return SRSRAN_SUCCESS;
+ }
+ 
+-in_addr_t spgw::gtpc::get_new_ue_ipv4(uint64_t imsi)
++in_addr_t spgw::gtpc::get_new_ue_ipv4(uint64_t imsi, srsran::access_policy_t access_policy)
+ {
+-  struct in_addr ue_addr;
+-
+-  std::map<uint64_t, struct in_addr>::const_iterator iter = m_imsi_to_ip.find(imsi);
+-  if (iter != m_imsi_to_ip.end()) {
+-    ue_addr = iter->second;
+-    m_logger.info("SPGW: get_new_ue_ipv4 static ip addr %s", inet_ntoa(ue_addr));
+-  } else {
+-    if (m_ue_ip_addr_pool.empty()) {
+-      m_logger.error("SPGW: ue address pool is empty");
+-      ue_addr.s_addr = 0;
+-    } else {
+-      ue_addr.s_addr = *m_ue_ip_addr_pool.begin();
+-      m_ue_ip_addr_pool.erase(ue_addr.s_addr);
+-      m_dynamic_ip_in_use.insert(ue_addr.s_addr);
+-      m_logger.info("SPGW: get_new_ue_ipv4 pool ip addr %s", inet_ntoa(ue_addr));
+-    }
++  in_addr ue_addr{};
++  if (access_policy == srsran::ACCESS_POLICY_NORMAL) {
++    auto fixed = m_imsi_to_ip.find(imsi);
++    if (fixed != m_imsi_to_ip.end()) return fixed->second.s_addr;
+   }
++  std::set<uint32_t>* pool = access_policy == srsran::ACCESS_POLICY_NORMAL ? &m_ue_ip_addr_pool :
++                             access_policy == srsran::ACCESS_POLICY_RESTRICTED ? &m_restricted_ip_addr_pool : nullptr;
++  if (pool == nullptr || pool->empty()) return 0;
++  ue_addr.s_addr = *pool->begin();
++  pool->erase(pool->begin());
++  m_dynamic_ip_in_use.emplace(ue_addr.s_addr, access_policy);
+   return ue_addr.s_addr;
+ }
+ 
+diff --git a/srsepc/src/spgw/gtpu.cc b/srsepc/src/spgw/gtpu.cc
+index 260e2fa..e01d556 100644
+--- a/srsepc/src/spgw/gtpu.cc
++++ b/srsepc/src/spgw/gtpu.cc
+@@ -207,61 +207,29 @@ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
+ {
+   if (!msg || msg->N_bytes < 20 ||
+       msg->N_bytes > SRSRAN_MAX_BUFFER_SIZE_BYTES - SRSRAN_BUFFER_HEADER_OFFSET) return;
+-  std::unique_lock<std::mutex> lock(m_tunnel_mutex);
+-  bool usr_found = false;
+-  bool ctr_found = false;
+-
+-  std::map<uint32_t, srsran::gtpc_f_teid_ie>::iterator gtpu_fteid_it;
+-  std::map<in_addr_t, uint32_t>::iterator              gtpc_teid_it;
+-  srsran::gtpc_f_teid_ie                               enb_fteid;
+-  uint32_t                                             spgw_teid;
+-  struct iphdr*                                        iph = (struct iphdr*)msg->msg;
+-  m_logger.debug("Received SGi PDU. Bytes %d", msg->N_bytes);
+-
+-  if (iph->version != 4) {
+-    m_logger.info("IPv6 not supported yet.");
+-    return;
+-  }
+-  if (iph->ihl < 5 || unsigned(iph->ihl) * 4 > msg->N_bytes || ntohs(iph->tot_len) != msg->N_bytes) {
+-    m_logger.warning("Invalid IP header length. IP length %d.", ntohs(iph->tot_len));
+-    return;
+-  }
+-
+-  // Logging PDU info
+-  m_logger.debug("SGi PDU -- IP version %d, Total length %d", int(iph->version), ntohs(iph->tot_len));
+-  fmt::memory_buffer buffer;
+-  srsran::gtpu_ntoa(buffer, iph->saddr);
+-  m_logger.debug("SGi PDU -- IP src addr %s", srsran::to_c_str(buffer));
+-  buffer.clear();
+-  srsran::gtpu_ntoa(buffer, iph->daddr);
+-  m_logger.debug("SGi PDU -- IP dst addr %s", srsran::to_c_str(buffer));
+-
+-  // Find user and control tunnel
+-  gtpu_fteid_it = m_ip_to_usr_teid.find(iph->daddr);
+-  if (gtpu_fteid_it != m_ip_to_usr_teid.end()) {
+-    usr_found = true;
+-    enb_fteid = gtpu_fteid_it->second;
+-  }
+-  gtpc_teid_it = m_ip_to_ctr_teid.find(iph->daddr);
+-  if (gtpc_teid_it != m_ip_to_ctr_teid.end()) {
+-    ctr_found = true;
+-    spgw_teid = gtpc_teid_it->second;
++  const struct iphdr* iph = reinterpret_cast<const struct iphdr*>(msg->msg);
++  if (iph->version != 4 || iph->ihl < 5 || unsigned(iph->ihl) * 4 > msg->N_bytes ||
++      ntohs(iph->tot_len) != msg->N_bytes) return;
++
++  uint32_t ctrl_teid = 0;
++  uint64_t generation = 0;
++  bool active = false;
++  {
++    std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++    auto it = m_ip_to_access_owner.find(iph->daddr);
++    if (it == m_ip_to_access_owner.end() || it->second.access_policy != srsran::ACCESS_POLICY_NORMAL ||
++        it->second.session_generation == 0) return;
++    auto ctrl = m_ip_to_ctr_teid.find(iph->daddr);
++    if (ctrl == m_ip_to_ctr_teid.end() || ctrl->second != it->second.up_ctrl_teid) return;
++    ctrl_teid = it->second.up_ctrl_teid;
++    generation = it->second.session_generation;
++    active = it->second.active;
+   }
+ 
+-  lock.unlock();
+-  // Handle SGi packet
+-  if (usr_found == false && ctr_found == false) {
+-    m_logger.debug("Packet for unknown UE.");
+-  } else if (usr_found == false && ctr_found == true) {
+-    m_logger.debug("Packet for attached UE that is not ECM connected.");
+-    m_logger.debug("Triggering Donwlink Notification Requset.");
+-    m_gtpc->send_downlink_data_notification(spgw_teid);
+-    m_gtpc->queue_downlink_packet(spgw_teid, std::move(msg));
+-    return;
+-  } else if (usr_found == true && ctr_found == false) {
+-    m_logger.error("User plane tunnel found without a control plane tunnel present.");
+-  } else {
+-    send_s1u_pdu(enb_fteid, msg.get());
++  if (active) {
++    send_s1u_pdu(iph->daddr, generation, msg.get());
++  } else if (m_gtpc->send_downlink_data_notification(ctrl_teid, generation)) {
++    m_gtpc->queue_downlink_packet(ctrl_teid, generation, std::move(msg));
+   }
+ }
+ 
+@@ -284,7 +252,11 @@ bool spgw::gtpu::valid_uplink_locked(uint32_t teid, const uint8_t* data, size_t
+   in_addr_t source;
+   memcpy(&source, data + 12, sizeof(source));
+   auto it = m_up_teid_to_ip.find(teid);
+-  return it != m_up_teid_to_ip.end() && it->second == source;
++  if (it == m_up_teid_to_ip.end() || it->second != source) return false;
++  auto owner = m_ip_to_access_owner.find(source);
++  return owner != m_ip_to_access_owner.end() && owner->second.active &&
++         owner->second.access_policy == srsran::ACCESS_POLICY_NORMAL && owner->second.up_user_teid == teid &&
++         owner->second.session_generation != 0;
+ }
+ 
+ void spgw::gtpu::handle_s1u_pdu(srsran::byte_buffer_t* msg)
+@@ -302,74 +274,91 @@ void spgw::gtpu::handle_s1u_pdu(srsran::byte_buffer_t* msg)
+   if (write(m_sgi, msg->msg + 8, msg->N_bytes - 8) < 0) m_logger.error("Could not write to TUN interface.");
+ }
+ 
+-void spgw::gtpu::send_s1u_pdu(srsran::gtp_fteid_t enb_fteid, srsran::byte_buffer_t* msg)
++bool spgw::gtpu::send_s1u_pdu_locked(const access_owner_t& owner, srsran::byte_buffer_t* msg)
+ {
+-  // Set eNB destination address
+-  struct sockaddr_in enb_addr;
+-  enb_addr.sin_family      = AF_INET;
+-  enb_addr.sin_port        = htons(GTPU_RX_PORT);
+-  enb_addr.sin_addr.s_addr = enb_fteid.ipv4;
+-
+-  // Setup GTP-U header
+-  srsran::gtpu_header_t header;
+-  header.flags        = GTPU_FLAGS_VERSION_V1 | GTPU_FLAGS_GTP_PROTOCOL;
++  if (!msg || !owner.active || owner.access_policy != srsran::ACCESS_POLICY_NORMAL ||
++      owner.session_generation == 0) return false;
++  struct sockaddr_in enb_addr{};
++  enb_addr.sin_family = AF_INET;
++  enb_addr.sin_port = htons(GTPU_RX_PORT);
++  enb_addr.sin_addr.s_addr = owner.downlink_fteid.ipv4;
++  srsran::gtpu_header_t header{};
++  header.flags = GTPU_FLAGS_VERSION_V1 | GTPU_FLAGS_GTP_PROTOCOL;
+   header.message_type = GTPU_MSG_DATA_PDU;
+-  header.length       = msg->N_bytes;
+-  header.teid         = enb_fteid.teid;
+-
+-  m_logger.debug("User plane tunnel found SGi PDU. Forwarding packet to S1-U.");
+-  m_logger.debug("eNB F-TEID -- eNB IP %s, eNB TEID 0x%x.", inet_ntoa(enb_addr.sin_addr), enb_fteid.teid);
+-
+-  // Write header into packet
+-  int n;
+-  if (!srsran::gtpu_write_header(&header, msg, m_logger)) {
+-    m_logger.error("Error writing GTP-U header on PDU");
+-    goto out;
+-  }
+-
+-  // Send packet to destination
+-  n = sendto(m_s1u, msg->msg, msg->N_bytes, 0, (struct sockaddr*)&enb_addr, sizeof(enb_addr));
+-  if (n < 0) {
+-    m_logger.error("Error sending packet to eNB");
+-  } else if ((unsigned int)n != msg->N_bytes) {
+-    m_logger.error("Mis-match between packet bytes and sent bytes: Sent: %d/%d", n, msg->N_bytes);
+-  }
++  header.length = msg->N_bytes;
++  header.teid = owner.downlink_fteid.teid;
++  if (!srsran::gtpu_write_header(&header, msg, m_logger)) return false;
++  const int n = sendto(m_s1u, msg->msg, msg->N_bytes, 0, reinterpret_cast<sockaddr*>(&enb_addr), sizeof(enb_addr));
++  return n >= 0 && static_cast<unsigned>(n) == msg->N_bytes;
++}
+ 
+-out:
+-  m_logger.debug("Deallocating packet after sending S1-U message");
+-  return;
++bool spgw::gtpu::send_s1u_pdu(in_addr_t ue_ipv4, uint64_t session_generation, srsran::byte_buffer_t* msg)
++{
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  auto it = m_ip_to_access_owner.find(ue_ipv4);
++  if (it == m_ip_to_access_owner.end() || it->second.session_generation != session_generation ||
++      it->second.access_policy != srsran::ACCESS_POLICY_NORMAL || !it->second.active) return false;
++  return send_s1u_pdu_locked(it->second, msg);
+ }
+ 
+-void spgw::gtpu::send_all_queued_packets(srsran::gtp_fteid_t                       dw_user_fteid,
++void spgw::gtpu::send_all_queued_packets(in_addr_t ue_ipv4,
++                                         uint64_t session_generation,
+                                          std::queue<srsran::unique_byte_buffer_t>& pkt_queue)
+ {
+-  m_logger.debug("Sending all queued packets");
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  auto it = m_ip_to_access_owner.find(ue_ipv4);
++  const bool allowed = it != m_ip_to_access_owner.end() && it->second.active &&
++                       it->second.session_generation == session_generation &&
++                       it->second.access_policy == srsran::ACCESS_POLICY_NORMAL;
+   while (!pkt_queue.empty()) {
+     srsran::unique_byte_buffer_t msg = std::move(pkt_queue.front());
+-    send_s1u_pdu(dw_user_fteid, msg.get());
+     pkt_queue.pop();
++    if (allowed) send_s1u_pdu_locked(it->second, msg.get());
+   }
+-  return;
+ }
+ 
+ /*
+  * Tunnel managment
+  */
+-bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw_user_fteid, uint32_t up_ctrl_teid, uint32_t up_user_teid)
++bool spgw::gtpu::install_gtpc_tunnel(in_addr_t ue_ipv4,
++                                      uint32_t up_ctrl_teid,
++                                      uint32_t up_user_teid,
++                                      uint64_t session_generation,
++                                      srsran::access_policy_t access_policy)
+ {
++  if (ue_ipv4 == 0 || up_ctrl_teid == 0 || up_user_teid == 0 || session_generation == 0 ||
++      (access_policy != srsran::ACCESS_POLICY_NORMAL && access_policy != srsran::ACCESS_POLICY_RESTRICTED)) return false;
+   std::lock_guard<std::mutex> lock(m_tunnel_mutex);
+-  for (auto it = m_up_teid_to_ip.begin(); it != m_up_teid_to_ip.end();) {
+-    if (it->second == ue_ipv4) it = m_up_teid_to_ip.erase(it); else ++it;
++  if (m_ip_to_access_owner.count(ue_ipv4) || m_ip_to_ctr_teid.count(ue_ipv4)) return false;
++  access_owner_t owner{};
++  owner.up_ctrl_teid = up_ctrl_teid;
++  owner.up_user_teid = up_user_teid;
++  owner.session_generation = session_generation;
++  owner.access_policy = access_policy;
++  m_ip_to_access_owner.emplace(ue_ipv4, owner);
++  m_ip_to_ctr_teid.emplace(ue_ipv4, up_ctrl_teid);
++  return true;
++}
++
++bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4,
++                                     srsran::gtp_fteid_t dw_user_fteid,
++                                     uint32_t up_ctrl_teid,
++                                     uint32_t up_user_teid,
++                                     uint64_t session_generation,
++                                     srsran::access_policy_t access_policy)
++{
++  std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  auto it = m_ip_to_access_owner.find(ue_ipv4);
++  if (it == m_ip_to_access_owner.end() || it->second.up_ctrl_teid != up_ctrl_teid ||
++      it->second.up_user_teid != up_user_teid || it->second.session_generation != session_generation ||
++      it->second.access_policy != access_policy ||
++      (access_policy != srsran::ACCESS_POLICY_NORMAL && access_policy != srsran::ACCESS_POLICY_RESTRICTED)) return false;
++  for (auto old = m_up_teid_to_ip.begin(); old != m_up_teid_to_ip.end();) {
++    if (old->second == ue_ipv4) old = m_up_teid_to_ip.erase(old); else ++old;
+   }
++  it->second.downlink_fteid = dw_user_fteid;
++  it->second.active = true;
+   m_up_teid_to_ip[up_user_teid] = ue_ipv4;
+-  m_logger.info("Modifying GTP-U Tunnel.");
+-  fmt::memory_buffer buffer;
+-  srsran::gtpu_ntoa(buffer, ue_ipv4);
+-  m_logger.info("UE IP %s", srsran::to_c_str(buffer));
+-  buffer.clear();
+-  srsran::gtpu_ntoa(buffer, dw_user_fteid.ipv4);
+-  m_logger.info("Downlink eNB addr %s, U-TEID 0x%x", srsran::to_c_str(buffer), dw_user_fteid.teid);
+-  m_logger.info("Uplink C-TEID: 0x%x", up_ctrl_teid);
+   m_ip_to_usr_teid[ue_ipv4] = dw_user_fteid;
+   m_ip_to_ctr_teid[ue_ipv4] = up_ctrl_teid;
+   return true;
+@@ -378,17 +367,26 @@ bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srsran::gtpc_f_teid_ie dw
+ bool spgw::gtpu::delete_gtpu_tunnel(in_addr_t ue_ipv4)
+ {
+   std::lock_guard<std::mutex> lock(m_tunnel_mutex);
++  auto owner = m_ip_to_access_owner.find(ue_ipv4);
++  if (owner == m_ip_to_access_owner.end()) return false;
+   for (auto it = m_up_teid_to_ip.begin(); it != m_up_teid_to_ip.end();) {
+     if (it->second == ue_ipv4) it = m_up_teid_to_ip.erase(it); else ++it;
+   }
+-  return m_ip_to_usr_teid.erase(ue_ipv4) != 0;
++  m_ip_to_usr_teid.erase(ue_ipv4);
++  owner->second.downlink_fteid = {};
++  owner->second.active = false;
++  return true;
+ }
+ 
+ bool spgw::gtpu::delete_gtpc_tunnel(in_addr_t ue_ipv4)
+ {
+-  delete_gtpu_tunnel(ue_ipv4);
+   std::lock_guard<std::mutex> lock(m_tunnel_mutex);
+-  return m_ip_to_ctr_teid.erase(ue_ipv4) != 0;
++  for (auto it = m_up_teid_to_ip.begin(); it != m_up_teid_to_ip.end();) {
++    if (it->second == ue_ipv4) it = m_up_teid_to_ip.erase(it); else ++it;
++  }
++  m_ip_to_usr_teid.erase(ue_ipv4);
++  m_ip_to_ctr_teid.erase(ue_ipv4);
++  return m_ip_to_access_owner.erase(ue_ipv4) != 0;
+ }
+ 
+ } // namespace srsepc

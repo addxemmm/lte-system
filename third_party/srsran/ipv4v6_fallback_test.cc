@@ -82,6 +82,16 @@ bool decode_packed_default_bearer(srsepc::nas& ctx,
   return true;
 }
 
+bool confirm_default_session(srsepc::nas& ctx)
+{
+  auto premature = srsran::make_byte_buffer();
+  TESTASSERT(!ctx.pack_attach_accept(premature.get()));
+  ctx.m_session_requested = true;
+  ctx.m_pending_access_policy = srsran::ACCESS_POLICY_NORMAL;
+  ctx.m_pending_access_reason = srsepc::ACCESS_REASON_APN_OMITTED;
+  return ctx.confirm_pdn_session(ctx.m_session_generation, srsran::ACCESS_POLICY_NORMAL);
+}
+
 bool decode_default_bearer(uint8_t requested_pdn_type,
                            LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_REQUEST_MSG_STRUCT* bearer)
 {
@@ -95,6 +105,7 @@ bool decode_default_bearer(uint8_t requested_pdn_type,
   ctx.m_emm_ctx.requested_pdn_type        = requested_pdn_type;
   ctx.m_emm_ctx.ue_ip.s_addr              = inet_addr("172.16.0.2");
   ctx.m_esm_ctx[5].qci                    = 9;
+  TESTASSERT(confirm_default_session(ctx));
   return decode_packed_default_bearer(ctx, bearer);
 }
 
@@ -142,6 +153,7 @@ bool test_reattach_overwrites_fallback_state()
   ctx.m_emm_ctx.procedure_transaction_id = 7;
   ctx.m_emm_ctx.ue_ip.s_addr              = inet_addr("172.16.0.2");
   ctx.m_esm_ctx[5].qci                    = 9;
+  TESTASSERT(confirm_default_session(ctx));
 
   LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_REQUEST_MSG_STRUCT bearer = {};
   ctx.m_emm_ctx.requested_pdn_type = LIBLTE_MME_PDN_TYPE_IPV4V6;

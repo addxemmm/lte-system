@@ -25,11 +25,15 @@ int pool_tests()
   control.m_gtpu = &user;
   spgw_args_t args{};
   args.sgi_if_addr = "172.16.0.1";
+  args.apn_mismatch_policy = apn_policy::mismatch_policy_t::strict;
   TESTASSERT(control.init_ue_ip(&args, {}) == SRSRAN_SUCCESS);
   TESTASSERT(control.m_ue_ip_addr_pool.size() == 253);
   srsran::gtpc_create_session_request request{};
   request.imsi = 100000000000001;
   request.sender_f_teid.teid = 123;
+  request.access.version = srsran::S11_ACCESS_METADATA_VERSION;
+  request.access.policy = srsran::ACCESS_POLICY_NORMAL;
+  request.access.session_generation = 1;
   for (unsigned i = 0; i < 600; ++i) {
     auto context = control.create_gtpc_ctx(request);
     TESTASSERT(context && context->ue_ipv4 != 0);
@@ -44,7 +48,8 @@ int pool_tests()
   srsran::gtpc_header control_header{}; control_header.teid = sleeping->up_ctrl_fteid.teid;
   srsran::gtpc_release_access_bearers_request release{};
   srsran::gtp_fteid_t down{};
-  user.modify_gtpu_tunnel(sleeping->ue_ipv4, down, sleeping->up_ctrl_fteid.teid, sleeping->up_user_fteid.teid);
+  TESTASSERT(user.modify_gtpu_tunnel(sleeping->ue_ipv4, down, sleeping->up_ctrl_fteid.teid,
+                                      sleeping->up_user_fteid.teid, sleeping->session_generation, sleeping->access_policy));
   control.handle_release_access_bearers_request(control_header, release);
   TESTASSERT(control.m_ue_ip_addr_pool.size() == 252 && control.m_dynamic_ip_in_use.count(sleeping->ue_ipv4));
   TESTASSERT(user.m_up_teid_to_ip.empty() && user.m_ip_to_ctr_teid.count(sleeping->ue_ipv4));
@@ -89,7 +94,8 @@ int source_tests()
   spgw_test_access::gtpu user;
   srsran::gtp_fteid_t down{};
   const in_addr_t ip = inet_addr("172.16.0.2"), other = inet_addr("172.16.0.3");
-  TESTASSERT(user.modify_gtpu_tunnel(ip,down,100,200));
+  TESTASSERT(user.install_gtpc_tunnel(ip,100,200,1,srsran::ACCESS_POLICY_NORMAL));
+  TESTASSERT(user.modify_gtpu_tunnel(ip,down,100,200,1,srsran::ACCESS_POLICY_NORMAL));
   uint8_t ipv4[20]{}; ipv4[0]=0x45; ipv4[3]=20;
   auto checksum=[&]() {
     ipv4[10]=ipv4[11]=0; uint32_t sum=0;
@@ -115,7 +121,9 @@ int source_tests()
   pdu->msg[0]=0x30; user.delete_gtpu_tunnel(ip);
   TESTASSERT(!user.valid_uplink(200,ipv4,sizeof(ipv4)));
   user.handle_s1u_pdu(pdu.get()); TESTASSERT(read(pipefd[0],received,32)==-1);
-  TESTASSERT(user.modify_gtpu_tunnel(ip,down,101,201));
+  TESTASSERT(user.delete_gtpc_tunnel(ip));
+  TESTASSERT(user.install_gtpc_tunnel(ip,101,201,2,srsran::ACCESS_POLICY_NORMAL));
+  TESTASSERT(user.modify_gtpu_tunnel(ip,down,101,201,2,srsran::ACCESS_POLICY_NORMAL));
   TESTASSERT(!user.valid_uplink(200,ipv4,sizeof(ipv4)) && user.valid_uplink(201,ipv4,sizeof(ipv4)));
   user.delete_gtpc_tunnel(ip); TESTASSERT(user.m_up_teid_to_ip.empty() && user.m_ip_to_usr_teid.empty());
   close(pipefd[0]); close(pipefd[1]);

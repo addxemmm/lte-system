@@ -57,7 +57,7 @@ func TestReadUESnapshotRejectsMismatchDuplicatesAndOversize(t *testing.T) {
 	for name, payload := range map[string]string{
 		"wrong run":          strings.Replace(telemetryJSON(now, `[]`), `"run_id":"run-1"`, `"run_id":"old"`, 1),
 		"duplicate":          telemetryJSON(now, `[`+valid+`,`+valid+`]`),
-		"bad schema":         strings.Replace(telemetryJSON(now, `[]`), `"schema_version":1`, `"schema_version":2`, 1),
+		"bad schema":         strings.Replace(telemetryJSON(now, `[]`), `"schema_version":1`, `"schema_version":3`, 1),
 		"zero sequence":      strings.Replace(telemetryJSON(now, `[]`), `"sequence":7`, `"sequence":0`, 1),
 		"duplicate json key": strings.Replace(telemetryJSON(now, `[]`), `"sequence":7`, `"sequence":7,"sequence":8`, 1),
 	} {

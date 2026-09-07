@@ -15,7 +15,10 @@ Runs on: **the SDR server** (dev machines only edit code, never run docker). For
 | [`deploy/docker/docker-compose.bridge.yml`](docker-compose.bridge.yml) | 单容器 EPC/eNB 的独立 bridge 编排，固定 eth0 / Isolated all-in-one EPC/eNB bridge orchestration, fixed eth0 |
 | [`deploy/docker/entrypoint.sh`](entrypoint.sh) | 容器启动流程：选 FPGA → seeding `/data` → 起 pcscd → exec Go 服务 / Container boot flow: pick FPGA → seed `/data` → start pcscd → exec Go service |
 | [`deploy/docker/select-uhd-fpga.sh`](select-uhd-fpga.sh) | `stock`/`compat` FPGA 切换（见 [`docs/SDR.md`](../../docs/SDR.md)） / `stock`/`compat` FPGA switching (see [`docs/SDR.md`](../../docs/SDR.md)) |
-| `VERSION`（仓库根） / `VERSION` (repo root) | 镜像版本号，当前 `3.0`（从旧 `ltesystem-dep:1.0` 迭代而来） / Image version, currently `3.0` (iterated from old `ltesystem-dep:1.0`) |
+| `VERSION`（仓库根） / `VERSION` (repo root) | 本次镜像编号 `2.1`（准备中，用户指定；保留历史 3.0 功能） / Image number `2.1` (preparing, user-selected; retaining historical 3.0 functionality) |
+
+本次 2.1 是用户按 2.0→2.1 指定的镜像编号，不恢复旧 API 或回滚 3.0 功能；服务器构建、部署与手机验收待执行，最新审计修订需复验。详见 [2.1 发布说明](../../docs/RELEASE_2.1_2026-09-07.md)。
+Image 2.1 follows the user's requested numbering, retaining the standard API and historical 3.0 functionality. Server build/deployment and handset acceptance are pending; latest audit fixes require revalidation. See the release notes.
 
 ## 2. Dockerfile 三段在干什么 What the Three Dockerfile Stages Do
 
@@ -40,7 +43,7 @@ ubuntu:22.04 (runtime)      →  运行镜像（1.53GB，旧 1.0 镜像的一半
 
 ```yaml
 build: { context: ../.., dockerfile: deploy/docker/Dockerfile }  # 相对本文件的仓库根
-image: ${LTE_IMAGE:-ltesystem-dep:3.0}  # 支持唯一发布/回滚标签 / unique release/rollback tag
+image: ${LTE_IMAGE:-ltesystem-dep:2.1}  # 支持唯一发布/回滚标签 / unique release/rollback tag
 container_name: ltesystem
 network_mode: host              # 兼容选项；隔离网络另用 docker-compose.bridge.yml
 privileged: true                # 必需：建网卡、实时线程、访问 USB

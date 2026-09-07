@@ -1,7 +1,7 @@
 # LTE-System API v3
 
-> **未发布草稿 / Unreleased draft:** 本分支内容未完成最终复核，未合并 master、未推送、未构建或部署。本轮执行工具拦截中止了后续实施；文中新增契约与 Postman 仅供审查，不代表现网已支持。
-> Final review is incomplete. This branch has not been merged, pushed, built or deployed. Execution-tool safety checks halted implementation; proposed additions and Postman files do not describe new production capabilities.
+> **未发布草稿 / Unreleased draft:** 本分支包含尚未发布的契约变更；本地 CPU 测试不等于镜像发布或手机验收。APN 受限接入的最新实现与验证状态见 [专项记录](APN_RESTRICTED_ACCESS_2026-09-07.md)，不代表现网已支持。
+> This branch contains unreleased contract changes. Local CPU tests are not image deployment or handset acceptance. See the APN-specific record for current implementation and validation evidence; these additions do not describe new production capabilities.
 
 
 机器可读契约见 [`api/openapi.yaml`](api/openapi.yaml)。v3 只提供 `/api/v1/*` 标准接口；已删除根路径旧接口以及单终端 `/api/v1/ue`。
@@ -26,11 +26,16 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 {
   "band":"7", "apn":"srsapn", "mcc":"001", "mnc":"01",
   "network":"auto", "dns":"192.168.100.1",
-  "ue_subnet":"172.16.0.0/24", "ue_access":"isolated"
+  "ue_subnet":"172.16.0.0/24", "ue_access":"isolated",
+  "apn_mismatch_policy":"strict"
 }
 ```
 
-`network` 省略、空或 `auto` 时按当前网络命名空间的 IPv4 默认路由 metric 解析；`GET /api/v1/cell` 的 `network` 是请求策略，`resolved_network` 是实际接口。`dns` 必须是 UE 可达的 resolver。当前只支持单 APN/单 UE pool；`ue_subnet` 必须是 RFC1918 `/24`，默认 `172.16.0.0/24`；`ue_access=isolated|allow`，默认 `isolated`。
+`network` 省略、空或 `auto` 时按当前网络命名空间的 IPv4 默认路由 metric 解析；`GET /api/v1/cell` 的 `network` 是请求策略，`resolved_network` 是实际接口。`dns` 必须是 UE 可达的 resolver。当前只支持一个配置 APN/一个 SGi 网段；`ue_subnet` 必须是 RFC1918 `/24`，默认 `172.16.0.0/24`；`ue_access=isolated|allow`，默认 `isolated`。
+
+未发布新增参数 `apn_mismatch_policy=strict|restricted`：缺省/旧 profile 为 strict（错误 APN 拒绝注册）；restricted 对已通过原有 SIM/AKA 鉴权、格式合法但显式不匹配的 APN 建立受限默认承载，并在 SPGW 丢弃双向用户面。正确/省略 APN 保持正常；异常 APN 仍拒绝。参数保存到 profile，空请求继承，显式 strict 可覆盖；非法值返回字段级 422。`ue_access=allow` 不解除 restricted 限制。新版本需成套构建、部署并明确启用后生效，详见 [受限接入](APN_RESTRICTED_ACCESS_2026-09-07.md)。
+
+Unreleased `apn_mismatch_policy` defaults to strict for compatibility. Explicit restricted mode retains normal subscriber/AKA checks and admits only syntactically valid APN mismatches with a restricted default bearer and bidirectional SPGW drops. The effective setting is inherited/persisted with the startup profile; invalid values return 422. This is not a claim that the current server supports the new mode.
 
 成功 200；非法字段 422；已运行 409；无 SDR 503。启动可能需要约 6–10 秒。
 
@@ -58,26 +63,28 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 
 ### `GET /api/v1/ues`
 
-返回当前 EPC 进程每秒原子发布的结构化 schema v1 快照，不解析或拼接文本日志：
+返回当前 EPC 进程每秒原子发布的结构化快照，不解析或拼接文本日志。消费端兼容 schema 1/2；本地新增 producer 使用 schema 2，须成套升级。以下为 schema 2 的受限会话示例，不是现网验收记录：
 
 ```json
 {"code":0,"message":"ok","data":{
-  "state":"current","cell_state":"running","schema_version":1,
+  "state":"current","cell_state":"running","schema_version":2,
   "run_id":"RUN_ID","sequence":42,"updated_at_unix_ms":1788700000000,
   "count":1,"sessions":[{
     "session_id":"RUN_ID:3","imsi":"001010123456789",
     "mme_ue_s1ap_id":1,"enb_ue_s1ap_id":2,"sctp_assoc_id":4,
     "emm_state":"registered","ecm_state":"idle","ue_ipv4":"172.16.0.2",
-    "requested_apn":"internet","apn_source":"pdn_request",
-    "selected_apn":"internet","apn_validated":true,
+    "requested_apn":"wrong-apn","apn_source":"pdn_request",
+    "selected_apn":"internet","apn_validated":false,
+    "access_policy":"restricted","access_reason":"apn_mismatch",
     "bearers":[{"ebi":5,"qci":7,"state":"active"}]
   }]},"request_id":"..."}
 ```
 
 - `state=current` 表示快照归属与新鲜度已验证，`cell_state=running` 是 producer 状态。`registered + idle` 表示已附着但当前无 S1 无线连接；不等于掉线，也不证明 Internet 可达。
 - IMSI 在认证前可为空；这种上下文仍出现在列表，但不能通过 IMSI 详情查询。
-- `requested_apn` 是 UE 实际请求值；`selected_apn` 只有经 EPC 校验后才出现。不同 UE 可有不同 requested APN。
-- API 先读文件 metadata、有界读取最多 1 MiB、再核对 metadata；只接受匹配当前 `run_id`/PID、schema 1、`state=running`、无重复会话且更新时间不超过 5 秒的快照。列表最多 256 个会话、每会话最多 16 个 bearer。
+- `requested_apn` 是 UE 实际请求值。schema 1 保留 `selected_apn` 要求 `apn_validated=true` 的原契约；schema 2 的 selected APN 表示实际下发配置，restricted 时仍为非空，但 `apn_validated=false`，不伪装为请求匹配。
+- schema 2 每个会话必须带 `access_policy=normal|restricted|deny` 与 `access_reason=apn_match|apn_omitted|apn_mismatch|session_unavailable`。normal 对应校验成功，restricted 对应合法显式错误 APN，deny 对应尚未确认/不可用会话。未知、缺失、null 或矛盾组合拒绝；schema 1 不接受这两个新字段。注册状态与 Internet 访问权限分开解释。
+- API 先读文件 metadata、有界读取最多 1 MiB、再核对 metadata；只接受匹配当前 `run_id`/PID、schema 1 或 2、`state=running`、无重复会话且更新时间不超过 5 秒的快照。列表最多 256 个会话、每会话最多 16 个 bearer。
 - 没有可靠当前快照仍返回 200，`data.state=missing|stale|invalid|cell_stopped` 且 `sessions=[]`；这不表示“没有 UE”。不会回退到可能跨 UE 拼错字段的 EPC 日志。
 
 ### `GET /api/v1/ues/{imsi}`
@@ -146,17 +153,19 @@ A live S1AP capture can end mid-record. Diagnostics inspect a bounded private im
 - `tshark_incompatible`：字段或配置选项不受支持；原始 stderr 不回显。
 - `pap_frames_observed`：仅观察到 PAP 协议存在性，不读取用户名或密码。
 
-`chap.capture` 可新增 `snapshot_size_bytes`、`complete_packets`、`incomplete`。`chap_observed=true` 只表示协议元数据存在，不保证完整认证交换，更不表示成功恢复密码。`scan_complete=false` 时不得据未观察结果推断协议不存在；完整性 reason 由只读诊断及既有失败诊断分支提供。本次没有修改认证提取或 Hashcat 作业实现。
+`chap.capture` 可新增 `snapshot_size_bytes`、`complete_packets`、`incomplete`。`chap_observed=true` 只表示协议元数据存在，不保证完整认证交换，更不表示成功恢复密码。`scan_complete=false` 时不得据未观察结果推断协议不存在；完整性 reason 由只读诊断及既有失败诊断分支提供。本段描述早期诊断增量；后续认证接口的发布边界见第 5 节。
 
-Optional capture metadata reports prefix size, complete-packet count and incompleteness. Protocol presence is not proof of a complete exchange or recovered credentials. Never interpret an incomplete negative scan as absence. This change affects diagnostics only, not authentication extraction or Hashcat jobs.
+Optional capture metadata reports prefix size, complete-packet count and incompleteness. Protocol presence is not proof of a complete exchange or recovered credentials. Never interpret an incomplete negative scan as absence. This paragraph describes the earlier diagnostics increment; section 5 defines the later authentication endpoint boundaries.
 
 UE 清单新方案仍是[设计](UE_PRESENCE_DESIGN_2026-09-07.md)，未上线；上文现行 UE/subscriber 契约保持不变。
 The new UE-presence scheme remains a design, not a released change to UE/subscriber semantics.
 
 ## 5. 其他标准接口 Other Standard Endpoints
 
-- `POST /api/v1/crack/jobs`：先查 PAP（明文直返，不停小区），无 PAP 再从已有 S1AP capture 提 CHAP 启动作业并停止小区，成功 202；不要用它查看 UE/网络状态。
-- `GET /api/v1/crack/result`：PAP 直接 `ready`；CHAP 为 `running|ready` 或 404。CHAP 未采集/未观察、工具缺失及 capture 解码失败分别返回明确 reason。成功载荷带 `auth`（`pap|chap`）、`username`、`password`、`weak:true`（字典命中即弱口令）。
+- `POST /api/v1/crack/jobs`：空 body 保留旧的整份抓包审计流程，不声明目标归属。显式 `{"imsi":"15位","confirm_ownership":true}` 先校验订户：未知身份 404、数据库读取失败 500；即使订户存在，因尚无可靠的每 UE 凭据绑定仍返回 412，不提取凭据、不停止小区、不启动任务。旧流程先查 PAP（不停小区），无 PAP 再检查 CHAP/字典后停止小区并启动作业（202）；字典缺失/空返回 412。成功结果的 `ownership_verified` 始终为 false；`apn/imsi/ue_ipv4` 仅是 EPC 聚合上下文，不证明凭据归属。
+  An empty body retains the legacy capture-wide audit without target attribution. Explicit IMSI requests return 404 for an unknown subscriber, 500 on database failure, or 412 when the subscriber exists but per-UE credential binding is unavailable. Targeted calls return no credentials and cause no cell/job side effects. Legacy successful results always carry `ownership_verified=false`; enrichment is aggregate context only.
+- `GET /api/v1/crack/result`：旧流程返回 PAP `ready`、CHAP `running|ready` 或相应错误；显式 `?imsi=` 同样校验订户并在缺少可靠绑定时返回 412，不返回凭据。`no_password` 只表示字典未命中，不等于强口令。完整 record 前缀可避免未写完的尾记录，但并不能解决并发 CHAP identifier 复用或建立每 UE 关联。
+  Explicit IMSI result queries fail closed without a reliable per-UE association. A dictionary miss is not proof of password strength; complete-record snapshots do not solve CHAP identifier reuse or establish credential ownership.
 - `POST /api/v1/config/wordlist`：multipart `wordlist`，原子替换，下次作业使用。
 - `GET /api/v1/captures/{id}`：`lte-data|s1ap|enb|epc`；成功为文件，未知/未就绪 404。
 - `POST /api/v1/simcards`：最长约 180 秒；整个写卡及入库事务只允许停站并与 Start 原子互斥，运行中 409。无读卡器 503，无卡 412。

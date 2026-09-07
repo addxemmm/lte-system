@@ -114,3 +114,26 @@ Re-run full Go tests/vet and Python contracts, plus Linux race/deployment checks
 抓包诊断的最终竞态/进程等待修订同样触发执行工具拦截，故整个分支保持未发布草稿，不再构建、部署、合并或推送。初稿本地测试通过不覆盖最终未验收修订。生产仍为 `ltesystem-dep:enb-log-load-20260907`，bridge/8081/原数据卷与 RF 均未改。下一步先处理执行权限，再复核最终差异、运行全量测试；未完整验证前不要从该分支发布。
 
 The final capture-race/process-wait revision also encountered an execution-tool safety block. The branch is an unreleased draft: no build, deployment, merge or push. Passing initial tests do not validate later unaccepted edits. Production remains on the existing log-load image with bridge/8081/data/RF unchanged. Address execution permissions before reviewing and testing the final diff; do not deploy an unvalidated branch.
+
+## 2026-09-07 后续本地增量：错误 APN 受限接入（未发布） / Later local increment: restricted APN access (unreleased)
+
+本节是上述历史交接之后的新工作，不修改其当时的发布记录。当前工作仍在 `folk/ue-presence-auth-diagnostics`，没有切分支、提交、推送或部署。工作树含其他任务的认证审计改动，应按 diff 分开复核，不把整棵树归为 APN 功能。APN 增量的代码、回归与手机验收进度见 [专项记录](APN_RESTRICTED_ACCESS_2026-09-07.md)。
+
+This later work does not rewrite the historical release record. Work remains on the same experiment branch without a commit, push or deployment. The shared tree also contains another task's authentication-audit changes; review the separate diffs rather than attributing the whole tree to this feature.
+
+- 新参数默认 strict，旧 profile 兼容；成功启动会保存有效策略。restricted 须明确选择，并保留合法订户/AKA 边界。 / Strict remains the default for old profiles; a successful start persists the effective policy. Restricted mode is explicit and retains subscriber/AKA checks.
+- 新 EPC producer 为 schema 2，Go 消费端兼容 1/2；必须成套交付 Go 与 0001–0004 补丁后的 EPC，勿单独替换任一半。 / Ship the paired Go consumer and EPC patched with 0001–0004; do not upgrade only one side.
+- 发布前先完成本地和服务器验收并将新增源码纳入受审版本；部署打包仅收已跟踪工作树文件，新补丁/测试尚未跟踪时不构成完整发布包。 / Review and track all new source before packaging: deployment snapshots include tracked working-tree files only.
+- 启用/回退策略需要停站后重新启动，不是热更新。保留 bridge/8081、数据卷、最新 SQN、旧镜像；本轮没有执行这些服务器操作。 / Changing policy requires a stopped cell and a new start, not hot reconfiguration. Preserve the bridge/API setup, volume, newest SQNs and rollback image; no such server operations were performed here.
+
+下一步命令 / Next validation commands: `go test ./...`、`go vet ./...`、Linux `go test -race ./...`、`python -m unittest discover -s scripts/tests -v`、固定上游补丁的 CPU CTest；测试明细及尚待实机验证的项目以专项记录为准。
+
+## 2026-09-07 发布候选 2.1 / Release candidate 2.1
+
+上述未发布记录是历史时点；本次用户已要求整理提交、推送并部署最新版本。当前候选使用 `ltesystem-dep:2.1`，不回退标准 API 或多 UE 能力。已纳入完整 APN 源码及认证边界修正，排除来源未确认的 seed 晚改；详情及最终发布状态见 [2.1 发布记录](RELEASE_2.1_2026-09-07.md)。
+
+The unreleased sections above describe earlier checkpoints. The user now requested a committed, pushed and deployed release. Candidate 2.1 retains standard APIs and multi-UE behavior, includes the complete APN implementation and audit-boundary fixes, and excludes unverified late seed edits. Consult the release record for final deployment evidence.
+
+发布从当前 `folk/ue-presence-auth-diagnostics` 推送，不在缺少本次手机验收证据时自动合并 master。服务器构建成功后才停机备份/替换；维持原卷、最新 SQN、profile/RF/bridge，保留旧镜像以成套回滚。
+
+Push the current experiment branch without automatically merging master before handset acceptance. Build on the server before downtime, back up and replace while preserving the volume/latest SQNs/profile/RF/bridge, and retain the paired old image for rollback.

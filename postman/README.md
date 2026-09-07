@@ -1,7 +1,7 @@
 # Postman Collections — LTE-System API v3
 
-> **未发布草稿 / Unreleased draft:** 本分支内容未完成最终复核，未合并 master、未推送、未构建或部署。本轮执行工具拦截中止了后续实施；文中新增契约与 Postman 仅供审查，不代表现网已支持。
-> Final review is incomplete. This branch has not been merged, pushed, built or deployed. Execution-tool safety checks halted implementation; proposed additions and Postman files do not describe new production capabilities.
+> **未发布草稿 / Unreleased draft:** 本集合包含尚未发布的契约增量，本地合成测试不代表服务器支持或手机验收。APN 策略的最新状态见 [专项记录](../docs/APN_RESTRICTED_ACCESS_2026-09-07.md)。
+> This collection includes unreleased contract additions. Local synthetic tests do not establish server support or handset acceptance. See the APN-specific record for current evidence.
 
 
 ## 导入 Import
@@ -32,11 +32,23 @@ Remove or replace any older `lte-system` collection in Postman before importing.
 
 只读 smoke 的六个请求均带断言，但它只验证 API 契约、Manager 配置和已有采样证据；**不发送外网/DNS 探测，也不证明手机实际能上网、域名可解析或无线链路稳定**。小米等终端的偶发掉线仍需结合实时 eNB/EPC/射频日志诊断。
 
-新增完整性断言：读取 `chap.capture` 元数据、检查布尔状态和 packet 数量，拒绝“不完整但 scan_complete=true”及凭据字段。旧 UE 清单语义保持不变，新 UE 在线方案仅为设计；本次未修复或验证 Hashcat 作业链路。
+早期完整性增量记录：读取 `chap.capture` 元数据、检查布尔状态和 packet 数量，拒绝“不完整但 scan_complete=true”及凭据字段。新 UE 双源在线方案仍仅为设计；后续认证接口边界见下文和 API 文档。
 
-Capture-integrity assertions now reject contradictory completeness flags, invalid counts and credential fields. UE semantics remain unchanged; the new presence model is design-only. Hashcat jobs were not changed or validated in this revision.
+Capture-integrity assertions now reject contradictory completeness flags, invalid counts and credential fields. The dual-source presence model remains design-only; see the later authentication boundaries below and in the API reference.
 
 The assertions validate API envelopes and bounded evidence only. They do not probe Internet/DNS reachability or prove UE radio stability.
+
+### 错误 APN 受限接入增量 / Restricted APN increment
+
+后续本地增量为 UE 列表增加 schema 1/2 兼容断言：schema 2 区分 `normal`、`restricted`、`deny`，拒绝缺少权限字段或 APN/权限矛盾。这不是双源在线清单功能，也不证明手机已经联网。默认 Start body 仍精确为 `{}`，不自动更改已保存策略。新版本完整验收、部署且停站后，人工指定 `{"apn_mismatch_policy":"restricted"}` 才启用受限模式；旧 profile 默认为 `strict`。详见 [受限 APN 设计与验证](../docs/APN_RESTRICTED_ACCESS_2026-09-07.md)。
+
+The later local increment validates schema 1/2 policy fields on UE lists, without introducing dual-source presence or proving connectivity. The default Start body remains `{}`; it never silently changes the saved policy. Restricted access requires an explicit selection after a validated release and a stopped cell; old profiles default to strict.
+
+### 目标审计边界 / Targeted audit boundary
+
+显式 IMSI 审计尚无可靠每 UE 凭据绑定：未知订户 404、订户库读取失败 500、已知目标 412，且不提取凭据、不停止小区、不启动作业。空 body 是既有整份抓包流程，始终 `ownership_verified=false`；不要把 EPC 聚合上下文当作目标归属。
+
+Explicit IMSI audits fail closed until reliable per-UE credential binding exists: 404 for unknown subscribers, 500 for database errors and 412 for known targets, without credential extraction or cell/job effects. An empty body retains legacy capture-wide behavior and never verifies ownership.
 
 ---
 **导航 Navigation:** [仓库根](../README.md) · [API v3](../docs/API.md) · [OpenAPI](../docs/api/openapi.yaml)

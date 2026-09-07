@@ -22,16 +22,17 @@ import (
 
 // StartParams mirrors POST /start (legacy fields + SDR extensions).
 type StartParams struct {
-	Band       string `json:"band"`
-	APN        string `json:"apn"`
-	MCC        string `json:"mcc"`
-	MNC        string `json:"mnc"`
-	Network    string `json:"network"`
-	SDR        string `json:"sdr"`         // "uhd"|"bladerf"|"zmq"|"auto"|""
-	DeviceArgs string `json:"device_args"` // optional UHD/bladeRF args
-	TxGain     *int   `json:"tx_gain"`
-	RxGain     *int   `json:"rx_gain"`
-	NPRB       *int   `json:"n_prb"`
+	Band              string `json:"band"`
+	APN               string `json:"apn"`
+	APNMismatchPolicy string `json:"apn_mismatch_policy"`
+	MCC               string `json:"mcc"`
+	MNC               string `json:"mnc"`
+	Network           string `json:"network"`
+	SDR               string `json:"sdr"`         // "uhd"|"bladerf"|"zmq"|"auto"|""
+	DeviceArgs        string `json:"device_args"` // optional UHD/bladeRF args
+	TxGain            *int   `json:"tx_gain"`
+	RxGain            *int   `json:"rx_gain"`
+	NPRB              *int   `json:"n_prb"`
 	// Operator name shown on the UE (NITZ via EMM Information).
 	// Empty = server default (legacy display "srsRAN").
 	FullNetName  string `json:"full_net_name"`
@@ -56,6 +57,9 @@ func (p StartParams) Validate() error {
 	}
 	if err := validateAPN(p.APN); err != nil {
 		return fmt.Errorf("apn %w", err)
+	}
+	if err := validateAPNMismatchPolicy(p.APNMismatchPolicy); err != nil {
+		return fmt.Errorf("apn_mismatch_policy %w", err)
 	}
 	network := strings.TrimSpace(p.Network)
 	if network != "" && network != "auto" && !validInterfaceName(network) {
@@ -196,16 +200,17 @@ func New(cfg config.Config) *Manager { return &Manager{cfg: cfg} }
 
 // Status is the machine-readable state for /status and /healthz.
 type Status struct {
-	Running         bool       `json:"running"`
-	EPC             bool       `json:"epc"`
-	ENB             bool       `json:"enb"`
-	Pcap            bool       `json:"pcap"`
-	StartedAt       *time.Time `json:"started_at,omitempty"`
-	Band            string     `json:"band,omitempty"`
-	APN             string     `json:"apn,omitempty"`
-	NetName         string     `json:"net_name,omitempty"`
-	Network         string     `json:"network,omitempty"`
-	ResolvedNetwork string     `json:"resolved_network,omitempty"`
+	Running           bool       `json:"running"`
+	EPC               bool       `json:"epc"`
+	ENB               bool       `json:"enb"`
+	Pcap              bool       `json:"pcap"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	Band              string     `json:"band,omitempty"`
+	APN               string     `json:"apn,omitempty"`
+	APNMismatchPolicy string     `json:"apn_mismatch_policy,omitempty"`
+	NetName           string     `json:"net_name,omitempty"`
+	Network           string     `json:"network,omitempty"`
+	ResolvedNetwork   string     `json:"resolved_network,omitempty"`
 }
 
 // IsRunning reports live state. Only non-zombie, non-exited processes
@@ -223,6 +228,7 @@ func (m *Manager) IsRunning() Status {
 		st.StartedAt = &t
 		st.Band = m.lastStart.Band
 		st.APN = m.lastStart.APN
+		st.APNMismatchPolicy = effectiveAPNMismatchPolicy(m.lastStart.APNMismatchPolicy)
 		st.NetName = m.lastStart.FullNetName
 		st.Network = m.lastStart.Network
 		st.ResolvedNetwork = m.lastNetwork
@@ -237,6 +243,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 	if p.Network == "" {
 		p.Network = "auto"
 	}
+	normalizeAPNMismatchPolicy(&p)
 	normalizeUEPolicy(&p)
 	if err := p.Validate(); err != nil {
 		return false, err
@@ -366,7 +373,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (bandKnown bool, err
 		return known, err
 	}
 	epcCmd := exec.CommandContext(context.Background(), m.cfg.SrsEPCBin, epcConf)
-	epcCmd.Env = withEnv(os.Environ(), "LTE_UE_SNAPSHOT_PATH", ueSnapshotPath, "LTE_UE_RUN_ID", runID)
+	epcCmd.Env = epcEnvironment(os.Environ(), ueSnapshotPath, runID, p.APNMismatchPolicy)
 	epcCmd.Stdout = epcLogF
 	epcCmd.Stderr = epcLogF
 	epc, err := startManaged(epcCmd)
@@ -440,6 +447,7 @@ func (m *Manager) ProfilePath() string { return filepath.Join(m.cfg.DataDir, "la
 // SaveProfile persists effective start params while retaining the "auto"
 // uplink policy rather than the interface it happened to resolve to.
 func (m *Manager) SaveProfile(p StartParams) error {
+	normalizeAPNMismatchPolicy(&p)
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
@@ -469,6 +477,10 @@ func (m *Manager) LoadProfile() (p StartParams, ok bool) {
 	if strings.TrimSpace(v.Network) == "" {
 		v.Network = "auto"
 	}
+	normalizeAPNMismatchPolicy(&v)
+	if err := validateAPNMismatchPolicy(v.APNMismatchPolicy); err != nil {
+		return StartParams{}, false
+	}
 	normalizeUEPolicy(&v)
 	return v, true
 }
@@ -485,6 +497,9 @@ func (m *Manager) OverlayProfile(p *StartParams) bool {
 	}
 	if p.APN == "" {
 		p.APN = saved.APN
+	}
+	if p.APNMismatchPolicy == "" {
+		p.APNMismatchPolicy = saved.APNMismatchPolicy
 	}
 	if p.MCC == "" {
 		p.MCC = saved.MCC

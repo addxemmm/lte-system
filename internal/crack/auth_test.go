@@ -1,6 +1,12 @@
 package crack
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
 
 // realisticCHAP mimics `tshark -V` output for two CHAP exchanges: an old
 // complete one (id 0x03) and a newer complete one (id 0x05). The parser must
@@ -89,5 +95,106 @@ func TestParsePAPText_Missing(t *testing.T) {
 	half := "Password Authentication Protocol\n    Password: cmwap\n"
 	if _, err := ParsePAPText(half); err == nil {
 		t.Fatal("half credential must error")
+	}
+}
+
+func TestValidateAuditConsent(t *testing.T) {
+	if f, _ := ValidateAuditConsent(AuditConsent{}); f != "" {
+		t.Fatalf("empty consent must pass for legacy calls, got %q", f)
+	}
+	if f, _ := ValidateAuditConsent(AuditConsent{IMSI: "001010123456789", ConfirmOwnership: true}); f != "" {
+		t.Fatalf("owned consent rejected: %q", f)
+	}
+	for _, tc := range []AuditConsent{
+		{IMSI: "001", ConfirmOwnership: true},
+		{IMSI: "001010123456789"},
+		{ConfirmOwnership: true},
+	} {
+		if f, _ := ValidateAuditConsent(tc); f == "" {
+			t.Fatalf("bad consent accepted: %+v", tc)
+		}
+	}
+}
+
+func TestCheckWordlist(t *testing.T) {
+	cfg := observationConfig(t, nil)
+	cfg.DataDir = cfg.LogDir
+	if err := CheckWordlist(cfg); err == nil {
+		t.Fatal("missing wordlist must fail closed")
+	}
+	wordlistPath := cfg.WordlistPath()
+	if err := os.WriteFile(wordlistPath, []byte{}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckWordlist(cfg); err == nil {
+		t.Fatal("empty wordlist must fail closed")
+	}
+	if err := os.WriteFile(wordlistPath, []byte("password\n123456\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckWordlist(cfg); err != nil {
+		t.Fatalf("valid wordlist rejected: %v", err)
+	}
+}
+
+func TestAuditLimitationsMentionsOwnership(t *testing.T) {
+	unverified := AuditLimitations(false)
+	verified := AuditLimitations(true)
+	joined := func(ss []string) string {
+		out := ""
+		for _, s := range ss {
+			out += s + "\n"
+		}
+		return out
+	}
+	if !strings.Contains(joined(unverified), "ownership not verified") {
+		t.Fatalf("unverified limitations must urge consent: %v", unverified)
+	}
+	if !strings.Contains(joined(verified), "ownership not verified") {
+		t.Fatalf("membership must not imply credential ownership: %v", verified)
+	}
+	for _, ss := range [][]string{unverified, verified} {
+		j := joined(ss)
+		if !strings.Contains(j, "CHAP identifier reuse") || strings.Contains(j, "never a mixed handshake") {
+			t.Fatalf("must explain correlation limits without claiming snapshot isolation: %v", ss)
+		}
+		if !strings.Contains(j, "EPC log") || !strings.Contains(j, "hashcat -m 4800") {
+			t.Fatalf("limitations must state EPC-vs-pcap and PAP/CHAP split: %v", ss)
+		}
+	}
+}
+
+func TestOpenAppendTightensExistingLog(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mode bits are not implemented by Windows chmod")
+	}
+	path := filepath.Join(t.TempDir(), "audit.log")
+	if err := os.WriteFile(path, []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := openAppend(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("log permissions: %o", st.Mode().Perm())
+	}
+	if _, err := f.WriteString("after\n"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "before\nafter\n" {
+		t.Fatalf("append lost content: %q", content)
 	}
 }
