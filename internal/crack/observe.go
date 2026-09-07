@@ -31,6 +31,9 @@ type CaptureObservation struct {
 	SnapshotSize    int64     `json:"snapshot_size_bytes,omitempty"`
 	CompletePackets uint64    `json:"complete_packets,omitempty"`
 	Incomplete      bool      `json:"incomplete,omitempty"`
+	TailIncomplete  bool      `json:"tail_incomplete,omitempty"`
+	SourceChanged   bool      `json:"source_changed,omitempty"`
+	TrailingBytes   int64     `json:"trailing_bytes,omitempty"`
 }
 
 // CHAPObservation describes protocol visibility without returning a username,
@@ -83,6 +86,7 @@ func observeCHAP(ctx context.Context, cfg config.Config, startedAt *time.Time, r
 		// and may refer to an object replaced before Open.
 		o.Capture.SizeBytes = snapshot.sourceInfo.Size()
 		o.Capture.ModifiedAt = snapshot.sourceInfo.ModTime()
+		o.Capture.SourceChanged = snapshot.sourceMutated
 		o.Capture.State = "present"
 		if startedAt != nil {
 			// The capture is normally created shortly before Manager.startedAt
@@ -117,6 +121,8 @@ func observeCHAP(ctx context.Context, cfg config.Config, startedAt *time.Time, r
 			o.Reason = "capture_incomplete"
 			o.Capture.State = "incomplete"
 			o.Capture.Incomplete = true
+			o.Capture.TailIncomplete = errors.Is(err, errCaptureIncomplete)
+			o.Capture.SourceChanged = o.Capture.SourceChanged || errors.Is(err, errCaptureChanged)
 		case errors.Is(err, errCaptureFormat):
 			o.State = "unavailable"
 			o.Reason = "capture_format_invalid"
@@ -142,14 +148,18 @@ func observeCHAP(ctx context.Context, cfg config.Config, startedAt *time.Time, r
 	o.Capture.SnapshotSize = snapshot.sizeBytes
 	o.Capture.CompletePackets = snapshot.completePackets
 	o.Capture.Incomplete = snapshot.incomplete
+	o.Capture.TailIncomplete = snapshot.tailIncomplete
+	o.Capture.SourceChanged = snapshot.sourceMutated
+	o.Capture.TrailingBytes = snapshot.trailingBytes
 	if snapshot.sourceChanged(path) {
 		snapshot.incomplete = true
 		o.Capture.Incomplete = true
+		o.Capture.SourceChanged = true
 	}
 	if snapshot.incomplete {
 		o.Capture.State = "incomplete"
 		o.Limitations = append(o.Limitations,
-			"only the immutable prefix ending at the last complete pcap record was inspected")
+			"the snapshot contains only complete pcap records; framing completeness does not establish successful decoding")
 	}
 	if predates {
 		if snapshot.incomplete {
@@ -194,6 +204,7 @@ func observeCHAP(ctx context.Context, cfg config.Config, startedAt *time.Time, r
 	if snapshot.sourceChanged(path) {
 		snapshot.incomplete = true
 		o.Capture.Incomplete = true
+		o.Capture.SourceChanged = true
 		o.Capture.State = "incomplete"
 		o.Limitations = append(o.Limitations,
 			"the source capture changed while its immutable prefix was inspected")

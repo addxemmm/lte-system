@@ -72,6 +72,9 @@ components:
         snapshot_size_bytes: { type: integer, format: int64, minimum: 0 }
         complete_packets: { type: integer, format: int64, minimum: 0 }
         incomplete: { type: boolean }
+        tail_incomplete: { type: boolean, description: 'A partial header or final record was observed; this does not identify its cause.' }
+        source_changed: { type: boolean, description: 'File identity or metadata changed during inspection. False or omitted is not an atomic snapshot guarantee.' }
+        trailing_bytes: { type: integer, format: int64, minimum: 0, description: 'Bytes excluded after the last complete record when framing inspection succeeds; not a dropped-packet count.' }
       description: 'Metadata only. A private complete-record prefix is removed after inspection; the original capture is unchanged.'
     ProtocolObservation:
       type: object

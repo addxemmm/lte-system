@@ -157,6 +157,10 @@ A live S1AP capture can end mid-record. Diagnostics inspect a bounded private im
 
 Optional capture metadata reports prefix size, complete-packet count and incompleteness. Protocol presence is not proof of a complete exchange or recovered credentials. Never interpret an incomplete negative scan as absence. This paragraph describes the earlier diagnostics increment; section 5 defines the later authentication endpoint boundaries.
 
+本地诊断增量（尚未部署）：`tail_incomplete` 表示发现不完整文件头或尾记录；`source_changed` 表示检查期间文件身份或元数据变化；`trailing_bytes` 表示成功完成记录边界检查后排除的尾部字节数，并非丢包数。两种原因可以同时出现，字段省略不代表原子快照保证。这些字段只细分已有 `incomplete`，不改变状态码、解析、任务启动条件或抓包写入方式，也不证明日志开关有误。
+
+Local diagnostic increment (not deployed): `tail_incomplete` identifies a partial header or final record; `source_changed` identifies observed file identity or metadata changes; `trailing_bytes` counts bytes excluded after successful record-boundary inspection, not dropped packets. Both causes can coexist; omitted fields do not guarantee an atomic snapshot. These metadata fields refine existing `incomplete` reporting without changing status codes, extraction, job preconditions, or capture writing, and do not establish a logging configuration fault.
+
 UE 清单新方案仍是[设计](UE_PRESENCE_DESIGN_2026-09-07.md)，未上线；上文现行 UE/subscriber 契约保持不变。
 The new UE-presence scheme remains a design, not a released change to UE/subscriber semantics.
 

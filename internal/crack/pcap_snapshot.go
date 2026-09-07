@@ -33,6 +33,9 @@ type captureSnapshot struct {
 	sizeBytes       int64
 	completePackets uint64
 	incomplete      bool
+	tailIncomplete  bool
+	sourceMutated   bool
+	trailingBytes   int64
 }
 
 func (s *captureSnapshot) cleanup() { _ = os.Remove(s.path) }
@@ -122,6 +125,7 @@ func snapshotClassicPCAPWithHooks(ctx context.Context, source string, maxBytes i
 		return snapshot, err
 	}
 	changed := after.Size() != opened.Size() || !after.ModTime().Equal(opened.ModTime())
+	snapshot.sourceMutated = changed
 	if len(data) == 0 {
 		snapshot.incomplete = changed
 		return snapshot, nil
@@ -175,6 +179,8 @@ func snapshotClassicPCAPWithHooks(ctx context.Context, source string, maxBytes i
 	snapshot.sizeBytes = int64(prefixLen)
 	snapshot.completePackets = packets
 	snapshot.incomplete = trailing || changed
+	snapshot.tailIncomplete = trailing
+	snapshot.trailingBytes = int64(len(data) - prefixLen)
 	return snapshot, nil
 }
 
