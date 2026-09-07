@@ -137,3 +137,9 @@ The unreleased sections above describe earlier checkpoints. The user now request
 发布从当前 `folk/ue-presence-auth-diagnostics` 推送，不在缺少本次手机验收证据时自动合并 master。服务器构建成功后才停机备份/替换；维持原卷、最新 SQN、profile/RF/bridge，保留旧镜像以成套回滚。
 
 Push the current experiment branch without automatically merging master before handset acceptance. Build on the server before downtime, back up and replace while preserving the volume/latest SQNs/profile/RF/bridge, and retain the paired old image for rollback.
+
+### 2.1 发布完成交接 / Deployment-complete handoff
+
+已推送源码 `c18151d`，服务器完整构建通过七项 CTest，运行 `ltesystem-dep:2.1` 并显式启用 restricted。原 volume/profile/RF 保留；12:05 UTC 的 schema 2 当前快照观察到一台 normal/apn_omitted 注册终端，尚不是错误 APN/Internet 验收。已清理12个旧LTE tag/6个镜像，只保留2.1与 `rollback-release-2.1-20260907T113519Z`；GSM、数据卷和备份不变。镜像ID、私有证据位置和回滚步骤见 [2.1 发布记录](RELEASE_2.1_2026-09-07.md)。
+
+Source c18151d is pushed. The server image passed seven CTests and runs with restricted enabled, preserving the volume/profile/RF. One normal APN-omitted UE was registered in the current schema-2 snapshot at 12:05 UTC; wrong-APN and Internet acceptance remain pending. Twelve old LTE tags/six images were removed; current and rollback images remain, with GSM/volumes/backups untouched. See the release record for identities and rollback.

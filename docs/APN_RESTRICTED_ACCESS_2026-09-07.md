@@ -1,5 +1,8 @@
 # 错误 APN 受限接入 / Restricted access for an APN mismatch
 
+> 后续发布更新：本文件保留早前本地实现检查点。2.1 已部署并显式启用 restricted；服务器 CTest、运行和清理证据见 [最新发布记录](RELEASE_2.1_2026-09-07.md)。错误 APN 的手机验收仍未完成。
+> Later release update: this file preserves the earlier local checkpoint. Image 2.1 is deployed with restricted explicitly enabled; consult the release record for server tests/runtime/cleanup evidence. Incorrect-APN handset acceptance is still pending.
+
 > 状态：本地实现与 CPU 回归验证完成；未发布、未部署或启用到服务器，手机实机验收待执行。
 > Status: local implementation and CPU regressions complete; not released, deployed or enabled on a server. Handset acceptance remains pending.
 

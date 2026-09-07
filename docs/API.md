@@ -1,7 +1,7 @@
 # LTE-System API v3
 
-> **未发布草稿 / Unreleased draft:** 本分支包含尚未发布的契约变更；本地 CPU 测试不等于镜像发布或手机验收。APN 受限接入的最新实现与验证状态见 [专项记录](APN_RESTRICTED_ACCESS_2026-09-07.md)，不代表现网已支持。
-> This branch contains unreleased contract changes. Local CPU tests are not image deployment or handset acceptance. See the APN-specific record for current implementation and validation evidence; these additions do not describe new production capabilities.
+> **2.1 发布更新 / Release update:** 本契约已配套部署于 2.1，restricted 已显式启用。服务器构建、CPU 回归和正常 APN 路径注册已观察；错误 APN 手机行为和 Internet 验收仍待进行。见 [发布记录](RELEASE_2.1_2026-09-07.md)。
+> This contract ships in image 2.1 with restricted explicitly enabled. Server build/CPU regressions and normal-path registration were observed; incorrect-APN handset behavior and Internet acceptance remain pending.
 
 
 机器可读契约见 [`api/openapi.yaml`](api/openapi.yaml)。v3 只提供 `/api/v1/*` 标准接口；已删除根路径旧接口以及单终端 `/api/v1/ue`。
@@ -33,7 +33,7 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 
 `network` 省略、空或 `auto` 时按当前网络命名空间的 IPv4 默认路由 metric 解析；`GET /api/v1/cell` 的 `network` 是请求策略，`resolved_network` 是实际接口。`dns` 必须是 UE 可达的 resolver。当前只支持一个配置 APN/一个 SGi 网段；`ue_subnet` 必须是 RFC1918 `/24`，默认 `172.16.0.0/24`；`ue_access=isolated|allow`，默认 `isolated`。
 
-未发布新增参数 `apn_mismatch_policy=strict|restricted`：缺省/旧 profile 为 strict（错误 APN 拒绝注册）；restricted 对已通过原有 SIM/AKA 鉴权、格式合法但显式不匹配的 APN 建立受限默认承载，并在 SPGW 丢弃双向用户面。正确/省略 APN 保持正常；异常 APN 仍拒绝。参数保存到 profile，空请求继承，显式 strict 可覆盖；非法值返回字段级 422。`ue_access=allow` 不解除 restricted 限制。新版本需成套构建、部署并明确启用后生效，详见 [受限接入](APN_RESTRICTED_ACCESS_2026-09-07.md)。
+2.1 新增参数 `apn_mismatch_policy=strict|restricted`：缺省/旧 profile 为 strict（错误 APN 拒绝注册）；restricted 对已通过原有 SIM/AKA 鉴权、格式合法但显式不匹配的 APN 建立受限默认承载，并在 SPGW 丢弃双向用户面。正确/省略 APN 保持正常；异常 APN 仍拒绝。参数保存到 profile，空请求继承，显式 strict 可覆盖；非法值返回字段级 422。`ue_access=allow` 不解除 restricted 限制。新版本需成套构建、部署并明确启用后生效，详见 [受限接入](APN_RESTRICTED_ACCESS_2026-09-07.md)。
 
 Unreleased `apn_mismatch_policy` defaults to strict for compatibility. Explicit restricted mode retains normal subscriber/AKA checks and admits only syntactically valid APN mismatches with a restricted default bearer and bidirectional SPGW drops. The effective setting is inherited/persisted with the startup profile; invalid values return 422. This is not a claim that the current server supports the new mode.
 

@@ -1,7 +1,7 @@
 # Postman Collections — LTE-System API v3
 
-> **未发布草稿 / Unreleased draft:** 本集合包含尚未发布的契约增量，本地合成测试不代表服务器支持或手机验收。APN 策略的最新状态见 [专项记录](../docs/APN_RESTRICTED_ACCESS_2026-09-07.md)。
-> This collection includes unreleased contract additions. Local synthetic tests do not establish server support or handset acceptance. See the APN-specific record for current evidence.
+> **2.1 发布更新 / Release update:** 本集合对应已部署的 2.1 契约；合成测试与 API 冒烟不等于手机错误 APN/Internet 验收。见 [发布记录](../docs/RELEASE_2.1_2026-09-07.md)。
+> This collection matches the deployed 2.1 contract; synthetic/API checks do not prove incorrect-APN handset behavior or Internet connectivity.
 
 
 ## 导入 Import

@@ -1,15 +1,18 @@
 # 更新日志 Changelog
 
-## [2.1] - 2026-09-07（准备中 / Preparing）
+> 2.1 已于 2026-09-07 12:02 UTC 部署并启动，restricted 生效；服务器七项 CTest 与只读 smoke 通过。清理 12 个旧 LTE 标签/6 个镜像，保留一套回滚与全部数据。手机错误 APN 验收仍待进行。详见 [发布证据](docs/RELEASE_2.1_2026-09-07.md)。
+> 2.1 was deployed and started with restricted enabled; seven server CTests and read-only smoke passed. Removed 12 obsolete LTE tags/six images, retaining rollback and all data. Incorrect-APN handset acceptance remains pending; see the release evidence.
+
+## [2.1] - 2026-09-07
 
 - 本次使用用户指定镜像编号 `ltesystem-dep:2.1`（按 2.0→2.1 编号），同步 `VERSION` 和两种 Compose 的镜像默认值。这不是从历史 3.0 降级：保留标准 `/api/v1`、多 UE、订户和网络管理，旧根路径接口与单条 `/api/v1/ue` 不恢复；下方 3.0 历史记录保留。 / Use the user-selected image number 2.1, following their 2.0→2.1 numbering, in VERSION and both Compose defaults. This is not a downgrade from historical 3.0: retain the standard API and multi-UE/subscriber/network functionality without restoring removed legacy routes or rewriting history.
 - APN restricted 显式启用，strict 默认；配套交付 schema-2 EPC producer 与兼容 schema 1/2 的 Go 消费端。SPGW 确认后才发布 normal/restricted，受限用户面双向丢弃。 / Restricted APN access is opt-in, with strict as the default. Ship the schema-2 EPC producer together with the schema-1/2 Go consumer; publish normal/restricted only after SPGW confirmation and drop restricted traffic in both directions.
 - 本次候选包含工作树中既有的 PAP/CHAP 弱口令审计、抓包完整性和作业前置校验差异，独立于 APN 接入策略；UE 双源在线状态仍仅有设计、未实现。 / The candidate also includes existing PAP/CHAP audit, capture-integrity and job-preflight changes, separate from APN access policy. Dual-source UE presence remains design-only and unimplemented.
-- 状态为准备中：本地 APN Go/vet、Linux race、交叉编译及专项 CPU/契约测试已通过；最新认证审计修订需复验，服务器镜像构建、部署和手机验收待执行。保留原卷、最新 SQN、RF、bridge/8081 与旧镜像 `ltesystem-dep:enb-log-load-20260907` 作为成套回滚目标。 / Preparing: local APN Go/vet, Linux race, cross-build and feature CPU/contract tests passed; latest audit fixes require revalidation, and server-image build, deployment and handset acceptance are pending. Preserve the volume, newest SQNs, RF and bridge/API setup, with the previous image as the paired rollback target.
-- 认证审计发布边界：显式 IMSI 请求因缺少可靠逐 UE 凭据绑定返回 412，不泄凭据、不停小区；订户数据库读取失败为服务错误。无 IMSI 的 legacy 审计保留，ownership_verified=false。两项修复由独立任务实施，发布前复验；不宣称支持按 IMSI 审计。 / Audit release boundaries: explicit IMSI requests return 412 without credentials or cell-stop effects because per-UE binding is unavailable; database read failures are service errors. No-IMSI legacy auditing remains with ownership_verified=false. Independently implemented fixes require revalidation before release; per-IMSI auditing is not claimed.
-- 详细范围、测试边界与待执行发布/回滚步骤见 [2.1 发布说明](docs/RELEASE_2.1_2026-09-07.md)。以下较早的未发布条目保留为历史上下文。 / See the [2.1 release notes](docs/RELEASE_2.1_2026-09-07.md) for scope, evidence limits and pending release/rollback steps. Earlier unreleased entries below remain as historical context.
+- 已完成最终 Windows/Linux Go/vet/race、Python 契约、服务器完整镜像构建与七项 CTest，并部署启动。保留原卷、最新 SQN、RF、bridge/8081；当前回滚标签为 `ltesystem-dep:rollback-release-2.1-20260907T113519Z`。手机错误 APN 验收待执行。 / Final local regressions, full server build and seven CTests passed; the image is deployed and running. Preserve the volume/latest SQNs/RF/bridge setup and the retained rollback tag. Incorrect-APN handset acceptance remains pending.
+- 认证审计发布边界：显式 IMSI 请求因缺少可靠逐 UE 凭据绑定返回 412，不泄凭据、不停小区；订户数据库读取失败为服务错误。无 IMSI 的 legacy 审计保留，ownership_verified=false。两项修复已独立复核并通过发布前测试；不宣称支持按 IMSI 审计。 / Audit release boundaries: explicit IMSI requests return 412 without credentials or cell-stop effects because per-UE binding is unavailable; database read failures are service errors. No-IMSI legacy auditing remains with ownership_verified=false. The independently reviewed fixes passed pre-release tests; per-IMSI auditing is not claimed.
+- 详细范围、测试边界与已执行发布/回滚步骤见 [2.1 发布说明](docs/RELEASE_2.1_2026-09-07.md)。以下较早的未发布条目保留为历史上下文。 / See the [2.1 release notes](docs/RELEASE_2.1_2026-09-07.md) for scope, evidence limits and executed release/rollback steps. Earlier unreleased entries below remain as historical context.
 
-## 未发布：2026-09-07 错误 APN 受限接入 / Unreleased restricted APN access
+## 历史未发布检查点：2026-09-07 错误 APN 受限接入 / Historical unreleased checkpoint
 
 - 新增 `apn_mismatch_policy=strict|restricted`：默认保持严格拒绝，明确启用 restricted 后，合法订户的格式合法错误 APN 可获得受限默认承载；保留 SIM/AKA，并在 SPGW 阻断双向用户面。 / Add an explicit restricted default-bearer mode while keeping strict rejection as the default, preserving subscriber/AKA checks and dropping restricted user-plane traffic in both directions.
 - 普通/受限动态地址分类、会话代次校验、失败回收与有界删除重试；正常 idle 寻呼保留多包队列。 / Separate normal/restricted address classes, validate session generations, reclaim failed sessions with bounded retries, and retain normal multi-packet paging queues.

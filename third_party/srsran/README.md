@@ -74,7 +74,7 @@ CPU tests use synthetic identities/keys, spies and pipe/file fixtures without RF
 
 Standards: [TS 23.003 §9.1](https://www.etsi.org/deliver/etsi_ts/123000_123099/123003/16.11.01_60/ts_123003v161101p.pdf), [TS 23.401 default APN](https://www.etsi.org/deliver/etsi_ts/123400_123499/123401/16.12.00_60/ts_123401v161200p.pdf), [TS 24.301 Attach/ESM rejection](https://www.etsi.org/deliver/etsi_ts/124300_124399/124301/13.04.00_60/ts_124301v130400p.pdf).
 
-## 0004: explicit restricted APN mode (unreleased) / 显式受限 APN 模式（未发布）
+## 0004: explicit restricted APN mode / 显式受限 APN 模式
 
 Apply 0004 after 0001–0003, rebuilding the complete EPC. `LTE_APN_MISMATCH_POLICY=strict|restricted` is read once before initialization; absent/empty remains strict and invalid values fail startup. The Go launcher supplies the effective profile/request value explicitly. This changes the local UNIX S11 POD layout, not an interoperable on-wire GTP extension; do not mix producer/consumer builds.
 
@@ -87,3 +87,6 @@ Normal and restricted dynamic addresses are separate for the EPC run. Restricted
 The producer now emits schema 2, requiring `access_policy` and `access_reason`. Before session-install confirmation or after cleanup, it emits deny/session_unavailable with no selected APN. Restricted means apn_mismatch and apn_validated=false, while retaining the actual request. The paired Go consumer accepts v1 and v2 and rejects contradictory/missing/null policy metadata. `LTE_TEST_SNAPSHOT_EXPORT` on the CPU snapshot test optionally exports a synthetic three-policy fixture for cross-language validation.
 
 新快照区分正常、受限和未授权数据会话，不把注册状态等同于 Internet 可用。测试含 NAS 注册路径、正常 600 次地址回收、受限池耗尽、pipe/短命 loopback UDP 双向出口、队列/代次、失败回滚、迟到响应和删除重试。UDP 测试要求 loopback 2152 端口空闲，失败时不与现有服务共用该端口；无真实 RF、TUN、服务器或订户操作。最终本地证据与实机验收边界见 [专项记录](../../docs/APN_RESTRICTED_ACCESS_2026-09-07.md)。
+
+2.1 发布更新：本补丁已在服务器完整镜像构建中通过全部七项 CTest 并配套部署，restricted 已显式启用；错误 APN 手机验收仍待进行。见 [发布记录](../../docs/RELEASE_2.1_2026-09-07.md)。
+Release update: patch 0004 passed all seven server image-build CTests and is deployed with restricted enabled. Incorrect-APN handset acceptance remains pending; see the release record.
