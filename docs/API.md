@@ -13,8 +13,39 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 - 基地址：`http://HOST:8081`；客户端不要使用监听地址 `0.0.0.0`。
 - JSON 包络：`{"code":int,"message":string,"data":object|null,"request_id":string}`；成功 `code=0`。
 - 每个响应都有 `X-Request-ID`。未知路径和方法分别返回标准 404/405 包络。
-- 设置 `LTE_API_TOKEN` 后，每个请求须带 `Authorization: Bearer TOKEN`；日志只记录 request id、方法、路径、状态及耗时，不记录请求体。
+- 配置文件 `api_token` 非空时，每个请求须带 `Authorization: Bearer TOKEN`；有效 Token 为空时开放访问。非空 `LTE_API_TOKEN` 可覆盖文件配置，详见下节。
 - JSON body 必须是单一对象；多余值、数组、`null` 或尾随垃圾返回 400。上传默认上限 8 MiB。
+
+### 固定 Token 鉴权（2.1 增量） / Static-token authentication (2.1 increment)
+
+从 `configs/app.yaml.example` 复制私有配置为 `configs/app.yaml`，填写以下字段。示例保持空值，不生成、不提交真实 Token：
+
+Copy `configs/app.yaml.example` to the private `configs/app.yaml` and set this field. Examples stay empty; no real token is generated or committed:
+
+```yaml
+# 留空关闭鉴权 / Empty disables authentication
+api_token: ""
+# 启用时改为你的固定值 / To enable, replace with your own fixed value:
+# api_token: "TOKEN"
+```
+
+- 优先级：去除首尾空白后的非空 `LTE_API_TOKEN` > 文件 `api_token` > 空值。空/纯空白环境变量不会抹掉文件里的 Token；要关闭鉴权，文件和环境变量都留空。
+- 非空时保护全部路由和方法，包括健康检查、下载和未知路径；只接受一个 `Authorization` 请求头，不接受 URL 参数、Cookie 或 JSON body 中的 Token。Bearer scheme 不区分大小写，Token 值区分大小写。
+- 缺失、错误或重复 Authorization 返回 HTTP `401`、业务码 `40101`、`WWW-Authenticate: Bearer` 及标准 request ID；不进入业务处理。开放模式忽略鉴权头，后续参数验证仍正常执行。
+- 配置只在 API 启动时加载。修改文件或环境变量需要重启 API，不是热更新。指定的配置文件缺失、不可读或 YAML 无效会启动失败，避免拼错路径后意外开放访问。
+- 自动查找时也不会忽略文件探测错误；若完全找不到配置且环境 Token 为空则启动失败。要开放访问，请保留一个有效配置文件并将 `api_token` 留空或省略；非空环境 Token 仍支持无文件启动。
+- 默认查找顺序为 `/app/configs/app.yaml`、`configs/app.yaml`、`/data/app.yaml`；显式设置 `LTE_CONFIG` 可确定实际读取的路径。Docker 镜像中通常已有第一项，单独新增 `/data/app.yaml` 不会覆盖它；参见 [部署配置](DEPLOY.md#固定-token-配置文件--static-token-config-file)。
+- Token 属于共享管理凭据，不是 Google 登录、JWT、用户权限或传输加密。使用足够长的随机值且不含内部空白；限制配置文件读取权限，不提交秘密，跨不可信网络使用 HTTPS 或 SSH。日志与响应不输出 Token。
+
+Precedence: trimmed nonempty `LTE_API_TOKEN` overrides file `api_token`; otherwise the file value is used, with empty meaning anonymous access. Empty/whitespace environment values do not disable a file token. Clear both sources to disable authentication. All routes and methods, including health, downloads and unknown paths, are gated before dispatch. Only one Authorization header is accepted; query, cookie and body tokens are ignored. The Bearer scheme is case-insensitive; the token is case-sensitive. Missing, incorrect or duplicate authorization produces HTTP 401/code 40101 with a Bearer challenge and request ID. Anonymous mode skips authentication, not business validation.
+
+Configuration is loaded at startup, not per request. Restart the API after changes. A selected missing/unreadable/invalid configuration fails startup rather than silently opening access. Explicit `LTE_CONFIG` selects the file; otherwise the search order is `/app/configs/app.yaml`, `configs/app.yaml`, then `/data/app.yaml`. A baked-in Docker file takes precedence over an unselected data-volume file. A static shared token is not Google sign-in, JWT, per-user authorization or encryption. Use a long random value without internal whitespace, restrict file permissions, keep secrets out of Git and use HTTPS/SSH over untrusted networks. Tokens are not returned or logged.
+
+Discovery errors fail startup. If no file is found and the environment token is empty, startup also fails: anonymous mode requires an existing valid file with empty/omitted `api_token`. Authenticated environment-only startup remains supported when no file is explicitly selected.
+
+Postman：设置 collection/environment 的 `token` 为同一个有效值；开放模式留空。两个集合会在发送前按有效变量值设置或移除 Authorization，详见 [Postman 说明](../postman/README.md)。
+
+Postman: set the collection/environment `token` to the effective server value, or leave it empty for anonymous mode. Both collections set/remove Authorization before sending using the effective variable value. See the Postman guide. Runtime version remains **2.1**; API v3 and Postman schema v2.1 labels are separate contracts. This increment has not been deployed.
 
 ## 1. 小区 Cell
 

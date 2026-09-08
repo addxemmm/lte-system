@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -15,17 +15,28 @@ import (
 	"github.com/addxemmm/lte-system/internal/lte"
 )
 
-func main() {
-	cfgPath := os.Getenv("LTE_CONFIG")
-	if cfgPath == "" {
-		for _, cand := range []string{"/app/configs/app.yaml", "configs/app.yaml", "/data/app.yaml"} {
-			if _, err := os.Stat(cand); err == nil {
-				cfgPath = cand
-				break
-			}
+// loadServerConfig requires an actual configuration file for anonymous mode,
+// so absence of all discovered files does not silently enable anonymous mode.
+func loadServerConfig(path string, candidates []string) (config.Config, error) {
+	if path != "" {
+		return config.Load(path)
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return config.Load(candidate)
+		} else if !os.IsNotExist(err) {
+			return config.Config{}, fmt.Errorf("inspect config %s: %w", candidate, err)
 		}
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.Load("")
+	if err == nil && cfg.APIToken == "" {
+		return cfg, fmt.Errorf("no configuration file found: create a config with api_token: \"\" to explicitly allow anonymous access")
+	}
+	return cfg, err
+}
+
+func main() {
+	cfg, err := loadServerConfig(os.Getenv("LTE_CONFIG"), []string{"/app/configs/app.yaml", "configs/app.yaml", "/data/app.yaml"})
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
@@ -33,8 +44,10 @@ func main() {
 		log.Fatalf("ensure dirs: %v", err)
 	}
 	mgr := lte.New(cfg)
-	if strings.TrimSpace(os.Getenv("LTE_API_TOKEN")) == "" {
-		log.Printf("WARNING: LTE_API_TOKEN unset, API is open (LAN-only deployment required)")
+	if cfg.APIToken == "" {
+		log.Printf("WARNING: API token is empty; anonymous API access enabled (trusted LAN only)")
+	} else {
+		log.Printf("API bearer authentication enabled")
 	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,

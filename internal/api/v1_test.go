@@ -245,8 +245,8 @@ func TestV1_ConnectivityCaptureIntegrityMetadata(t *testing.T) {
 }
 
 func TestV1_ConnectivityDiagnosticsHonorsAuth(t *testing.T) {
-	t.Setenv("LTE_API_TOKEN", "diagnostic-secret")
 	s, _ := testServer(t)
+	s.cfg.APIToken = "diagnostic-secret"
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/connectivity", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -527,8 +527,8 @@ func TestV1_HealthAndProfile(t *testing.T) {
 }
 
 func TestV1_Auth(t *testing.T) {
-	t.Setenv("LTE_API_TOKEN", "secret")
 	s, _ := testServer(t)
+	s.cfg.APIToken = "secret"
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

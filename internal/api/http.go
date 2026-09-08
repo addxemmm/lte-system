@@ -4,20 +4,20 @@
 //   - Proper HTTP status codes (200/201/400/401/404/405/409/412/413/422/500/503)
 //   - JSON envelope {"code","message","data","request_id"}; code 0 = success
 //   - X-Request-ID response header; per-request audit log line
-//   - Optional bearer auth via LTE_API_TOKEN (when set, every route requires it)
+//   - Optional bearer auth from loaded config (when set, every route requires it)
 package api
 
 import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -163,7 +163,8 @@ func (s *statusRecorder) Write(p []byte) (int, error) {
 }
 
 // chain applies middlewares: recover -> request id + audit log -> auth.
-func chain(next http.Handler) http.Handler {
+func chain(next http.Handler, token string) http.Handler {
+	token = strings.TrimSpace(token)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := newRequestID()
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey, id))
@@ -185,7 +186,8 @@ func chain(next http.Handler) http.Handler {
 			}
 			log.Printf("rid=%s %s %s -> %d (%s)", id, r.Method, r.URL.Path, status, time.Since(start).Round(time.Millisecond))
 		}()
-		if !authorized(r) {
+		if !authorized(r, token) {
+			rec.Header().Set("WWW-Authenticate", "Bearer")
 			rec.Header().Set("Content-Type", "application/json")
 			rec.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(rec).Encode(Envelope{
@@ -197,18 +199,21 @@ func chain(next http.Handler) http.Handler {
 	})
 }
 
-// authorized checks the optional bearer token. Empty LTE_API_TOKEN = open
-// LAN mode (a warning is logged once at startup by main).
-func authorized(r *http.Request) bool {
-	want := strings.TrimSpace(os.Getenv("LTE_API_TOKEN"))
+// authorized checks the startup-loaded token; empty means anonymous access.
+// No URL, cookie or body token is accepted, and duplicate headers are rejected.
+func authorized(r *http.Request, want string) bool {
 	if want == "" {
 		return true
 	}
-	got := r.Header.Get("Authorization")
-	if !strings.HasPrefix(got, "Bearer ") {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 {
 		return false
 	}
-	return strings.TrimSpace(strings.TrimPrefix(got, "Bearer ")) == want
+	parts := strings.Fields(values[0])
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(parts[1]), []byte(want)) == 1
 }
 
 // notFoundV1 renders unknown paths as a v1 404 envelope (keeps the

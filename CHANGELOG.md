@@ -1,5 +1,11 @@
 # 更新日志 Changelog
 
+## [2.1] 本地增量 - 2026-09-08 / Local increment (not deployed)
+
+- 配置文件新增可选 `api_token`；非空启用全部路由的固定 Bearer 鉴权，空值开放；保留非空环境变量覆盖，空环境变量不清除文件配置。 / Add optional YAML `api_token`: nonempty enables static Bearer auth on all routes; empty allows anonymous access. Preserve nonempty environment overrides without letting an empty env erase file authentication.
+- 启动加载、常量时间比较、重复鉴权头拒绝和标准 401 challenge；指定配置文件失效时启动失败，解析错误不回显秘密。 / Load at startup, compare tokens in constant time, reject duplicate authorization headers and return a standard 401 challenge. Fail on an unavailable selected config and omit secret values from parse errors.
+- 同步配置示例、中英文档、OpenAPI、两份 Postman JSON 与离线回归；`VERSION`、镜像默认 tag 保持 2.1，未部署或重启。 / Synchronize examples, bilingual docs, OpenAPI, both Postman collections and offline regressions; retain VERSION/default image tag 2.1 with no deployment or restart.
+
 > 2.1 已于 2026-09-07 12:02 UTC 部署并启动，restricted 生效；服务器七项 CTest 与只读 smoke 通过。清理 12 个旧 LTE 标签/6 个镜像，保留一套回滚与全部数据。手机错误 APN 验收仍待进行。详见 [发布证据](docs/RELEASE_2.1_2026-09-07.md)。
 > 2.1 was deployed and started with restricted enabled; seven server CTests and read-only smoke passed. Removed 12 obsolete LTE tags/six images, retaining rollback and all data. Incorrect-APN handset acceptance remains pending; see the release evidence.
 

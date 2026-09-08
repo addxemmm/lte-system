@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,9 +24,10 @@ const (
 // Config is the full server configuration.
 type Config struct {
 	ListenAddr string `yaml:"listen_addr"`
-	DataDir    string `yaml:"data_dir"` // e.g. /data : conf, log, pcap live here
-	ConfDir    string `yaml:"conf_dir"` // rendered srsRAN conf dir (default DataDir/conf)
-	LogDir     string `yaml:"log_dir"`  // default DataDir/log
+	APIToken   string `yaml:"api_token" json:"-"` // empty enables anonymous API access
+	DataDir    string `yaml:"data_dir"`           // e.g. /data : conf, log, pcap live here
+	ConfDir    string `yaml:"conf_dir"`           // rendered srsRAN conf dir (default DataDir/conf)
+	LogDir     string `yaml:"log_dir"`            // default DataDir/log
 
 	// Binaries (srsRAN_4G install paths)
 	SrsEPCBin string `yaml:"srsepc_bin"`
@@ -68,45 +70,45 @@ type Config struct {
 // SimDefaults holds the fallback values used when /writesim omits fields.
 // They match the legacy hard-coded values (Ki/OPc/ADM) so old clients keep working.
 type SimDefaults struct {
-	Ki    string `yaml:"ki"`    // 32 hex, legacy 00112233445566778899aabbccddeeff
-	OPc   string `yaml:"opc"`   // 32 hex, legacy 63bfa50ee6523365ff14c1f45f88737d
-	OP    string `yaml:"op"`    // optional alternative to opc (mutually exclusive)
+	Ki     string `yaml:"ki"`      // 32 hex, legacy 00112233445566778899aabbccddeeff
+	OPc    string `yaml:"opc"`     // 32 hex, legacy 63bfa50ee6523365ff14c1f45f88737d
+	OP     string `yaml:"op"`      // optional alternative to opc (mutually exclusive)
 	OPType string `yaml:"op_type"` // "opc" or "op", default "opc"
-	Auth  string `yaml:"auth"`  // "mil" or "xor", default "mil"
-	AMF   string `yaml:"amf"`   // 4 hex, default "8001" (matches example card row)
-	ACC   string `yaml:"acc"`   // 4 hex, default "FFFF"
-	ADM   string `yaml:"adm"`   // hex ascii, default "3030303030303030"
-	SPN   string `yaml:"spn"`   // default "LTESystem"
-	ICCID string `yaml:"iccid"` // default fixed test iccid; "auto" = keep card factory value
-	Card  string `yaml:"card"`  // pysim card type, default "testsim"
-	QCI   int    `yaml:"qci"`
+	Auth   string `yaml:"auth"`    // "mil" or "xor", default "mil"
+	AMF    string `yaml:"amf"`     // 4 hex, default "8001" (matches example card row)
+	ACC    string `yaml:"acc"`     // 4 hex, default "FFFF"
+	ADM    string `yaml:"adm"`     // hex ascii, default "3030303030303030"
+	SPN    string `yaml:"spn"`     // default "LTESystem"
+	ICCID  string `yaml:"iccid"`   // default fixed test iccid; "auto" = keep card factory value
+	Card   string `yaml:"card"`    // pysim card type, default "testsim"
+	QCI    int    `yaml:"qci"`
 }
 
 // Default returns sane defaults matching legacy behavior + srsRAN_4G paths.
 func Default() Config {
 	return Config{
-		ListenAddr:        ":8081",
-		DataDir:           "/data",
-		SrsEPCBin:         "srsepc",
-		SrsENBBin:         "srsenb",
-		TcpdumpBin:        "tcpdump",
-		TsharkBin:         "tshark",
-		HashcatBin:        "hashcat",
-		PySimDir:          "/opt/pysim",
-		DefaultSDR:        SDRAuto,
-		DefaultDeviceArgs: "auto",
-		DefaultTxGain:     80,
-		DefaultRxGain:     40,
-		DefaultNRB:        25,
-		DefaultDNS:        "8.8.8.8",
+		ListenAddr:          ":8081",
+		DataDir:             "/data",
+		SrsEPCBin:           "srsepc",
+		SrsENBBin:           "srsenb",
+		TcpdumpBin:          "tcpdump",
+		TsharkBin:           "tshark",
+		HashcatBin:          "hashcat",
+		PySimDir:            "/opt/pysim",
+		DefaultSDR:          SDRAuto,
+		DefaultDeviceArgs:   "auto",
+		DefaultTxGain:       80,
+		DefaultRxGain:       40,
+		DefaultNRB:          25,
+		DefaultDNS:          "8.8.8.8",
 		DefaultFullNetName:  "srsRAN",
 		DefaultShortNetName: "srsRAN",
 		Sim: SimDefaults{
 			Ki:     "00112233445566778899aabbccddeeff",
 			OPc:    "63bfa50ee6523365ff14c1f45f88737d",
 			OPType: "opc",
-		Auth:   "mil",
-		AMF:    "8001",
+			Auth:   "mil",
+			AMF:    "8001",
 			ACC:    "FFFF",
 			ADM:    "3030303030303030",
 			SPN:    "LTESystem",
@@ -124,21 +126,26 @@ func Default() Config {
 	}
 }
 
-// Load reads YAML file if present, then overlays env vars.
-// Env: LTE_LISTEN, LTE_DATA_DIR, LTE_SRSEPC_BIN, LTE_SRSENB_BIN, LTE_PYSIM_DIR.
+// Load reads an explicitly selected YAML file, then overlays nonempty env vars.
+// An empty path uses defaults and env only; a missing selected file is an error.
+// Env: LTE_API_TOKEN, LTE_LISTEN, LTE_DATA_DIR, LTE_SRSEPC_BIN, LTE_SRSENB_BIN, LTE_PYSIM_DIR.
 func Load(path string) (Config, error) {
 	cfg := Default()
 	if path != "" {
 		b, err := os.ReadFile(path)
 		if err != nil {
-			if !os.IsNotExist(err) {
-				return cfg, fmt.Errorf("read config %s: %w", path, err)
-			}
+			return cfg, fmt.Errorf("read config %s: %w", path, err)
 		} else if len(b) > 0 {
 			if err := yaml.Unmarshal(b, &cfg); err != nil {
-				return cfg, fmt.Errorf("parse config %s: %w", path, err)
+				// YAML type errors may embed secret scalar values. Do not log them.
+				return cfg, fmt.Errorf("parse config %s: invalid YAML or configuration value type", path)
 			}
 		}
+	}
+	cfg.APIToken = strings.TrimSpace(cfg.APIToken)
+	// Compose commonly passes an empty default. It must not disable file auth.
+	if v := strings.TrimSpace(os.Getenv("LTE_API_TOKEN")); v != "" {
+		cfg.APIToken = v
 	}
 	if v := os.Getenv("LTE_LISTEN"); v != "" {
 		cfg.ListenAddr = v

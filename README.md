@@ -15,6 +15,8 @@ Stateless, database-free LTE self-hosted base station toolkit: a single Go binar
 
 ## 功能 Features
 
+- 可选固定 API Token：私有 YAML 的 `api_token` 非空时启用 Bearer 鉴权，空值开放访问；兼容非空 `LTE_API_TOKEN` 覆盖，版本保持 2.1。配置与 Postman 用法见 [API 文档](docs/API.md)。
+  Optional static API token: a nonempty YAML `api_token` enables Bearer authentication; empty allows anonymous access. Nonempty `LTE_API_TOKEN` remains an override. Version stays 2.1; see the API guide for configuration and Postman usage.
 - 标准 REST：`/api/v1`（正确状态码 + `{"code","message","data","request_id"}` 包络 + OpenAPI，见 [`docs/API.md`](docs/API.md)）
   Standard REST: `/api/v1` (correct status codes + `{"code","message","data","request_id"}` envelope + OpenAPI, see [`docs/API.md`](docs/API.md))
 - 多 UE 会话集合、订户管理、APN 校验和 UE 网络策略；旧根路径接口与单条 `/api/v1/ue` 已移除。

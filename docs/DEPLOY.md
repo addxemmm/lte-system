@@ -56,6 +56,41 @@ This listener change preserves existing authentication and does not automaticall
 bridge 发布端口走 Docker 转发路径，旧 host 的 INPUT/ufw 限制不一定生效。迁移前验证发布地址和 Docker 转发路径访问控制；`LTE_LISTEN` 不能限制 bridge 的宿主发布地址。
 Bridge published ports use Docker's forwarding path; existing host INPUT/ufw restrictions may not apply. Validate the published address and forwarding-path access controls before migration. `LTE_LISTEN` does not restrict bridge host publishing. [Docker firewall guidance](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)
 
+### 固定 Token 配置文件 / Static-token config file
+
+2.1 的本地鉴权增量支持私有 YAML `api_token`，不改变镜像版本。配置示例见 `configs/app.yaml.example`；复制成私有 `configs/app.yaml` 后填写 `api_token: "TOKEN"`，或保持 `api_token: ""` 关闭。不要将真实配置写入镜像层或 Git。
+
+The local 2.1 authentication increment supports private YAML `api_token` without changing the image version. Copy `configs/app.yaml.example` to private `configs/app.yaml`; set `api_token: "TOKEN"` or leave it empty. Do not bake secrets into image layers or commit them.
+
+Docker 默认读取 `/app/configs/app.yaml`。推荐通过私有 Compose override 将实际配置只读挂载并显式选择路径，沿用原项目名和原数据卷，不修改正式 Compose 文件的网络和设备设置：
+
+Docker defaults to `/app/configs/app.yaml`. Use a private Compose override to mount the actual file read-only and explicitly select it, preserving the existing project/data volume and the base file's network/device configuration:
+
+```yaml
+services:
+  lte-system:
+    environment:
+      LTE_CONFIG: /run/lte-system/app.yaml
+    volumes:
+      - type: bind
+        source: /ABSOLUTE/PATH/app.yaml
+        target: /run/lte-system/app.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+```
+
+部署时把该私有 override 作为第二个 `-f` 文件；源路径须是已存在的文件并限制读取权限。非空 `LTE_API_TOKEN` 优先于 YAML，Compose 默认空环境变量不会覆盖文件；关闭鉴权需同时清空两处。API 重启后生效，修改环境变量或挂载需重新创建容器；沿用本文件备份/维护流程，API 重启可能中断小区，不是热切换。
+
+Supply this private override as the second `-f` file when deploying. The host source must be an existing access-restricted file. A nonempty `LTE_API_TOKEN` overrides YAML; Compose's empty default does not. Clear both to disable auth. Changes require an API restart; changing environment or mounts requires container recreation. Follow the backup/maintenance process: an API restart may interrupt the cell, not a hot switch.
+
+显式配置文件缺失/不可读/无效时启动失败。只把文件放到 `/data/app.yaml`，而不修改 `LTE_CONFIG`，不会覆盖默认镜像配置。设置了文件 Token 后，原有 smoke 脚本仍须从其私有环境接收同一个 `LTE_API_TOKEN` 作为客户端凭据。新代码需先构建才能部署；本次修改没有执行构建、部署或重启。
+
+A missing/unreadable/invalid selected file fails startup. Merely placing a file at `/data/app.yaml` does not override the image's selected path. When using file authentication, pass the same token privately as `LTE_API_TOKEN` to the existing smoke client. New code must be built before deployment; this change itself did not build, deploy or restart a service.
+
+自动发现配置全部缺失且环境 Token 为空时也会启动失败；开放模式请使用实际存在、Token 留空的配置文件。非“不存在”的文件探测错误直接报错，不继续回落到其它配置。
+If discovery finds no file and no environment token, startup fails as well. Use an existing empty-token config for anonymous access. Discovery errors other than missing files stop startup rather than falling through.
+
 ## 3. 识别现有卷并备份 / Identify and back up the existing volume
 
 `lte-data` 是 Compose 的逻辑名，实际名称通常为 `docker_lte-data`，但会随项目名变化。必须从现有容器读取名称；直接挂载裸 `lte-data` 可能创建一个空卷。

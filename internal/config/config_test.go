@@ -51,11 +51,8 @@ func TestLoad_YAML(t *testing.T) {
 }
 
 func TestLoad_MissingFile(t *testing.T) {
-	c, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.SrsEPCBin == "" || c.Sim.OPc == "" {
-		t.Fatalf("defaults not applied: %+v", c)
+	_, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
+	if err == nil {
+		t.Fatal("a selected missing config must not silently enable anonymous access")
 	}
 }

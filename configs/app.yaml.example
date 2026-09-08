@@ -1,4 +1,8 @@
 listen_addr: ":8081"
+# 固定 API Token；留空允许匿名访问。修改后重启 API，不要提交真实 Token。
+# Static API token; empty allows anonymous access. Restart API after changes.
+# A nonempty LTE_API_TOKEN overrides this value; an empty env value does not.
+api_token: ""
 data_dir: "/data"
 conf_dir: ""
 log_dir: ""

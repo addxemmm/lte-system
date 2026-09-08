@@ -71,6 +71,18 @@ def requests(collection: dict) -> list[dict]:
     return out
 
 
+def collection_items(collection: dict) -> list[dict]:
+    out: list[dict] = []
+
+    def walk(items: list[dict]) -> None:
+        for item in items:
+            out.append(item)
+            walk(item.get("item", []))
+
+    walk(collection["item"])
+    return out
+
+
 def request_url(item: dict) -> str:
     value = item["request"]["url"]
     if isinstance(value, dict):
@@ -90,6 +102,14 @@ def script(item: dict) -> str:
     lines: list[str] = []
     for event in item.get("event", []):
         if event.get("listen") == "test":
+            lines.extend(event.get("script", {}).get("exec", []))
+    return "\n".join(lines)
+
+
+def collection_script(collection: dict, listen: str) -> str:
+    lines: list[str] = []
+    for event in collection.get("event", []):
+        if event.get("listen") == listen:
             lines.extend(event.get("script", {}).get("exec", []))
     return "\n".join(lines)
 
@@ -127,6 +147,119 @@ class PostmanContractTest(unittest.TestCase):
         self.assertNotIn("8.8.8.8", template)
         self.assertNotIn("192.168.100.1", template)
         self.assertNotIn('"network": "eth0"', template)
+
+    def test_auth_is_centralized_without_request_overrides(self) -> None:
+        expected_schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        for collection, items in (
+            (self.full, self.full_requests),
+            (self.smoke, self.smoke_requests),
+        ):
+            self.assertIn("API v3", collection["info"]["name"])
+            self.assertEqual(collection["info"]["schema"], expected_schema)
+            self.assertEqual(collection.get("auth"), {"type": "noauth"})
+            variables = {entry["key"]: entry.get("value", "") for entry in collection["variable"]}
+            self.assertEqual(variables["token"], "")
+            self.assertEqual(
+                len([event for event in collection.get("event", []) if event.get("listen") == "prerequest"]),
+                1,
+            )
+            for node in collection_items(collection):
+                self.assertNotIn("auth", node, node["name"])
+                self.assertFalse(
+                    any(event.get("listen") == "prerequest" for event in node.get("event", [])),
+                    node["name"],
+                )
+            for item in items:
+                request = item["request"]
+                self.assertNotIn("auth", request, item["name"])
+                auth_headers = [
+                    header for header in request.get("header", [])
+                    if header.get("key", "").lower() == "authorization"
+                ]
+                self.assertEqual(auth_headers, [], item["name"])
+
+        self.assertEqual(
+            collection_script(self.full, "prerequest"),
+            collection_script(self.smoke, "prerequest"),
+        )
+
+    def test_auth_prerequest_handles_blank_single_header_and_scope_priority(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("node is not installed")
+        auth_script = collection_script(self.full, "prerequest")
+        harness = "const SCRIPT = " + json.dumps(auth_script) + r""";
+class Headers {
+  constructor(entries) { this.entries = entries.map(([key, value]) => ({key, value})); }
+  has(key) { return this.entries.some((entry) => entry.key.toLowerCase() === key.toLowerCase()); }
+  remove(key) {
+    const index = this.entries.findIndex((entry) => entry.key.toLowerCase() === key.toLowerCase());
+    if (index !== -1) this.entries.splice(index, 1);
+  }
+  add(entry) { this.entries.push({key: entry.key, value: entry.value}); }
+  authorization() {
+    return this.entries.filter((entry) => entry.key.toLowerCase() === 'authorization');
+  }
+}
+const priority = ['local', 'data', 'environment', 'collection', 'global'];
+function resolvedToken(scopes) {
+  for (const scope of priority) {
+    if (Object.prototype.hasOwnProperty.call(scopes[scope] || {}, 'token')) {
+      return scopes[scope].token;
+    }
+  }
+  return undefined;
+}
+function execute(scopes, initialHeaders = []) {
+  const headers = new Headers(initialHeaders);
+  const pm = {
+    variables: {get: (key) => key === 'token' ? resolvedToken(scopes) : undefined},
+    request: {headers},
+  };
+  eval(SCRIPT);
+  return headers.authorization();
+}
+function expectHeaders(scopes, initialHeaders, expected) {
+  const actual = execute(scopes, initialHeaders);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+expectHeaders({collection: {token: ''}}, [['Authorization', 'Bearer OLD']], []);
+expectHeaders(
+  {collection: {token: '   '}},
+  [['Authorization', 'Bearer OLD'], ['authorization', 'Bearer DUPLICATE']],
+  [],
+);
+expectHeaders(
+  {collection: {token: '  TOKEN  '}},
+  [['Authorization', 'Bearer OLD'], ['authorization', 'Bearer DUPLICATE']],
+  [{key: 'Authorization', value: 'Bearer TOKEN'}],
+);
+expectHeaders(
+  {
+    local: {token: 'LOCAL'}, data: {token: 'DATA'}, environment: {token: 'ENV'},
+    collection: {token: 'COLLECTION'}, global: {token: 'GLOBAL'},
+  },
+  [],
+  [{key: 'Authorization', value: 'Bearer LOCAL'}],
+);
+expectHeaders(
+  {data: {token: 'DATA'}, environment: {token: 'ENV'}, collection: {token: 'COLLECTION'}},
+  [],
+  [{key: 'Authorization', value: 'Bearer DATA'}],
+);
+expectHeaders(
+  {environment: {token: 'ENV'}, collection: {token: 'COLLECTION'}, global: {token: 'GLOBAL'}},
+  [],
+  [{key: 'Authorization', value: 'Bearer ENV'}],
+);
+expectHeaders({collection: {token: ''}, global: {token: 'GLOBAL'}}, [], []);
+"""
+        result = subprocess.run(
+            [node, "-e", harness], capture_output=True, text=True, timeout=5, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_safe_json_gets_have_specific_assertions(self) -> None:
         expected_names = {

@@ -194,12 +194,11 @@ func TestMiddlewareAuditsAuthAndPanics(t *testing.T) {
 		log.SetPrefix(oldPrefix)
 	}()
 
-	t.Setenv("LTE_API_TOKEN", "secret")
 	req := httptest.NewRequest(http.MethodGet, "/secret", nil)
 	rec := httptest.NewRecorder()
 	chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("unauthorized request reached handler")
-	})).ServeHTTP(rec, req)
+	}), "secret").ServeHTTP(rec, req)
 	authResponse := decodeEnvelope(t, rec)
 	authRID := rec.Header().Get("X-Request-ID")
 	if rec.Code != http.StatusUnauthorized || authResponse["request_id"] != authRID ||
@@ -207,7 +206,6 @@ func TestMiddlewareAuditsAuthAndPanics(t *testing.T) {
 		t.Fatalf("401 was not audited: status=%d logs=%q", rec.Code, logs.String())
 	}
 
-	t.Setenv("LTE_API_TOKEN", "")
 	logs.Reset()
 	var panicRID string
 	req = httptest.NewRequest(http.MethodGet, "/panic", nil)
@@ -215,7 +213,7 @@ func TestMiddlewareAuditsAuthAndPanics(t *testing.T) {
 	chain(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		panicRID = RequestID(r)
 		panic("boom")
-	})).ServeHTTP(rec, req)
+	}), "").ServeHTTP(rec, req)
 	response := decodeEnvelope(t, rec)
 	if rec.Code != http.StatusInternalServerError || panicRID == "" || response["request_id"] != panicRID {
 		t.Fatalf("panic response lacks request id: status=%d rid=%q body=%v", rec.Code, panicRID, response)
@@ -232,7 +230,7 @@ func TestMiddlewareAuditsAuthAndPanics(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("partial"))
 		panic("after write")
-	})).ServeHTTP(rec, req)
+	}), "").ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted || rec.Body.String() != "partial" {
 		t.Fatalf("panic corrupted committed response: %d %q", rec.Code, rec.Body.String())
 	}

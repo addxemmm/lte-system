@@ -6,6 +6,13 @@ info:
     UNRELEASED DRAFT: integrity additions have not completed final validation or deployment.
     Standard /api/v1 API only. Root-path legacy endpoints and singular
     /api/v1/ue were removed in v3.
+    Runtime version remains 2.1. Static-token authentication is conditional:
+    nonempty trimmed LTE_API_TOKEN overrides YAML api_token; empty env values
+    do not override the file. An empty effective token allows anonymous access;
+    otherwise every route requires one Authorization Bearer header. Configuration
+    is loaded at startup and changes require an API restart.
+    Anonymous mode requires an existing valid config file with empty/omitted
+    api_token; a missing selected config or discovery error fails startup.
 servers:
   - url: http://HOST:8081
 security:
@@ -16,6 +23,24 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      description: >-
+        Static shared token, not OAuth or JWT. Configure YAML api_token or a
+        nonempty LTE_API_TOKEN override. Anonymous access applies only when the
+        effective startup-loaded token is empty. Missing, invalid or duplicate
+        Authorization returns HTTP 401/code 40101 with WWW-Authenticate: Bearer.
+        Tokens in query parameters, cookies or request bodies are not accepted.
+  responses:
+    Unauthorized:
+      description: 'Authentication is enabled and the bearer header is missing, invalid or duplicated.'
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: Bearer }
+        X-Request-ID:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { code: 40101, message: 'unauthorized: bad or missing bearer token', request_id: 'REQUEST_ID' }
   schemas:
     Envelope:
       type: object
@@ -266,6 +291,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CellStart' }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Cell started }
         '409': { description: Already running }
         '422': { description: Validation failed }
@@ -273,15 +300,21 @@ paths:
     get:
       summary: Manager-owned cell state and resolved network
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Current state }
     delete:
       summary: Idempotently stop the cell
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Stopped or already stopped }
   /api/v1/network:
     get:
       summary: Read the current effective UE network plan without probing or mutation
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Manager network configuration snapshot only
           content:
@@ -300,6 +333,8 @@ paths:
         run_id/PID snapshot no older than five seconds is current. Missing/stale/
         invalid/cell_stopped states carry sessions=[] and never fall back to log joins.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current sessions or an explicit no-current-snapshot state
   /api/v1/ues/{imsi}:
@@ -311,6 +346,8 @@ paths:
     get:
       summary: One current UE session by authoritative IMSI association
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Session, or explicit no-current-snapshot state }
         '404': { description: Complete current snapshot proves IMSI absent }
         '422': { description: Invalid IMSI }
@@ -325,6 +362,8 @@ paths:
           name: offset
           schema: { type: integer, minimum: 0, default: 0 }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Paginated redacted subscriber list }
         '422': { description: Invalid pagination }
         '500': { description: Existing database is invalid }
@@ -336,6 +375,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SubscriberCreate' }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '201': { description: Created; response is redacted }
         '409': { description: Cell running or IMSI already exists }
         '422': { description: Validation failed }
@@ -348,6 +389,8 @@ paths:
     get:
       summary: Read one redacted subscriber
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Redacted subscriber }
         '404': { description: Not found }
         '422': { description: Invalid IMSI }
@@ -360,6 +403,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SubscriberPatch' }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Updated; response is redacted }
         '404': { description: Not found }
         '409': { description: Cell must be stopped or subscriber name already exists }
@@ -367,6 +412,8 @@ paths:
     delete:
       summary: Delete subscriber authorization while stopped; does not disconnect a UE
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Deleted with disconnected=false }
         '404': { description: Not found }
         '409': { description: Cell must be stopped }
@@ -375,6 +422,8 @@ paths:
     get:
       summary: Read-only layered connectivity evidence
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: 'Partial or complete read-only evidence; live capture truncation is not absence of authentication.'
           content:
@@ -413,6 +462,8 @@ paths:
                 imsi: { type: string, pattern: '^[0-9]{15}$', description: 'Owned subscriber IMSI already authorized in this cell' }
                 confirm_ownership: { type: boolean, description: 'Must be true when imsi is present; no third-party auditing' }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: PAP plaintext recovered (no cracking needed, cell untouched) }
         '202': { description: CHAP job accepted }
         '400': { description: Malformed JSON body }
@@ -433,6 +484,8 @@ paths:
           schema: { type: string, pattern: '^[0-9]{15}$' }
           description: 'Optional target; unknown subscriber returns 404, database failure 500, known target 412 until per-UE credential binding exists'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: running or ready }
         '404': { description: Result not found or owned IMSI unknown }
         '412': { description: Target binding unavailable; no credentials returned }
@@ -451,6 +504,8 @@ paths:
               properties:
                 userdb: { type: string, format: binary }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Replaced; sqn_policy=preserved_for_existing_imsi }
         '409': { description: Cell must be stopped }
         '413': { description: Upload exceeds limit }
@@ -469,6 +524,8 @@ paths:
               properties:
                 wordlist: { type: string, format: binary }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Uploaded }
         '413': { description: Upload exceeds limit }
         '422': { description: Missing file }
@@ -481,6 +538,8 @@ paths:
     get:
       summary: Download an existing capture
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Capture file }
         '404': { description: Unknown id or file not ready }
   /api/v1/simcards:
@@ -492,6 +551,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SIMProgram' }
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Programmed }
         '409': { description: Cell running or card already exists }
         '412': { description: No card inserted }
@@ -501,9 +562,13 @@ paths:
     get:
       summary: Saved launch profile only; subscribers and sessions are separate resources
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: has_profile and optional profile }
   /api/v1/health:
     get:
       summary: API health, Manager running state and SDR detection
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200': { description: Health snapshot }

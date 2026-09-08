@@ -32,7 +32,7 @@ func New(cfg config.Config, mgr *lte.Manager) *Server {
 
 // Handler returns the mux wrapped in the middleware chain
 // (recover -> request id + audit log -> optional bearer auth).
-func (s *Server) Handler() http.Handler { return chain(s.mux) }
+func (s *Server) Handler() http.Handler { return chain(s.mux, s.cfg.APIToken) }
 
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	writeV1(w, r, CodeNotFound, "not found: "+r.URL.Path, nil)
