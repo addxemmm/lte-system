@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0b1f33">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>LTE Control / LTE 控制台</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#app" data-i18n="a11y.skip">跳到主要内容</a>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#/overview" aria-label="LTE Control home">
+        <svg class="brand-mark" viewBox="0 0 42 42" role="img" aria-hidden="true">
+          <path d="M21 5 35 13v16L21 37 7 29V13Z" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="m14 25 7-13 7 13M17 21h8M21 12v18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="21" cy="10" r="2.5" fill="currentColor"/>
+        </svg>
+        <span><strong>LTE Control</strong><small data-i18n="brand.subtitle">无线网络控制台</small></span>
+      </a>
+      <nav class="nav" id="primary-nav"></nav>
+      <div class="sidebar-foot">
+        <div class="connection-state" id="connection-state" role="status">
+          <span class="state-dot" aria-hidden="true"></span>
+          <span data-i18n="common.connecting">正在连接</span>
+        </div>
+        <p data-i18n="brand.localOnly">本地嵌入式管理界面</p>
+      </div>
+    </aside>
+    <button class="scrim" id="nav-scrim" type="button" aria-label="Close navigation"></button>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-leading">
+          <button class="icon-button menu-button" id="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">
+            <span class="sr-only" data-i18n="a11y.menu">打开导航</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="crumb"><span data-i18n="brand.console">控制台</span><b>/</b><strong id="route-label">概览</strong></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="text-button compact" id="language-button" type="button" aria-label="Switch language">EN</button>
+          <button class="icon-button" id="theme-button" type="button">
+            <span class="sr-only" data-i18n="a11y.theme">切换主题</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42"/><circle cx="12" cy="12" r="4"/></svg>
+          </button>
+          <button class="session-pill" id="auth-button" type="button"><span class="lock-dot" aria-hidden="true"></span><span data-i18n="auth.session">访问会话</span></button>
+        </div>
+      </header>
+      <div class="global-alert" id="global-alert" role="status" aria-live="polite" hidden></div>
+      <main class="main" id="app" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <dialog class="dialog auth-dialog" id="auth-dialog" aria-labelledby="auth-title">
+    <form method="dialog" id="auth-form">
+      <div class="dialog-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      </div>
+      <h2 id="auth-title" data-i18n="auth.title">连接管理接口</h2>
+      <p data-i18n="auth.description">令牌只保存在当前页面内存中；刷新后需要重新输入。</p>
+      <label class="field">
+        <span data-i18n="auth.token">访问令牌</span>
+        <input id="token-input" name="token" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="auth.placeholder" placeholder="输入 Bearer token">
+        <small data-i18n="auth.hint">开放模式可留空继续。</small>
+      </label>
+      <div class="form-error" id="auth-error" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button class="button primary" value="connect" type="submit" data-i18n="auth.connect">连接</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <div class="dialog-icon danger" aria-hidden="true">!</div>
+      <h2 id="confirm-title" data-i18n="cell.stopTitle">确认停止小区？</h2>
+      <p data-i18n="cell.stopDescription">这会停止当前 EPC、eNodeB 与关联采集进程。此操作不会自动重启。</p>
+      <div class="dialog-actions split">
+        <button class="button secondary" value="cancel" type="submit" data-i18n="common.cancel">取消</button>
+        <button class="button danger" value="confirm" type="submit" data-i18n="cell.confirmStop">确认停止</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog confirm-dialog" id="start-dialog" aria-labelledby="start-title">
+    <form method="dialog">
+      <div class="dialog-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 4v16M8 20h8M9 14l3-7 3 7M5 9a8 8 0 0 1 14 0"/></svg>
+      </div>
+      <h2 id="start-title" data-i18n="cell.startTitle">确认启动小区？</h2>
+      <p id="start-description" data-i18n="cell.startDescription">启动会应用所选配置并初始化无线服务；界面不会在取消后继续。</p>
+      <div class="dialog-actions split">
+        <button class="button secondary" value="cancel" type="submit" data-i18n="common.cancel">取消</button>
+        <button class="button primary" value="confirm" type="submit" data-i18n="cell.confirmStart">确认启动</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <noscript>This console requires JavaScript. / 此控制台需要启用 JavaScript。</noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,120 +1,177 @@
-# Docker 指南 Docker Guide（Dockerfile · Compose · 镜像版本 / Dockerfile · Compose · Image Versions）
+# Docker 指南 / Docker Guide
 
-当前部署脚本仅同步/构建，不替换容器；全网卡监听、实际卷备份和唯一标签回滚见 [部署指南](../../docs/DEPLOY.md)。
-Current deploy scripts sync/build only; see the [deploy guide](../../docs/DEPLOY.md) for all-interface binding, actual-volume backups and unique-tag rollback.
+Docker 只在 SDR 服务器运行；开发机仅编辑、执行 Go/Python 测试与 Git 操作。本轮版本仍为 **2.1**。构建或创建容器不会自动启动 LTE 小区。
 
-运行位置：**SDR 服务器**（开发机只改代码，不跑 docker）。日常部署看 [`docs/DEPLOY.md`](../../docs/DEPLOY.md)，这里讲镜像本身是怎么构成、怎么迭代的。
-Runs on: **the SDR server** (dev machines only edit code, never run docker). For daily deploy see [`docs/DEPLOY.md`](../../docs/DEPLOY.md); this doc covers how the image itself is built and iterated.
+Run Docker only on the SDR server; development hosts only edit, run Go/Python tests and manage Git. This work remains version **2.1**. Building or creating a container never starts the LTE cell automatically.
 
-## 1. 文件一览 Files at a Glance
+## 文件 / Files
 
-| 文件 File | 作用 Purpose |
+| 文件 File | 用途 Purpose |
 |---|---|
-| [`deploy/docker/Dockerfile`](Dockerfile) | 三段构建，产出 `ltesystem-dep:<VERSION>` / Three-stage build producing `ltesystem-dep:<VERSION>` |
-| [`deploy/docker/docker-compose.yml`](docker-compose.yml) | host 兼容/回滚编排 / Host-network compatibility/rollback orchestration |
-| [`deploy/docker/docker-compose.bridge.yml`](docker-compose.bridge.yml) | 单容器 EPC/eNB 的独立 bridge 编排，固定 eth0 / Isolated all-in-one EPC/eNB bridge orchestration, fixed eth0 |
-| [`deploy/docker/entrypoint.sh`](entrypoint.sh) | 容器启动流程：选 FPGA → seeding `/data` → 起 pcscd → exec Go 服务 / Container boot flow: pick FPGA → seed `/data` → start pcscd → exec Go service |
-| [`deploy/docker/select-uhd-fpga.sh`](select-uhd-fpga.sh) | `stock`/`compat` FPGA 切换（见 [`docs/SDR.md`](../../docs/SDR.md)） / `stock`/`compat` FPGA switching (see [`docs/SDR.md`](../../docs/SDR.md)) |
-| `VERSION`（仓库根） / `VERSION` (repo root) | 本次镜像编号 `2.1`（准备中，用户指定；保留历史 3.0 功能） / Image number `2.1` (preparing, user-selected; retaining historical 3.0 functionality) |
+| `Dockerfile` | 规范三阶段完整构建：srsRAN + CPU CTest、Go+embed、runtime / canonical full build |
+| `Dockerfile.web-upgrade` | 只在相同且已确认的 2.1 core 上替换 Go+embed 与 example 配置 / fast app-layer upgrade on a verified matching 2.1 core |
+| `docker-compose.bridge.yml` | 推荐 bridge 基础部署，只发布 Web `8080` / recommended base, Web only |
+| `docker-compose.test.yml` | bridge 测试 override，显式开启并发布完整 API `8081` |
+| `docker-compose.yml` | host-network 兼容/回滚基础部署，无 `ports` |
+| `entrypoint.sh` | FPGA 选择、数据播种、PC/SC、无线探测、启动 Go / full LTE boot path |
+| `select-uhd-fpga.sh` | `stock` / `compat` / `auto` FPGA 选择 |
 
-本次 2.1 是用户按 2.0→2.1 指定的镜像编号，不恢复旧 API 或回滚 3.0 功能；服务器构建、部署与手机验收待执行，最新审计修订需复验。详见 [2.1 发布说明](../../docs/RELEASE_2.1_2026-09-07.md)。
-Image 2.1 follows the user's requested numbering, retaining the standard API and historical 3.0 functionality. Server build/deployment and handset acceptance are pending; latest audit fixes require revalidation. See the release notes.
+bridge 与 host 两个基础 Compose 文件不能合并。只有 `docker-compose.test.yml` 可作为 bridge 的第二个文件。
 
-## 2. Dockerfile 三段在干什么 What the Three Dockerfile Stages Do
+Never merge the bridge and host base Compose files. Only `docker-compose.test.yml` may be added as the second file for bridge testing.
 
-```
-ubuntu:22.04 (srs-builder)  →  srsRAN_4G release_23_11 源码编译
-golang:1.22-bookworm (go-builder) →  Go tool API 二进制
-ubuntu:22.04 (runtime)      →  运行镜像（1.53GB，旧 1.0 镜像的一半不到）
-```
+## 架构 / Architecture
 
-`ubuntu:22.04 (srs-builder)` → srsRAN_4G `release_23_11` 源码编译；`golang:1.22-bookworm (go-builder)` → Go tool API 二进制；`ubuntu:22.04 (runtime)` → 运行镜像（1.53GB，不到旧 1.0 镜像的一半）。
-`ubuntu:22.04 (srs-builder)` → srsRAN_4G `release_23_11` source build; `golang:1.22-bookworm (go-builder)` → Go tool API binary; `ubuntu:22.04 (runtime)` → runtime image (1.53GB, less than half of the old 1.0 image).
+规范 Dockerfile：
 
-- **srs-builder**：装编译依赖（含 UHD/bladeRF 可选），`git clone --branch ${SRSRAN_VERSION}` 后 `cmake Release && make && make install`。上游版本受固定提交与本地补丁测试约束，升级须重新验证补丁，而非只改版本标签。 / **srs-builder**: installs build deps (incl. optional UHD/bladeRF), then `git clone --branch ${SRSRAN_VERSION}` followed by `cmake Release && make && make install`. The upstream revision is pinned and tested with local patches; upgrades require patch revalidation, not only a tag change.
-  - 基座必须是 **22.04**：srsRAN_4G 在 gcc-13（24.04 默认）下编不过；22.04 自带 gcc-11 正好。 / The base must be **22.04**: srsRAN_4G fails to build under gcc-13 (24.04 default); 22.04 ships gcc-11 which fits.
-  - 曾踩过的坑（已修，升级依赖时注意）：运行时包名是 `libmbedtls14` 不是 `libmbedtls7`；srsRAN 还要 `libboost-system/thread/test-dev`；runtime 层要装 `git`（给 pysim 用）；**pysim 必须 pin 在 `ARG PYSIM_COMMIT`（2023-07-09），master 已重构不兼容，且 `testsim` 卡逻辑来自 [`third_party/pysim/`](../../third_party/pysim) 覆盖**。 / Past pitfalls (fixed, watch out when upgrading deps): the runtime package name is `libmbedtls14` not `libmbedtls7`; srsRAN also needs `libboost-system/thread/test-dev`; the runtime layer must install `git` (for pysim); **pysim must stay pinned at `ARG PYSIM_COMMIT` (2023-07-09) — master was rewritten and is incompatible, and the `testsim` card logic comes from the [`third_party/pysim/`](../../third_party/pysim) overlay**.
-- **go-builder**：`CGO_ENABLED=0` 静态编译 [`cmd/server`](../../cmd/server)。改 Go 代码只会重跑这一段及之后（约 1–2 分钟），srsRAN 层走缓存。 / **go-builder**: statically builds [`cmd/server`](../../cmd/server) with `CGO_ENABLED=0`. Go-only changes re-run just this and later stages (about 1–2 min); the srsRAN layer hits cache.
-- **runtime**：只装运行库 + 工具（`srsepc/srsenb` 从 builder 拷、`tcpdump/tshark/hashcat/pcscd`、UHD 镜像下载 + 兼容板 FPGA 覆盖、**era-pinned pysim + 定制卡逻辑覆盖**、Go 二进制、[`configs/`](../../configs)、`entrypoint.sh`）。 / **runtime**: runtime libs + tools only (`srsepc/srsenb` copied from builder, `tcpdump/tshark/hashcat/pcscd`, UHD image download + compatible board FPGA overlay, **era-pinned pysim + custom card overlay**, Go binary, [`configs/`](../../configs), `entrypoint.sh`).
-  - `ENV LTE_CONFIG=/app/configs/app.yaml`：构建时由 `app.yaml.example` 物化，**改配置改仓库里的 example 文件**，直接改容器内文件重建即丢。 / `ENV LTE_CONFIG=/app/configs/app.yaml`: materialized from `app.yaml.example` at build time; **edit the example file in the repo to change config** — edits inside the container are lost on rebuild.
-  - `EXPOSE 8081` 只是声明；bridge 编排通过 ports 发布 API，host 编排直接使用宿主网络。 / `EXPOSE 8081` is declarative; bridge publishes the API via ports, while host uses the host namespace directly.
+Canonical Dockerfile:
 
-## 3. docker-compose.yml 逐项解释 docker-compose.yml Explained Item by Item
-
-```yaml
-build: { context: ../.., dockerfile: deploy/docker/Dockerfile }  # 相对本文件的仓库根
-image: ${LTE_IMAGE:-ltesystem-dep:2.1}  # 支持唯一发布/回滚标签 / unique release/rollback tag
-container_name: ltesystem
-network_mode: host              # 兼容选项；隔离网络另用 docker-compose.bridge.yml
-privileged: true                # 必需：建网卡、实时线程、访问 USB
-volumes:
-  - /dev/bus/usb:/dev/bus/usb   # USRP + 读卡器直通
-  - lte-data:/data              # 配置/卡库/日志/抓包持久化（重建不丢）
-environment:
-  LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}  # 默认全网卡 / all IPv4 interfaces by default
-  LTE_API_TOKEN: ${LTE_API_TOKEN:-}         # A strong token is recommended for LAN access
-  UHD_FPGA: compat              # 本机兼容板；正版 B210 改 stock
-restart: "no"                   # 手动启停，不开机自启 / manual start-stop, no auto-start
-logging: { max-size: 50m, max-file: 5 }  # 防 docker 日志撑爆盘
+```text
+ubuntu:22.04 srs-builder
+  └─ pinned srsRAN_4G + local patches + seven CPU CTests
+golang:1.22-bookworm go-builder
+  └─ cmd/ + internal/ (including internal/webui/static go:embed assets)
+ubuntu:22.04 runtime
+  └─ srsRAN/UHD/pySIM/tools + one /usr/local/bin/lte-system
 ```
 
-构建上下文是相对本文件的仓库根；`image` 与 `VERSION` 同步，改版时一起改。
-The build context is the repo root relative to this file; `image` stays in sync with `VERSION`, change both on release.
+前端位于 `internal/webui/static`，`COPY internal/ ./internal/` 已覆盖全部 embed 输入；没有 Node/npm/nginx 阶段。规范镜像 `EXPOSE 8080`。8081 是仅在显式测试/legacy 模式启用的独立完整 API；`EXPOSE` 本身不发布端口，也不是安全屏障。
 
-host 不是 srsRAN 的硬性要求：本项目 EPC/eNB 同容器，S1AP/GTP 绑定内部 loopback，SGi 可建在容器网络命名空间。bridge 使用独立的 `docker-compose.bridge.yml`，不要与 host 文件叠加。保留 privileged 以兼容现有 USB/实时线程，权限收紧另行验证。
-Host networking is not required: this project's EPC/eNB share a container, S1AP/GTP use internal loopback, and SGi can live in its network namespace. Use `docker-compose.bridge.yml` alone, never merged with the host file. Privileged mode is retained for existing USB/realtime compatibility; privilege reduction needs separate validation.
+Frontend assets live under `internal/webui/static`; `COPY internal/ ./internal/` includes every embed input. There is no Node/npm/nginx stage. The canonical image declares `EXPOSE 8080`. Port 8081 is the direct full API enabled only for explicit test/legacy use. `EXPOSE` neither publishes a port nor creates a security boundary.
 
-bridge 需要 Compose >= 2.36.0，以 `interface_name: eth0` 固定出口名，只发布 `0.0.0.0:8081/tcp`。UE 流量经过容器与 Docker 两层 NAT。启动小区使用 `network: "auto"`；旧 profile 的宿主接口名需显式迁移，不能在新命名空间继续用 `ens33` 等宿主名称。具体备份、DNS 与回滚步骤见 [部署指南](../../docs/DEPLOY.md#7-bridge-迁移--bridge-migration)。
-Bridge requires Compose >= 2.36.0 for `interface_name: eth0`, publishing only `0.0.0.0:8081/tcp`. UE traffic passes through container and Docker NAT. Start with `network: "auto"`; explicitly migrate host-specific interface names saved in old profiles. See the [deployment guide](../../docs/DEPLOY.md#7-bridge-迁移--bridge-migration) for backups, DNS and rollback.
+## 监听与 Compose / Listeners and Compose
 
-卷挂载：`/dev/bus/usb:/dev/bus/usb` 给 USRP + 读卡器直通；`lte-data:/data` 给配置/卡库/日志/抓包持久化（重建不丢）。
-Volumes: `/dev/bus/usb:/dev/bus/usb` passes through USRP + reader; `lte-data:/data` persists config/SIM database/logs/packet capture (survives rebuilds).
+| Base/override | `LTE_UI_LISTEN` | `LTE_EXPOSE_API` | `LTE_LISTEN` | 宿主发布 Host publishing |
+|---|---|---|---|---|
+| bridge base | `0.0.0.0:8080` | `false` | `0.0.0.0:8081`（不绑定） | `${LTE_UI_PORT:-8080}:8080` |
+| bridge + test | 同上 / same | `true` | `0.0.0.0:8081` | UI + `${LTE_API_PORT:-8081}:8081` |
+| host base | `${LTE_UI_LISTEN:-0.0.0.0:8080}` | `${LTE_EXPOSE_API:-false}` | `${LTE_LISTEN:-0.0.0.0:8081}` | host namespace，无 `ports` |
 
-环境：`UHD_FPGA: compat` 指本机兼容板；正版 B210 改 `stock`。`logging` 防 docker 日志撑爆盘。
-Environment: `UHD_FPGA: compat` means this machine's compatible board; genuine B210 uses `stock`. `logging` keeps docker logs from filling the disk.
+`LTE_EXPOSE_API` 只接受 `true`/`false`。仅当它为 true 时，应用拒绝 UI 与 API 内部端口相同。bridge 测试的 `LTE_UI_PORT`/`LTE_API_PORT` 也必须不同，否则 Docker 端口发布失败。
 
-常用命令（服务器上，源码快照根目录；必须选择与当前部署一致的编排并保留私有 env）：
-Common commands (on the server, in the source snapshot root; select the current deployment's orchestration and retain its private env):
+`LTE_EXPOSE_API` accepts only `true`/`false`. The application rejects equal internal UI/API ports only when it is true. Bridge test values `LTE_UI_PORT`/`LTE_API_PORT` must also differ or Docker publishing fails.
+
+默认 8080 同时提供静态控制台、五字段非敏感 `/ui-config.json` 和有限同源管理网关。该网关仍经过原 Bearer Token 门禁，只包括管理只读与 cell start/stop；它不代理 crack、SIM、upload、capture。完整 API 只在独立监听显式开启后可用。这个变化会打断默认访问 `HOST:8081` 的旧客户端。
+
+Default 8080 serves static console assets, a five-field non-sensitive `/ui-config.json`, and a limited same-origin management gateway. The gateway retains the original Bearer-token gate and includes only management reads and cell start/stop; it does not proxy crack, SIM, upload or capture. The full API is available only after explicitly enabling its direct listener. This breaks legacy clients that assumed `HOST:8081` was available by default.
+
+## Token、Host 与 TLS / Token, Host and TLS
+
+`LTE_API_TOKEN` 的非空值覆盖 YAML `api_token`；空环境值不清除文件值。浏览器只在当前页面内存保留 Token并为同源请求设置 Bearer header；刷新后重新输入。真实 Token 不进入 build arg、镜像、Git 或 URL。
+
+A nonempty `LTE_API_TOKEN` overrides YAML `api_token`; an empty environment value does not erase the file value. The browser keeps the token only in current-page memory and sets the Bearer header on same-origin requests; re-enter it after refresh. Never put a real token in build args, images, Git or URLs.
+
+YAML `ui_allowed_hosts: []` 默认只允许 literal IP/localhost；自定义 DNS 名称必须逐项列出 hostname，不写 scheme/port。匿名模式下也应限制可信网络并优先启用 Token，以降低 DNS rebinding 与未认证启停风险。
+
+YAML `ui_allowed_hosts: []` accepts literal IP/localhost by default. List custom DNS names explicitly as hostname-only values without scheme/port. Restrict anonymous mode to trusted networks and prefer a token to reduce DNS-rebinding and unauthenticated cell-control risk.
+
+Origin 比较使用直接 TLS 状态，不信任 `X-Forwarded-Proto`。普通 TLS 终止反代可能因浏览器 `https` Origin 与后端 HTTP 不一致而令 UI 的状态变更返回 403；部署反代前必须做端到端同源验证。
+
+Origin comparison uses direct TLS state and does not trust `X-Forwarded-Proto`. Ordinary TLS termination may make browser `https` Origin disagree with backend HTTP and return 403 for UI mutations; validate same-origin behavior end to end before adding a proxy.
+
+## 完整构建 / Full build
+
+完整 Dockerfile 是正式发布和 core/依赖变化的唯一规范路径。它保留 srsRAN 固定 revision、本地补丁及 CPU CTest；升级上游必须重新审查补丁。Docker 构建上下文是仓库根。
+
+The full Dockerfile is the only canonical path for formal releases or core/dependency changes. It retains the pinned srsRAN revision, local patches and CPU CTests; upstream upgrades require patch review. The Docker build context is the repository root.
 
 ```bash
-COMPOSE=deploy/docker/docker-compose.bridge.yml  # host deployment: docker-compose.yml
-sudo docker compose -p "$PROJECT" -f "$COMPOSE" build  # 先构建，不停现有实例 / build without stopping
-# After backup: recreate the API only, using the previously selected image/tag.
-sudo docker compose -p "$PROJECT" -f "$COMPOSE" up -d --no-build --force-recreate
-sudo docker logs --tail 200 ltesystem
-sudo docker exec ltesystem <cmd>   # 进容器执行，如 uhd_find_devices
+docker build -f deploy/docker/Dockerfile \
+  -t ltesystem-dep:FULL_TAG .
 ```
 
-## 4. 版本迭代规范 Release Iteration Rules
+## 快速 Web 增量 / Fast Web upgrade
 
-1. 改代码/配置 → 本地 `go test ./...` 全绿。 / Change code/config → local `go test ./...` all green.
-2. 根目录 `VERSION` 递增（如 `2.0` → `2.1`），`docker-compose.yml` 的 `image:` 同步改。 / Bump repo-root `VERSION` (e.g. `2.0` → `2.1`), update `image:` in `docker-compose.yml` in sync.
-3. 服务器按 [DEPLOY](../../docs/DEPLOY.md) 分开构建、备份和替换，使用唯一镜像标签与当前网络编排。 / Follow [DEPLOY](../../docs/DEPLOY.md) to separately build, back up and replace, with a unique image tag and the selected network orchestration.
-4. 存 tarball 备份（1.5GB 级，`~` 下保留最近两个版本即可）： / Keep a tarball backup (1.5GB class, keep the latest two under `~`):
-   ```bash
-   sudo docker save ltesystem-dep:2.1 -o ~/ltesystem-dep-2.1.tar
-   # Import only: sudo docker load -i ~/ltesystem-dep-2.1.tar
-   ```
-   `docker load` 仅导入镜像；实际回滚还需替换容器，并恢复原编排和 profile 的网络/DNS 字段，不覆盖最新订户/SQN。 / `docker load` only imports an image; actual rollback must replace the container and restore the original orchestration plus profile network/DNS fields, without overwriting current subscriber/SQN data.
-5. 旧镜像/容器（`ltesystem-dep:1.0`、`ltesystem-v1-backup`）在确认新版稳定一周后再清：`sudo docker rm ltesystem-v1-backup; sudo docker rmi docker.skygo/addx/ltesystem-dep:1.0` / Remove old images/containers (`ltesystem-dep:1.0`, `ltesystem-v1-backup`) only after the new version proves stable for a week: `sudo docker rm ltesystem-v1-backup; sudo docker rmi docker.skygo/addx/ltesystem-dep:1.0`
+清理完整 build cache 后，可在**已确认 core 完全相同**的现有 `ltesystem-dep:2.1`（或其不可变 image ID/digest）上使用 `Dockerfile.web-upgrade`。`RUNTIME_BASE` 没有默认值，遗漏即构建失败；Go builder 固定使用服务器已有的 `golang:1.26.8-bookworm`。
 
-## 5. entrypoint 启动流程 entrypoint Boot Flow
+After full build cache has been cleared, `Dockerfile.web-upgrade` may reuse an existing `ltesystem-dep:2.1` (or immutable image ID/digest) **only after its core is confirmed identical**. `RUNTIME_BASE` has no default, so omission fails the build. Its Go builder uses the server-cached `golang:1.26.8-bookworm`.
 
-1. `select-uhd-fpga $UHD_FPGA`（默认 `auto`=不动当前镜像） / `select-uhd-fpga $UHD_FPGA` (default `auto` = leave the current image alone)
-2. `mkdir -p /data/conf /data/log`；`sib/rb.conf` **每次跟随镜像覆盖**；`user_db.csv`/`wordlist.list` **缺失才复制**（你的卡库永不被覆盖）；`rr.conf` 不由这里管（每次 `/api/v1/cell` 按频段渲染） / `mkdir -p /data/conf /data/log`; `sib/rb.conf` is **overwritten following the image every time**; `user_db.csv`/`wordlist.list` wordlist are **copied only when missing** (your SIM database is never overwritten); `rr.conf` is not handled here (re-rendered per band on each `/api/v1/cell`)
-3. `service pcscd start`（无读卡器时失败也继续） / `service pcscd start` (continues even if it fails with no reader)
-4. 打印 `uhd_find_devices` / `bladeRF-cli info` 供排障 / Prints `uhd_find_devices` / `bladeRF-cli info` for troubleshooting
-5. `exec lte-system`（PID 1，接管信号，`docker stop` 优雅退出） / `exec lte-system` (PID 1, takes over signals, `docker stop` exits gracefully)
+```bash
+REVISION=$(git rev-parse HEAD)
+docker build -f deploy/docker/Dockerfile.web-upgrade \
+  --build-arg RUNTIME_BASE=ltesystem-dep:2.1 \
+  --build-arg OCI_VERSION=2.1 \
+  --build-arg OCI_REVISION="$REVISION" \
+  -t "ltesystem-dep:web-test-${REVISION:0:12}" .
+```
 
-## 6. 构建排障 Build Troubleshooting
+增量层只替换：
 
-| 现象 Phenomenon | 处理 Handling |
-|---|---|
-| `Unable to locate package ...` | 包名随 Ubuntu 版本变，先在宿主 `apt-cache policy <包>` 核实再改 Dockerfile / Package names vary by Ubuntu release; verify on the host with `apt-cache policy <pkg>` before editing the Dockerfile |
-| `Boost required` / cmake 报错 / cmake error | 补 `libboost-*-dev`（srsRAN 要 program-options + system + thread + test） / Add `libboost-*-dev` (srsRAN needs program-options + system + thread + test) |
-| `git: command not found`（某 RUN 层） / (in some RUN layer) | 该层基座缺 git，加到 apt 列表 / That layer's base lacks git; add it to the apt list |
-| 构建卡住不动 / Build stuck | srsRAN `make -j$(nproc)` 正常要 10–20 分钟，看 `docker compose build` 输出确认在编译 / srsRAN `make -j$(nproc)` normally takes 10–20 min; watch `docker compose build` output to confirm compiling |
-| 磁盘告警 / Disk warning | 构建峰值多占 ~8GB；`sudo docker system df`，`sudo docker builder prune` 清陈旧缓存 / Peak build usage adds ~8GB; `sudo docker system df`, `sudo docker builder prune` to clear stale cache |
+The app layer replaces only:
+
+- `/usr/local/bin/lte-system`（全新 Go + embedded Web UI）
+- `/app/configs/app.yaml`（来自仓库非敏感 `configs/app.yaml.example`）
+- OCI version/revision/base labels
+
+它不重编/替换 srsRAN、UHD、pySIM、系统包或正常 entrypoint，也不接受 Token build arg。父 2.1 镜像可能遗留 `EXPOSE 8081` 元数据；Compose 默认仍只发布 8080，且 `LTE_EXPOSE_API=false` 不绑定独立 API。正式发布仍回到完整 Dockerfile。
+
+It does not rebuild/replace srsRAN, UHD, pySIM, system packages or the normal entrypoint, and accepts no token build argument. A parent 2.1 image may retain legacy `EXPOSE 8081` metadata; default Compose still publishes only 8080 and `LTE_EXPOSE_API=false` does not bind the direct API. Formal releases return to the full Dockerfile.
+
+本次实际 2.1 base（`c18151d`）到候选源码的只读比较确认 C++、固件与静态无线配置无变化；仅应用 example 配置与第三方说明文档有差异，因此本次候选符合该增量前提。其它 base 必须重新比较。
+
+The read-only comparison from the actual 2.1 base (`c18151d`) to this candidate found no C++, firmware or static-radio-config changes; only the application example config and third-party documentation differed. This candidate therefore meets the incremental prerequisite. Recheck every other base.
+
+## 服务器启停 / Server start and stop
+
+默认 bridge：
+
+Default bridge:
+
+```bash
+COMPOSE=deploy/docker/docker-compose.bridge.yml
+docker compose -p "$PROJECT" -f "$COMPOSE" config --quiet
+docker compose -p "$PROJECT" -f "$COMPOSE" up -d --no-build --force-recreate
+curl -fsS http://127.0.0.1:${LTE_UI_PORT:-8080}/ui-config.json
+docker compose -p "$PROJECT" -f "$COMPOSE" stop
+```
+
+bridge 双端口测试：
+
+Bridge dual-port test:
+
+```bash
+BASE=deploy/docker/docker-compose.bridge.yml
+TEST=deploy/docker/docker-compose.test.yml
+test "${LTE_UI_PORT:-8080}" != "${LTE_API_PORT:-8081}"
+docker compose -p "$PROJECT" -f "$BASE" -f "$TEST" config --quiet
+docker compose -p "$PROJECT" -f "$BASE" -f "$TEST" up -d --no-build --force-recreate
+BASE=http://127.0.0.1:${LTE_API_PORT:-8081} bash scripts/smoke.sh
+```
+
+host 测试设置私有环境 `LTE_EXPOSE_API=true` 后只使用 `docker-compose.yml`；host 网络不使用 `ports`，也不叠加 test override。
+
+For a host test, set private environment `LTE_EXPOSE_API=true` and use only `docker-compose.yml`; host networking uses no `ports` and never adds the test override.
+
+## 正常 entrypoint 与管理专用 override / Normal entrypoint and management-only override
+
+正常 `entrypoint.sh` 保持现有完整 LTE 行为：选择 FPGA；创建/刷新 `/data` 中的静态配置与缺失字典；启动 `pcscd`；探测 UHD/bladeRF；最后执行 Go 服务。它本身不启动小区。
+
+The normal `entrypoint.sh` preserves full LTE behavior: select FPGA; create/refresh static `/data` configuration and a missing wordlist; start `pcscd`; probe UHD/bladeRF; then execute Go. It does not start a cell.
+
+若管理测试必须避开共享 SDR 探测，可使用私有 Compose override：
+
+For a management test that must avoid probing a shared SDR, use a private Compose override:
+
+```yaml
+services:
+  lte-system:
+    entrypoint: ["/usr/local/bin/lte-system"]
+```
+
+它只适用于继续挂载同一实际、**已播种** `lte-data` 卷；空卷/首次部署不使用。该方式跳过 FPGA 选择、静态配置刷新、字典播种、PC/SC 与无线探测。需要首次播种、完整 LTE 或写卡行为时恢复正常 entrypoint。详见 [部署指南](../../docs/DEPLOY.md) 和 [Web 控制台](../../docs/WEB_UI.md)。
+
+Use it only while mounting the same actual, **already seeded** `lte-data` volume; never use it for an empty volume or first deployment. It skips FPGA selection, static-config refresh, wordlist seeding, PC/SC and radio probes. Restore the normal entrypoint for initial seeding, full LTE or SIM-programming behavior. See the [deployment guide](../../docs/DEPLOY.md) and [Web UI](../../docs/WEB_UI.md).
+
+## 保留项 / Preserved deployment contracts
+
+- bridge 固定容器 `eth0`，Compose >= 2.36.0；默认 `172.30.8.0/24` 不与 UE `172.16.0.0/24` 重叠。
+- fixed bridge `eth0`, Compose >= 2.36.0; default `172.30.8.0/24` does not overlap UE `172.16.0.0/24`.
+- host/bridge 同样保留 `/dev/bus/usb`、`lte-data:/data`、`privileged`、`UHD_FPGA=compat` 与 210 秒 stop grace。
+- host/bridge preserve `/dev/bus/usb`, `lte-data:/data`, `privileged`, `UHD_FPGA=compat` and the 210-second stop grace.
+- 实际卷名从现有容器解析；升级/回滚不 `down -v`，不覆盖最新 SQN。
+- resolve the actual volume from the existing container; never `down -v` or overwrite the newest SQN during upgrade/rollback.
+- 替换前备份数据卷；旧镜像/缓存仅保留至新部署验收，之后按用户保留策略定向清理。当前测试部署明确不保留回滚镜像。
+- Back up the data volume; retain old images/caches until acceptance, then clean only selected obsolete artifacts according to the user's retention choice. The current test deployment explicitly does not retain rollback images.
 
 ---
-**导航 Navigation:** [仓库根 Repo Root](../../README.md) · [文档索引 Docs](../../docs/README.md) · [DEPLOY](../../docs/DEPLOY.md) · [SDR](../../docs/SDR.md)
+**导航 Navigation:** [README](../../README.md) · [DEPLOY](../../docs/DEPLOY.md) · [WEB_UI](../../docs/WEB_UI.md) · [SDR](../../docs/SDR.md)

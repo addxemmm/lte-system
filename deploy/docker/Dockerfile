@@ -60,15 +60,17 @@ RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
 # Verify RF drivers got compiled in (fail early if UHD missing)
 RUN grep -E "UHD|BLADERF|SOAPY|ZEROMQ" CMakeCache.txt || true
 
-# ---------- stage 2: build Go server ----------
+# ---------- stage 2: build the Go Web UI + API server ----------
 FROM golang:1.22-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
+# internal/webui/static is compiled into the Go binary by go:embed. COPY
+# internal/ already includes the complete frontend; no Node build is required.
 COPY internal/ ./internal/
 # Keep deployment contracts available to CPU-only go-builder regression tests.
-COPY deploy/docker/*.yml ./deploy/docker/
+COPY deploy/docker/*.yml deploy/docker/Dockerfile* ./deploy/docker/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
 
 # ---------- stage 3: runtime ----------
@@ -133,5 +135,8 @@ ENV LTE_CONFIG=/app/configs/app.yaml \
     LTE_PYSIM_DIR=/opt/pysim \
     UHD_IMAGES_DIR=/usr/share/uhd/images
 
-EXPOSE 8081
+# Default surface: Web UI plus its limited same-origin management gateway.
+# Direct API port 8081 is optional for explicit legacy/test use. EXPOSE is
+# image metadata, not a firewall and not a host publishing rule.
+EXPOSE 8080
 ENTRYPOINT ["/entrypoint.sh"]

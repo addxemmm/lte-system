@@ -10,11 +10,29 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 
 ## 通用约定 Common Contract
 
-- 基地址：`http://HOST:8081`；客户端不要使用监听地址 `0.0.0.0`。
+- 完整 API 基地址：`http://HOST:8081`，仅在 `expose_api: true` / `LTE_EXPOSE_API=true` 时监听；客户端不要使用监听地址 `0.0.0.0`。
 - JSON 包络：`{"code":int,"message":string,"data":object|null,"request_id":string}`；成功 `code=0`。
 - 每个响应都有 `X-Request-ID`。未知路径和方法分别返回标准 404/405 包络。
 - 配置文件 `api_token` 非空时，每个请求须带 `Authorization: Bearer TOKEN`；有效 Token 为空时开放访问。非空 `LTE_API_TOKEN` 可覆盖文件配置，详见下节。
 - JSON body 必须是单一对象；多余值、数组、`null` 或尾随垃圾返回 400。上传默认上限 8 MiB。
+
+### 同容器管理台与端口 / Same-container console and ports
+
+管理台默认监听 `:8080`，独立 API 默认不监听。`ui_listen_addr` / `LTE_UI_LISTEN` 控制管理台；`listen_addr` / `LTE_LISTEN` 控制可选 API；`expose_api` / `LTE_EXPOSE_API` 决定是否创建 API socket。环境开关仅接受 `true` 或 `false`。双端口启用时端口号必须不同。测试使用 bridge 基础文件加 `docker-compose.test.yml`，同时发布 8080/8081，运行版本仍为 **2.1**。
+
+The console listens on `:8080` by default; the independent API socket is disabled. Listener addresses and exposure are startup configuration, not browser preferences. Use the bridge compose file plus the test override to publish both ports. Disabling the independent API does not disable the console's authenticated management gateway.
+
+- 管理台同源 `/api/v1` 网关只允许：GET `cell`, `network`, `ues`, `ues/{imsi}`, `subscribers`, `subscribers/{imsi}`, `profile`, `health`, `diagnostics/connectivity`；POST/DELETE `cell`。其余端点不通过管理台转发。
+- The same-origin gateway forwards only the management operations listed above. The complete Postman collection targets the optional independent API, not the restricted gateway.
+- 网关仍执行相同 Bearer 校验，不代填服务端 Token。浏览器跨源请求被拒绝；写操作额外要求 `X-LTE-UI: 1`。不启用 CORS。独立 API 保留原契约。
+- Gateway mutations require `X-LTE-UI: 1`; cross-origin browser requests are rejected. Authentication is shared with the API and never injected by the server. No CORS is enabled.
+- 管理台默认只接受 IP 字面量或 `localhost` Host；自定义域名需列入 YAML `ui_allowed_hosts`（无协议和端口），避免开放模式下的 DNS rebinding。/ Named console hosts require an explicit `ui_allowed_hosts` entry; literal IPs and localhost are accepted by default. This is independent of the Origin comparison.
+- `GET /ui-config.json` 属于公开静态管理台元数据（不属于标准 API 包络），只返回 `version`, `api_exposed`, `api_port`, `ui_port`, `auth_required`。端口为容器监听端口，不是自定义宿主机映射；没有 Token 或私有配置。
+- Public console metadata contains only those five fields. Static assets are public; API data is protected when a token is configured. Browser tokens are held in memory only and cleared on reload.
+- 当前 Origin 校验要求请求 scheme/Host 一致。TLS 终止反向代理尚未配置可信代理机制，不应直接套用会改变 scheme 的代理配置；测试局域网 HTTP，远程使用 SSH 隧道。不得通过删改 Origin 头绕过检查。
+- Origin checks require matching scheme and Host. TLS-terminating proxy trust is not configured in this increment; use the LAN test deployment or an SSH tunnel rather than stripping Origin headers.
+
+启动管理台/API 不启动小区。See [Web UI guide](WEB_UI.md) for operation, accessibility, deployment and the distinction between configured state and observed connectivity.
 
 ### 固定 Token 鉴权（2.1 增量） / Static-token authentication (2.1 increment)
 
@@ -45,7 +63,7 @@ Discovery errors fail startup. If no file is found and the environment token is 
 
 Postman：设置 collection/environment 的 `token` 为同一个有效值；开放模式留空。两个集合会在发送前按有效变量值设置或移除 Authorization，详见 [Postman 说明](../postman/README.md)。
 
-Postman: set the collection/environment `token` to the effective server value, or leave it empty for anonymous mode. Both collections set/remove Authorization before sending using the effective variable value. See the Postman guide. Runtime version remains **2.1**; API v3 and Postman schema v2.1 labels are separate contracts. This increment has not been deployed.
+Postman: set the collection/environment `token` to the effective server value, or leave it empty for anonymous mode. Both collections set/remove Authorization before sending using the effective variable value. See the Postman guide. Runtime version remains **2.1**; API v3 and Postman schema v2.1 labels are separate contracts. File-token support and the console were deployed in the [2026-09-09 management test release](WEB_UI_RELEASE_2026-09-09.md); RF was not started.
 
 ## 1. 小区 Cell
 

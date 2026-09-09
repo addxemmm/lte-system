@@ -1,0 +1,8 @@
+# Test-only override for the isolated bridge deployment.
+# Combine with docker-compose.bridge.yml; never merge with the host-network base.
+services:
+  lte-system:
+    environment:
+      LTE_EXPOSE_API: "true"
+    ports:
+      - "${LTE_API_PORT:-8081}:8081"

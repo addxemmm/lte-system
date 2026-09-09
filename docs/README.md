@@ -7,6 +7,11 @@
 | [API.md](API.md) | **v1 标准接口**完整参考（包络/状态码/错误码/多 UE 与订户管理） / Complete reference for the **v1 standard API** (envelope/status codes/error codes/multi-UE and subscriber management) |
 | [api/openapi.yaml](api/openapi.yaml) | v1 的 OpenAPI 3.0 机器契约 / Machine-readable contract for v1 in OpenAPI 3.0 |
 | [DEPLOY.md](DEPLOY.md) | 服务器部署、升级、备份、排障 / Server deploy, upgrade, backup, and troubleshooting |
+| [WEB_UI.md](WEB_UI.md) | 中英管理台、可选 API 端口、鉴权与停止操作 / Bilingual console, optional API, authentication and shutdown |
+| [WEB_UI_RELEASE_2026-09-09.md](WEB_UI_RELEASE_2026-09-09.md) | 2.1 管理台验收与按要求停机记录 / 2.1 console acceptance and requested shutdown |
+| [RELEASING.md](RELEASING.md) | 版本、GitHub Release 与 Docker Hub 发布规划 / Versioning, GitHub Releases and Docker Hub publication plan |
+| [../CHANGELOG.md](../CHANGELOG.md) | 中英变更记录 / Bilingual change history |
+| [releases/TEMPLATE.md](releases/TEMPLATE.md) | 未来正式发布的双语记录模板 / Bilingual template for future formal releases |
 | [RELEASE_2.1_2026-09-07.md](RELEASE_2.1_2026-09-07.md) | 2.1 已部署与清理：restricted 生效、正常路径注册证据、一个回滚与待手机验收 / Deployed 2.1, cleanup, enabled restricted policy, normal-path registration and pending handset acceptance |
 | [SIM.md](SIM.md) | 写卡（有写卡器时）与 `user_db.csv` 行格式 / SIM writing (with writer) and `user_db.csv` row format |
 | [SDR.md](SDR.md) | B210（正版/兼容板 FPGA 切换）与 bladeRF / B210 (genuine/compatible board FPGA switching) and bladeRF |

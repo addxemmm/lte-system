@@ -1,7 +1,7 @@
 # 架构与迁移 / Architecture and migration
 
-> 当前版本为 3.0，只保留标准 `/api/v1`。以下 v1→v2 对照是历史记录，不代表旧接口仍可调用；最新变更见文末。
-> Version 3.0 exposes only standard `/api/v1`. The v1→v2 comparison below is historical, not an active legacy API contract; see the latest changes at the end.
+> 当前运行/镜像版本为 **2.1**；历史 3.0 指 API 文档代际，仅保留标准 `/api/v1`，不是当前镜像版本。以下 v1→v2 对照及各日期条目是历史记录，不代表旧接口、默认端口或镜像保留规则仍适用。当前默认 Web 8080，独立 API 8081 需显式启用，详见 [部署](DEPLOY.md)、[Web UI](WEB_UI.md) 和 [发布管理](RELEASING.md)。
+> The current runtime/image version is **2.1**. Historical 3.0 references identify the API documentation generation with standard `/api/v1` only, not the current image version. The comparison and dated entries below are historical; old routes, default ports and image-retention rules are not current guidance. Web 8080 is now the default and direct API 8081 requires explicit opt-in; see [deployment](DEPLOY.md), [Web UI](WEB_UI.md) and [release management](RELEASING.md).
 
 v1.x 实现已移出工作树，见 git 标签 `archive/v1-python`（HTTP 服务 + `run.sh`/`stop.sh` 脚本 + 守护配置），下表是两代实现的对照：
 

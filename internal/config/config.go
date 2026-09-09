@@ -4,8 +4,10 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -23,11 +25,14 @@ const (
 
 // Config is the full server configuration.
 type Config struct {
-	ListenAddr string `yaml:"listen_addr"`
-	APIToken   string `yaml:"api_token" json:"-"` // empty enables anonymous API access
-	DataDir    string `yaml:"data_dir"`           // e.g. /data : conf, log, pcap live here
-	ConfDir    string `yaml:"conf_dir"`           // rendered srsRAN conf dir (default DataDir/conf)
-	LogDir     string `yaml:"log_dir"`            // default DataDir/log
+	UIListenAddr   string   `yaml:"ui_listen_addr"`
+	UIAllowedHosts []string `yaml:"ui_allowed_hosts"`
+	ExposeAPI      bool     `yaml:"expose_api"`
+	ListenAddr     string   `yaml:"listen_addr"`
+	APIToken       string   `yaml:"api_token" json:"-"` // empty enables anonymous API access
+	DataDir        string   `yaml:"data_dir"`           // e.g. /data : conf, log, pcap live here
+	ConfDir        string   `yaml:"conf_dir"`           // rendered srsRAN conf dir (default DataDir/conf)
+	LogDir         string   `yaml:"log_dir"`            // default DataDir/log
 
 	// Binaries (srsRAN_4G install paths)
 	SrsEPCBin string `yaml:"srsepc_bin"`
@@ -87,6 +92,7 @@ type SimDefaults struct {
 // Default returns sane defaults matching legacy behavior + srsRAN_4G paths.
 func Default() Config {
 	return Config{
+		UIListenAddr:        ":8080",
 		ListenAddr:          ":8081",
 		DataDir:             "/data",
 		SrsEPCBin:           "srsepc",
@@ -150,6 +156,19 @@ func Load(path string) (Config, error) {
 	if v := os.Getenv("LTE_LISTEN"); v != "" {
 		cfg.ListenAddr = v
 	}
+	if v := os.Getenv("LTE_UI_LISTEN"); v != "" {
+		cfg.UIListenAddr = v
+	}
+	if v, ok := os.LookupEnv("LTE_EXPOSE_API"); ok && strings.TrimSpace(v) != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true":
+			cfg.ExposeAPI = true
+		case "false":
+			cfg.ExposeAPI = false
+		default:
+			return cfg, fmt.Errorf("LTE_EXPOSE_API must be true or false")
+		}
+	}
 	if v := os.Getenv("LTE_DATA_DIR"); v != "" {
 		cfg.DataDir = v
 	}
@@ -168,7 +187,38 @@ func Load(path string) (Config, error) {
 	if cfg.LogDir == "" {
 		cfg.LogDir = filepath.Join(cfg.DataDir, "log")
 	}
+	if err := cfg.ValidateListeners(); err != nil {
+		return cfg, err
+	}
 	return cfg, nil
+}
+
+// ListenPort validates a TCP listen address without opening a socket.
+func ListenPort(address string) (int, error) {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return 0, fmt.Errorf("invalid TCP listen address")
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p < 1 || p > 65535 {
+		return 0, fmt.Errorf("listen port must be between 1 and 65535")
+	}
+	return p, nil
+}
+
+func (c Config) ValidateListeners() error {
+	u, err := ListenPort(c.UIListenAddr)
+	if err != nil {
+		return fmt.Errorf("ui_listen_addr: %w", err)
+	}
+	a, err := ListenPort(c.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen_addr: %w", err)
+	}
+	if c.ExposeAPI && u == a {
+		return fmt.Errorf("UI and exposed API ports must differ")
+	}
+	return nil
 }
 
 // EnsureDirs creates DataDir/conf/log.

@@ -11,7 +11,7 @@
     {
       "key": "base_url",
       "value": "http://HOST:8081",
-      "description": "SDR server URL"
+      "description": "Independent API origin; enable LTE_EXPOSE_API=true and publish 8081 / 独立 API 地址，须启用并发布 8081"
     },
     {
       "key": "token",

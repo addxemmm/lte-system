@@ -21,6 +21,8 @@ Remove or replace any older `lte-system` collection in Postman before importing.
 
 ## 变量 Variables
 
+**管理台端口更新 / Console port update:** 默认只启用前端 8080 和受限同源管理网关。完整集合继续使用 `http://HOST:8081`，需在启动时设置 `LTE_EXPOSE_API=true` 并发布 8081（测试 compose override）。只读集合的六个 GET 也可使用前端 origin `http://HOST:8080`；完整集合不适用此前端网关。Token 规则在两处相同。/ The full collection requires the explicitly enabled independent API on port 8081. The six-GET read-only collection also works with the console origin on port 8080. Both use the same token rules. See [console deployment](../docs/WEB_UI.md).
+
 - `base_url` 默认是不可路由占位符 `http://HOST:8081`；改成 API origin，不要附加 `/api/v1`。
 - 服务端启用固定 Token 鉴权时，在 Postman 的 collection 或 environment scope 填写 `token`；开放模式留空。仓库默认值为空，不填写或提交真实秘密。
 - 完整集合中的 DNS、IMSI、Key、OPc、SQN 默认均为 `REPLACE_WITH_*` 占位符，不含现场 IP 或凭据。只在 Postman 本地变量中填写测试环境值，不要提交。
@@ -33,7 +35,7 @@ Remove or replace any older `lte-system` collection in Postman before importing.
 - `configs/app.yaml` 的 `api_token: ""` 默认关闭鉴权；文件值去除首尾空白后非空即对所有路由启用 Bearer 校验。
 - 非空的 `LTE_API_TOKEN` 环境变量优先覆盖文件配置；未设置、空值或纯空白值不覆盖。Token 同样去除首尾空白。
 - 配置只在 API 启动时读取；修改 YAML 或环境变量后必须重启 API。
-- 本次文件 Token 支持尚未部署。匿名模式需要有效配置文件且 Token 留空；配置丢失或读取错误不应通过清空 Postman Token 来解决。
+- 文件 Token 支持已随 [2026-09-09 管理台测试版](../docs/WEB_UI_RELEASE_2026-09-09.md) 部署。匿名模式需要有效配置文件且 Token 留空；配置丢失或读取错误不应通过清空 Postman Token 来解决。
 - 鉴权启用后，缺失或错误 Token 返回 HTTP `401`、响应 `code=40101`，并包含 `WWW-Authenticate: Bearer`。
 
 Both collections define collection-level `noauth` and one collection pre-request script. Every request has no request-level auth override and inherits that collection setting. The script first removes every stale/generated `Authorization` header, resolves `token` through `pm.variables.get`, trims it, and adds exactly one `Authorization: Bearer <token>` header only when the result is non-empty. Thus an empty or whitespace-only token sends no authorization header and cannot produce `Bearer `.

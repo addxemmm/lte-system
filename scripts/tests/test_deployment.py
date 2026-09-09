@@ -14,6 +14,9 @@ spec.loader.exec_module(source)
 
 
 class ComposeListenerTests(unittest.TestCase):
+    def compose(self, name):
+        return (SCRIPTS.parent / "deploy" / "docker" / name).read_text(encoding="utf-8")
+
     def test_smoke_does_not_probe_sdr_or_mutate_state(self):
         smoke = (SCRIPTS / "smoke.sh").read_text(encoding="utf-8")
         self.assertIn("for path in /api/v1/cell /api/v1/profile; do", smoke)
@@ -21,12 +24,65 @@ class ComposeListenerTests(unittest.TestCase):
         self.assertNotIn("-X POST", smoke)
         self.assertNotIn("-X DELETE", smoke)
 
-    def test_lan_listener_default_keeps_token_and_data_volume(self):
-        compose = (SCRIPTS.parent / "deploy/docker/docker-compose.yml").read_text(encoding="utf-8")
-        self.assertIn("LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}", compose)
-        self.assertIn("LTE_API_TOKEN: ${LTE_API_TOKEN:-}", compose)
+    def test_default_bridge_publishes_only_web_ui(self):
+        compose = self.compose("docker-compose.bridge.yml")
+        self.assertIn('- "${LTE_UI_PORT:-8080}:8080"', compose)
+        self.assertNotIn('${LTE_API_PORT:-8081}:8081', compose)
+        self.assertIn('LTE_EXPOSE_API: "false"', compose)
+        self.assertIn("LTE_UI_LISTEN: 0.0.0.0:8080", compose)
+        self.assertIn("LTE_LISTEN: 0.0.0.0:8081", compose)
+
+    def test_test_override_explicitly_adds_direct_api(self):
+        bridge = self.compose("docker-compose.bridge.yml")
+        override = self.compose("docker-compose.test.yml")
+        self.assertIn('- "${LTE_UI_PORT:-8080}:8080"', bridge)
+        self.assertIn('- "${LTE_API_PORT:-8081}:8081"', override)
+        self.assertIn('LTE_EXPOSE_API: "true"', override)
+        self.assertNotIn("network_mode: host", override)
+
+    def test_host_default_has_ui_but_no_published_port_list(self):
+        compose = self.compose("docker-compose.yml")
         self.assertIn("network_mode: host", compose)
-        self.assertIn("- lte-data:/data", compose)
+        self.assertNotIn("\n    ports:", compose)
+        self.assertIn("LTE_UI_LISTEN: ${LTE_UI_LISTEN:-0.0.0.0:8080}", compose)
+        self.assertIn('LTE_EXPOSE_API: "${LTE_EXPOSE_API:-false}"', compose)
+        self.assertIn("LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}", compose)
+
+    def test_hardware_volume_grace_period_and_token_are_preserved(self):
+        for name in ("docker-compose.yml", "docker-compose.bridge.yml"):
+            compose = self.compose(name)
+            self.assertIn("- /dev/bus/usb:/dev/bus/usb", compose)
+            self.assertIn("- lte-data:/data", compose)
+            self.assertIn("stop_grace_period: 210s", compose)
+            self.assertIn("LTE_API_TOKEN: ${LTE_API_TOKEN:-}", compose)
+
+    def test_dockerfiles_use_go_embedded_ui_only(self):
+        for name in ("Dockerfile", "Dockerfile.web-upgrade"):
+            dockerfile = self.compose(name)
+            self.assertIn("COPY internal/ ./internal/", dockerfile)
+            lower = dockerfile.lower()
+            self.assertNotIn("from node:", lower)
+            self.assertNotIn("npm ", lower)
+            self.assertNotIn("from nginx", lower)
+            self.assertNotIn("apt-get install nginx", lower)
+        canonical = self.compose("Dockerfile")
+        expose = [line.strip() for line in canonical.splitlines()
+                  if line.strip().startswith("EXPOSE ")]
+        self.assertEqual(expose, ["EXPOSE 8080"])
+        self.assertIn("COPY deploy/docker/*.yml deploy/docker/Dockerfile* ./deploy/docker/", canonical)
+
+    def test_web_upgrade_is_explicit_and_does_not_rebuild_core(self):
+        dockerfile = self.compose("Dockerfile.web-upgrade")
+        self.assertIn("ARG RUNTIME_BASE\n", dockerfile)
+        self.assertNotIn("ARG RUNTIME_BASE=", dockerfile)
+        self.assertIn("FROM golang:1.26.8-bookworm AS go-builder", dockerfile)
+        self.assertIn("FROM ${RUNTIME_BASE}", dockerfile)
+        self.assertIn("ARG OCI_VERSION=2.1", dockerfile)
+        self.assertIn("ARG OCI_REVISION=unknown", dockerfile)
+        self.assertIn("COPY --from=go-builder /out/lte-system /usr/local/bin/lte-system", dockerfile)
+        self.assertIn("COPY configs/app.yaml.example /app/configs/app.yaml", dockerfile)
+        for forbidden in ("LTE_API_TOKEN", "third_party/", "firmware/", "srs-builder"):
+            self.assertNotIn(forbidden, dockerfile)
 
 
 class SourcePackageTests(unittest.TestCase):
@@ -84,14 +140,17 @@ class SourcePackageTests(unittest.TestCase):
         with self.assertRaises((ValueError, subprocess.CalledProcessError)):
             source.package(self.parent, self.archive)
 
-    def test_cpp_patch_sources_are_normalized_to_lf(self):
+    def test_cpp_patch_and_embedded_web_sources_are_normalized_to_lf(self):
         names = ("third_party/srsran/fix.patch", "third_party/srsran/test.cpp",
-                 "third_party/srsran/test.h", "third_party/srsran/test.cmake")
+                 "third_party/srsran/test.h", "third_party/srsran/test.cmake",
+                 "internal/webui/static/app.js", "internal/webui/static/styles.css",
+                 "internal/webui/static/index.html", "internal/webui/static/tower.svg",
+                 "deploy/docker/Dockerfile.web-upgrade")
         for name in names:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"first\r\nsecond\r\n")
-        subprocess.run(["git", "-C", str(self.root), "add", "third_party/srsran"],
+        subprocess.run(["git", "-C", str(self.root), "add", *names],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         source.package(self.root, self.archive)
         with tarfile.open(self.archive) as archive:

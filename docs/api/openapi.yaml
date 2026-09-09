@@ -13,8 +13,14 @@ info:
     is loaded at startup and changes require an API restart.
     Anonymous mode requires an existing valid config file with empty/omitted
     api_token; a missing selected config or discovery error fails startup.
+    The full API server below listens only when expose_api or LTE_EXPOSE_API is
+    true (default false). The embedded console defaults to port 8080 and exposes
+    a restricted same-origin management gateway with the same authentication;
+    cell mutations there additionally require X-LTE-UI: 1. Public console
+    metadata GET /ui-config.json is not part of this API and contains no token.
 servers:
   - url: http://HOST:8081
+    description: Optional independent API; explicitly enable and publish it for the full contract.
 security:
   - {}
   - bearerAuth: []

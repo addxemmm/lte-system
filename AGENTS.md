@@ -34,7 +34,7 @@
 
 - 提交信息双语格式 `<scope>: <中文> / <English>`（如 `api: 修复 getfile 缺 id / fix getfile missing id`），一个提交只做一件事。 / Commit messages are bilingual `<scope>: <中文> / <English>` (e.g. `api: 修复 getfile 缺 id / fix getfile missing id`); one commit does one thing.
 - 推远端前必跑：`go test ./...` 全绿 + `go vet ./...` + `git status` 无多余文件。 / Before pushing: `go test ./...` all green + `go vet ./...` + `git status` shows no extra files.
-- 服务器发布先同步独立源快照并构建，再按 [`docs/DEPLOY.md`](docs/DEPLOY.md) 备份实际数据卷、保留旧镜像、替换并验证。部署脚本不自动重启或发射；默认独立 bridge 编排，仅发布 API。 / Sync an isolated source snapshot and build first, then follow [`docs/DEPLOY.md`](docs/DEPLOY.md) to back up the actual data volume, retain the old image, replace and verify. Deployment scripts do not restart or transmit automatically; use standalone bridge orchestration with API-only publishing.
+- 服务器发布先同步独立源快照并构建，再按 [`docs/DEPLOY.md`](docs/DEPLOY.md) 备份实际数据卷、替换并验证。镜像保留遵从用户当前要求；用户明确不要回滚镜像时，在新部署验证后定向删除旧镜像，不删数据卷。部署脚本不自动启动小区或发射；默认独立 bridge 编排，只发布管理台 8080，独立 API 需显式启用。 / Sync an isolated source snapshot and build first, back up the actual data volume, replace and verify. Follow the user's current image-retention choice; remove obsolete images only after verification and never delete data volumes. Deployment does not auto-start the cell or transmit. Default bridge publishing exposes console 8080 only; the independent API requires explicit opt-in.
 - 需要新会话接手时，把本文件链接发给对方即可。 / When a new session needs to take over, just send the other party a link to this file.
 
 ---

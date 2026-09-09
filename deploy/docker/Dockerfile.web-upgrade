@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+# Fast Web UI/Go upgrade for an already verified ltesystem-dep:2.1 core.
+# RUNTIME_BASE has no default by design: pass the exact trusted tag or image ID.
+ARG RUNTIME_BASE
+
+FROM golang:1.26.8-bookworm AS go-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ ./cmd/
+# Includes internal/webui/static, embedded by the Go compiler. No Node/nginx.
+COPY internal/ ./internal/
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
+
+FROM ${RUNTIME_BASE}
+ARG RUNTIME_BASE
+ARG OCI_VERSION=2.1
+ARG OCI_REVISION=unknown
+LABEL org.opencontainers.image.version="${OCI_VERSION}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.base.name="${RUNTIME_BASE}"
+
+# Preserve the verified srsRAN/UHD/pySIM/runtime filesystem from RUNTIME_BASE.
+# Replace only the Go binary and the non-secret example-derived application config.
+COPY --from=go-builder /out/lte-system /usr/local/bin/lte-system
+COPY configs/app.yaml.example /app/configs/app.yaml
+
+# RUNTIME_BASE may retain legacy EXPOSE metadata; Compose publishing remains the
+# enforcement point. No token is accepted as a build argument or baked here.
+EXPOSE 8080

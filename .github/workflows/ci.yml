@@ -1,4 +1,6 @@
 name: ci
+permissions:
+  contents: read
 on:
   push:
     branches: [master, main]
@@ -11,6 +13,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
+      # Required by the embedded frontend's ES-module and API-client tests.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --version
       - run: go vet ./...
       - run: go test ./...
       - run: go test -race ./...

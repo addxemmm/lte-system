@@ -1,6 +1,6 @@
 # lte-system compose (Ubuntu SDR host with USRP/bladeRF + ACR1281U attached)
 # Host-network compatibility/rollback option. For isolated eth0 networking use
-# docker-compose.bridge.yml by itself (do not merge the two files).
+# docker-compose.bridge.yml by itself (do not merge the two base files).
 # USB passthrough is REQUIRED for USRP + smartcard reader.
 services:
   lte-system:
@@ -21,7 +21,10 @@ services:
       - lte-data:/data
     environment:
       LTE_CONFIG: /app/configs/app.yaml
-      # Listen on all IPv4 interfaces for LAN clients; an optional token is forwarded below.
+      # The Web UI and its same-origin management gateway are the default surface.
+      LTE_UI_LISTEN: ${LTE_UI_LISTEN:-0.0.0.0:8080}
+      # Strict boolean. Set true only for direct legacy/test API access.
+      LTE_EXPOSE_API: "${LTE_EXPOSE_API:-false}"
       LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}
       LTE_API_TOKEN: ${LTE_API_TOKEN:-}
       # UHD_FPGA: stock | compat | auto

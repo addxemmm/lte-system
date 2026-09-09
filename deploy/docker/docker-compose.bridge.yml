@@ -1,5 +1,6 @@
 # Isolated all-in-one EPC/eNB; requires Docker Compose >= 2.36.0.
-# Use this file alone, not as an override of docker-compose.yml.
+# Use this base file alone, not as an override of docker-compose.yml. Add only
+# docker-compose.test.yml when direct test access to the API is required.
 services:
   lte-system:
     build:
@@ -16,13 +17,16 @@ services:
     sysctls:
       net.ipv4.ip_forward: "1"
     ports:
-      - "${LTE_BIND_ADDR:-0.0.0.0}:${LTE_API_PORT:-8081}:8081/tcp"
+      - "${LTE_UI_PORT:-8080}:8080"
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - lte-data:/data
     environment:
       LTE_CONFIG: /app/configs/app.yaml
-      # Container listener is fixed; restrict host publishing using LTE_BIND_ADDR.
+      # The Web UI and its limited same-origin management gateway use this port.
+      LTE_UI_LISTEN: 0.0.0.0:8080
+      # Strict boolean; the test override changes this to true and publishes 8081.
+      LTE_EXPOSE_API: "false"
       LTE_LISTEN: 0.0.0.0:8081
       LTE_API_TOKEN: ${LTE_API_TOKEN:-}
       UHD_FPGA: compat

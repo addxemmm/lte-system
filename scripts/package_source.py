@@ -66,8 +66,9 @@ def package(root, output):
             # Respect the repository's LF text policy even on a Windows checkout.
             text_suffixes = {".go", ".mod", ".sum", ".sh", ".ps1", ".py", ".md", ".yaml", ".yml",
                              ".conf", ".example", ".csv", ".txt", ".toml", ".json",
-                             ".patch", ".cpp", ".cc", ".h", ".hpp", ".cmake"}
-            if source.suffix in text_suffixes or source.name in {"Dockerfile", "Makefile", "VERSION", ".dockerignore", ".gitignore", ".gitattributes"}:
+                             ".patch", ".cpp", ".cc", ".h", ".hpp", ".cmake",
+                             ".js", ".mjs", ".css", ".html", ".svg"}
+            if source.suffix in text_suffixes or source.name.startswith("Dockerfile") or source.name in {"Makefile", "VERSION", ".dockerignore", ".gitignore", ".gitattributes"}:
                 content = content.replace(b"\r\n", b"\n")
             info.size = len(content)
             archive.addfile(info, io.BytesIO(content))

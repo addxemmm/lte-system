@@ -1,4 +1,12 @@
 listen_addr: ":8081"
+# 前端始终启用；独立后端监听默认关闭。 / UI enabled; direct API listener disabled by default.
+ui_listen_addr: ":8080"
+# 默认接受 IP/localhost；自定义域名需列入此处（无协议/端口）。
+# Literal IP/localhost work by default; explicitly list custom DNS hostnames.
+ui_allowed_hosts: []
+expose_api: false
+# 测试同时开放：LTE_EXPOSE_API=true，并使用 docker-compose.test.yml。
+# Dual-port testing: LTE_EXPOSE_API=true plus docker-compose.test.yml.
 # 固定 API Token；留空允许匿名访问。修改后重启 API，不要提交真实 Token。
 # Static API token; empty allows anonymous access. Restart API after changes.
 # A nonempty LTE_API_TOKEN overrides this value; an empty env value does not.
