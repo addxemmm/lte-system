@@ -60,6 +60,16 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("fake-sensitive-token", stdout.getvalue())
         self.assertNotIn(token, stdout.getvalue())
 
+    def test_draft_creation_returns_authoritative_id(self):
+        import subprocess
+        with patch.object(publish.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, '{"id":123,"draft":true}', '')) as command:
+            result = publish.api_write("repos/owner/repo/releases", {"tag_name": "v2.1", "draft": True})
+            self.assertEqual(result["id"], 123)
+            self.assertEqual(json.loads(command.call_args.kwargs["input"])["tag_name"], "v2.1")
+        source = (SCRIPTS / "release_publish.py").read_text(encoding="utf-8")
+        self.assertIn('releases/{release[\'id\']}', source)
+        self.assertNotIn('next(r for page in pages', source)
+
     def test_redirect_and_visibility_checks(self):
         with self.assertRaises(ValueError):
             registry.NoRedirect().redirect_request(None, None, None, None, None, None)

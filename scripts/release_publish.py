@@ -30,6 +30,14 @@ def api(path, missing=False):
     return json.loads(result.stdout)
 
 
+def api_write(path, payload, method="POST"):
+    result = subprocess.run(["gh", "api", path, "--method", method, "--input", "-"],
+                            input=json.dumps(payload), capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError("GitHub release mutation failed")
+    return json.loads(result.stdout)
+
+
 def same_identity(expected, actual):
     return all(expected.get(key) == actual.get(key) for key in
                ("version", "tag", "revision", "image", "source_tag", "platform", "visibility", "source"))
@@ -178,19 +186,16 @@ def main():
         print("Release already complete; digest/source verified; no changes made")
         return
     if not release:
-        args = ["gh", "release", "create", tag, "--repo", repo, "--target", data["revision"],
-                "--draft", "--title", tag + " — LTE System / LTE 系统",
-                "--notes-file", str(out / "release-notes.md")]
-        if data["prerelease"]:
-            args.append("--prerelease")
-        run(*args)
+        release = api_write(f"repos/{repo}/releases", {
+            "tag_name": tag, "target_commitish": data["revision"], "draft": True,
+            "name": tag + " — LTE System / LTE 系统", "prerelease": data["prerelease"],
+            "body": (out / "release-notes.md").read_text(encoding="utf-8")})
 
     def upload_once(path):
         # Never --clobber: an interrupted update must not destroy prior evidence.
-        current = api(f"repos/{repo}/releases/tags/{urllib.parse.quote(tag, safe='')}", missing=True)
-        if current is None:
-            pages = json.loads(run("gh", "api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"))
-            current = next(r for page in pages for r in page if r["tag_name"] == tag)
+        # Draft tag/list indexes may lag creation. The returned numeric ID is
+        # authoritative and does not depend on a newly materialized tag/index.
+        current = api(f"repos/{repo}/releases/{release['id']}")
         if any(asset["name"] == path.name for asset in current["assets"]):
             with tempfile.TemporaryDirectory() as download:
                 run("gh", "release", "download", tag, "--repo", repo, "--pattern", path.name, "--dir", download)
@@ -242,10 +247,7 @@ def main():
     (out / "final-notes.md").write_text(body, encoding="utf-8")
     # Re-read the draft immediately before completion. Create a missing tag at
     # the exact verified commit, never let a changed draft target select it.
-    current = api(f"repos/{repo}/releases/tags/{urllib.parse.quote(tag, safe='')}", missing=True)
-    if current is None:
-        pages = json.loads(run("gh", "api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"))
-        current = next(r for page in pages for r in page if r["tag_name"] == tag)
+    current = api(f"repos/{repo}/releases/{release['id']}")
     if not current["draft"] or current.get("target_commitish") != data["revision"]:
         raise ValueError("release draft changed during publication")
     final_ref = api(f"repos/{repo}/git/ref/tags/{urllib.parse.quote(tag, safe='')}", missing=True)
@@ -259,7 +261,7 @@ def main():
         final_obj = api(f"repos/{repo}/git/tags/{final_obj['sha']}")["object"]
     if final_obj["type"] != "commit" or final_obj["sha"] != data["revision"]:
         raise ValueError("final Git tag identity mismatch")
-    run("gh", "release", "edit", tag, "--repo", repo, "--notes-file", str(out / "final-notes.md"), "--draft=false", "--latest=false")
+    api_write(f"repos/{repo}/releases/{release['id']}", {"body": body, "draft": False, "make_latest": "false"}, method="PATCH")
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
         summary.write(f"## 发布完成 / Published\n\n`{data['image']}@{digest}`\n\nhttps://github.com/{repo}/releases/tag/{tag}\n\nLTE/GSM not started or deployed.\n")
     print("Published release and verified public image:", tag, digest)
