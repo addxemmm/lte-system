@@ -13,7 +13,7 @@
 | Git tag | v<VERSION> |
 | 完整 commit / Full commit | <SHA> |
 | CI/build evidence | <URL> |
-| 镜像仓库 / Image repository | namespace/lte-system (Private) |
+| 镜像仓库 / Image repository | namespace/lte-system (Public; verify intended visibility) |
 | 版本与源码 tag / Version and source tags | <VERSION>, sha-<FULL-SHA> |
 | 分发 digest / Distribution digest | sha256:<DIGEST>, verified remotely |
 | 平台 / Platform | linux/amd64 (only if validated) |
@@ -62,7 +62,7 @@ English: publishing a Release does not mean the server is deployed or the cell i
 
 - [ ] VERSION、Git tag、UI 和 OCI 标签一致 / Version identities agree.
 - [ ] 精确 commit 已审核，所有必需门禁通过 / Exact commit reviewed; required gates pass.
-- [ ] 私有仓库可见性和接收者源码访问已确认 / Private visibility and recipient source access confirmed.
+- [ ] 预期仓库可见性和接收者源码访问已确认 / Intended visibility and recipient source access confirmed.
 - [ ] 远端 digest 与发布附件校验和已核实 / Remote digest and attachment checksums verified.
 - [ ] 中英 notes、源码/构建材料、SBOM/provenance 状态完整 / Notes, source/materials and attestation status recorded.
 - [ ] 附件准备完成后才完成 Release / Finish the Release only after preparing all attachments.

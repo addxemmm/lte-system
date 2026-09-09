@@ -3,6 +3,9 @@
 # Base: Ubuntu 22.04 (gcc-11 works with srsRAN_4G; 24.04 needs gcc-11 downgrade).
 # Pin the srsRAN version here; image version lives in VERSION at repo root.
 ARG SRSRAN_VERSION=release_23_11
+ARG OCI_VERSION=2.1
+ARG OCI_REVISION=unknown
+ARG OCI_SOURCE=https://github.com/addxemmm/lte-system
 
 # ---------- stage 1: build srsRAN_4G ----------
 FROM ubuntu:22.04 AS srs-builder
@@ -59,22 +62,42 @@ RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
  && ldconfig
 # Verify RF drivers got compiled in (fail early if UHD missing)
 RUN grep -E "UHD|BLADERF|SOAPY|ZEROMQ" CMakeCache.txt || true
+# Preserve the patched source, including local tests and the upstream license.
+RUN mkdir -p /out \
+ && tar --exclude='srsRAN_4G/.git' --exclude='srsRAN_4G/build' \
+        -czf /out/srsran-source.tar.gz -C /src srsRAN_4G
 
 # ---------- stage 2: build the Go Web UI + API server ----------
 FROM golang:1.22-bookworm AS go-builder
+ARG OCI_VERSION
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+COPY VERSION version.go ./
 COPY cmd/ ./cmd/
 # internal/webui/static is compiled into the Go binary by go:embed. COPY
 # internal/ already includes the complete frontend; no Node build is required.
 COPY internal/ ./internal/
 # Keep deployment contracts available to CPU-only go-builder regression tests.
 COPY deploy/docker/*.yml deploy/docker/Dockerfile* ./deploy/docker/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
+COPY deploy/docker/*.sh ./deploy/docker/
+COPY third_party/srsran/ ./third_party/srsran/
+COPY firmware/uhd/ ./firmware/uhd/
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
+RUN embedded_version="$(tr -d '[:space:]' < VERSION)" \
+ && test -n "${OCI_VERSION}" \
+ && test "${OCI_VERSION}" = "${embedded_version}" \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server \
+ && tar -czf /out/build-materials.tar.gz VERSION go.mod go.sum LICENSE THIRD_PARTY_NOTICES.md deploy/docker third_party/srsran firmware/uhd
 
 # ---------- stage 3: runtime ----------
 FROM ubuntu:22.04
+ARG OCI_VERSION
+ARG OCI_REVISION
+ARG OCI_SOURCE
+LABEL org.opencontainers.image.version="${OCI_VERSION}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.source="${OCI_SOURCE}"
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-program-options1.74.0 libconfig++9v5 libfftw3-single3 \
@@ -97,6 +120,9 @@ RUN pip install --no-cache-dir pytlv cmd2 jsonpath-ng construct bidict \
 COPY --from=srs-builder /usr/local/bin/srsenb /usr/local/bin/srsepc /usr/local/bin/
 COPY --from=srs-builder /usr/local/lib/ /usr/local/lib/
 COPY --from=srs-builder /usr/local/share/srsran/ /usr/local/share/srsran/
+COPY --from=srs-builder /out/srsran-source.tar.gz /usr/share/lte-system/sources/srsran-source.tar.gz
+COPY --from=go-builder /out/build-materials.tar.gz /usr/share/lte-system/sources/build-materials.tar.gz
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/lte-system/
 RUN ldconfig
 
 # UHD FPGA images (stock) + compat firmware overlay.

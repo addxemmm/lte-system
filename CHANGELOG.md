@@ -1,5 +1,13 @@
 # 更新日志 Changelog
 
+## [2.1] 自动发布流程 - 2026-09-09 / Automated publication workflow
+
+- 用户确认 Docker Hub 改为 Public；新增 verify/build/publish/resume，版本 tag 自动发布，普通分支仅 CI。 / Confirm Public Docker Hub; add verify/build/publish/resume, version-tag publication and branch-only CI.
+- 分离凭据验证、无 Secrets 构建和发布 job，固定 Actions SHA；全量构建与无硬件 smoke 后传递同一归档，校验身份再上传。 / Isolate credential checks, secret-free builds and publication; pin actions and transfer the exact tested full-build artifact.
+- VERSION 内嵌到 Go，校验 Git tag/OCI 标签；草稿先存证，记录双语 Release、源码/包清单/校验和及远端 digest，支持同产物恢复，拒绝版本覆盖。 / Embed VERSION, validate tags/OCI identity, draft evidence before push, record bilingual notes/source/inventory/checksums/digest and resume only matching artifacts.
+- 完整镜像内新增匹配 patched srsRAN 源码与构建材料，保留 pySIM 源码；公开分发许可责任与尚未实现的 SBOM/签名/漏洞扫描明确记录。 / Bundle matching patched source/build materials and preserve pySIM source; document distribution review and outstanding SBOM/signing/scanning.
+- 此条为代码变更记录，不代表任何发布运行成功；实际状态以 Actions、Hub digest 与 GitHub Release 为准。不启动 LTE、不部署或改动 GSM。 / This code-change entry does not claim a completed release; inspect Actions, registry digest and Release. No LTE startup, deployment or GSM changes.
+
 ## [2.1] 前端交付与发布规划 - 2026-09-09 / Frontend delivery and release planning (not released)
 
 - 交付六页中英管理台、深浅主题、移动布局、SVG 拓扑、操作确认与只读状态；默认 Web 8080，独立完整 API 8081 需显式启用。同源管理网关沿用可选 Bearer 鉴权，Token 仅存内存。同步 API/OpenAPI/Postman、部署和前端测试；详细证据见 [Web 验收](docs/WEB_UI_RELEASE_2026-09-09.md)，发布规则见 [RELEASING](docs/RELEASING.md)。 / Deliver six bilingual console pages, themes, mobile layout, SVG topology, action confirmations and read-only status. Web 8080 is the default; direct full API 8081 is opt-in. The same-origin management gateway preserves optional Bearer authentication with memory-only tokens. Synchronize API/OpenAPI/Postman, deployment and frontend tests; see the linked acceptance evidence and release policy.

@@ -15,9 +15,9 @@ Stateless, database-free LTE self-hosted base station toolkit: one Go binary emb
 
 ## 版本与发布 Versioning and releases
 
-当前版本仍为 **2.1**。2026-09-09 管理台测试验收后已按要求停止 LTE 容器，保留镜像和数据；详见 [验收与停机记录](docs/WEB_UI_RELEASE_2026-09-09.md)。[变更记录](CHANGELOG.md)、[发布管理方案](docs/RELEASING.md) 与 [双语 Release 模板](docs/releases/TEMPLATE.md) 区分源码提交、测试部署和正式镜像发布。Docker Hub 自动同步尚未启用，普通 Git push 不会上传镜像或部署服务器。
+当前版本仍为 **2.1**。2026-09-09 管理台测试验收后已按要求停止 LTE 容器，保留镜像和数据；详见 [验收与停机记录](docs/WEB_UI_RELEASE_2026-09-09.md)。[变更记录](CHANGELOG.md)、[发布管理方案](docs/RELEASING.md) 与 [双语 Release 模板](docs/releases/TEMPLATE.md) 区分源码提交、测试部署和正式镜像发布。现已接入公开 Docker Hub 与 GitHub Release 自动化：普通分支 push 只测试，版本 tag 或显式 publish 执行发布；verify/build/resume 详见发布指南，发布不部署服务器。
 
-The current version remains **2.1**. Following console acceptance on 2026-09-09, the LTE container was stopped as requested, retaining its image and data; see the [acceptance/shutdown record](docs/WEB_UI_RELEASE_2026-09-09.md). The [changelog](CHANGELOG.md), [release plan](docs/RELEASING.md) and [bilingual Release template](docs/releases/TEMPLATE.md) distinguish source commits, test deployments and official image publication. Docker Hub automation is not enabled; an ordinary Git push neither uploads an image nor deploys the server.
+The current version remains **2.1**. Following console acceptance on 2026-09-09, the LTE container was stopped as requested, retaining its image and data; see the [acceptance/shutdown record](docs/WEB_UI_RELEASE_2026-09-09.md). The [changelog](CHANGELOG.md), [release plan](docs/RELEASING.md) and [bilingual Release template](docs/releases/TEMPLATE.md) distinguish source commits, test deployments and official image publication. Public Docker Hub/GitHub Release automation is implemented: ordinary branch pushes only test; version tags or explicit publish runs release artifacts. See the guide for verify/build/resume. Publication never deploys the server.
 
 ## 功能 Features
 

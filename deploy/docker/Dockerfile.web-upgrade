@@ -2,22 +2,32 @@
 # Fast Web UI/Go upgrade for an already verified ltesystem-dep:2.1 core.
 # RUNTIME_BASE has no default by design: pass the exact trusted tag or image ID.
 ARG RUNTIME_BASE
+ARG OCI_VERSION=2.1
+ARG OCI_REVISION=unknown
+ARG OCI_SOURCE=https://github.com/addxemmm/lte-system
 
 FROM golang:1.26.8-bookworm AS go-builder
+ARG OCI_VERSION
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+COPY VERSION version.go ./
 COPY cmd/ ./cmd/
 # Includes internal/webui/static, embedded by the Go compiler. No Node/nginx.
 COPY internal/ ./internal/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
+RUN embedded_version="$(tr -d '[:space:]' < VERSION)" \
+ && test -n "${OCI_VERSION}" \
+ && test "${OCI_VERSION}" = "${embedded_version}" \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/lte-system ./cmd/server
 
 FROM ${RUNTIME_BASE}
 ARG RUNTIME_BASE
-ARG OCI_VERSION=2.1
-ARG OCI_REVISION=unknown
+ARG OCI_VERSION
+ARG OCI_REVISION
+ARG OCI_SOURCE
 LABEL org.opencontainers.image.version="${OCI_VERSION}" \
       org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.source="${OCI_SOURCE}" \
       org.opencontainers.image.base.name="${RUNTIME_BASE}"
 
 # Preserve the verified srsRAN/UHD/pySIM/runtime filesystem from RUNTIME_BASE.

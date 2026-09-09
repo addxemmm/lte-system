@@ -32,6 +32,8 @@
 
 ## 5. 提交与发布 Commits and Releases
 
+- 发布自动化可在 GitHub 托管的隔离 Linux runner 完整构建/测试镜像；这属于无硬件发布验证，不是开发机运行 Docker，也不是在 SDR/GSM 服务器部署。构建 job 不接收注册表凭据；管理 smoke 禁止 USB、特权、宿主端口和小区启动。 / Release automation may build/test images on isolated GitHub-hosted Linux runners, never on the development machine or active SDR/GSM server. Build jobs receive no registry credentials; management smoke has no USB, privileges, host ports or cell startup.
+
 - 提交信息双语格式 `<scope>: <中文> / <English>`（如 `api: 修复 getfile 缺 id / fix getfile missing id`），一个提交只做一件事。 / Commit messages are bilingual `<scope>: <中文> / <English>` (e.g. `api: 修复 getfile 缺 id / fix getfile missing id`); one commit does one thing.
 - 推远端前必跑：`go test ./...` 全绿 + `go vet ./...` + `git status` 无多余文件。 / Before pushing: `go test ./...` all green + `go vet ./...` + `git status` shows no extra files.
 - 服务器发布先同步独立源快照并构建，再按 [`docs/DEPLOY.md`](docs/DEPLOY.md) 备份实际数据卷、替换并验证。镜像保留遵从用户当前要求；用户明确不要回滚镜像时，在新部署验证后定向删除旧镜像，不删数据卷。部署脚本不自动启动小区或发射；默认独立 bridge 编排，只发布管理台 8080，独立 API 需显式启用。 / Sync an isolated source snapshot and build first, back up the actual data volume, replace and verify. Follow the user's current image-retention choice; remove obsolete images only after verification and never delete data volumes. Deployment does not auto-start the cell or transmit. Default bridge publishing exposes console 8080 only; the independent API requires explicit opt-in.

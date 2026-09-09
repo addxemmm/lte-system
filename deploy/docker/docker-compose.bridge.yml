@@ -6,6 +6,9 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        OCI_VERSION: ${LTE_VERSION:-2.1}
+        OCI_REVISION: ${LTE_REVISION:-unknown}
     image: ${LTE_IMAGE:-ltesystem-dep:2.1}
     container_name: ltesystem
     privileged: true

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	ltesystem "github.com/addxemmm/lte-system"
 	"github.com/addxemmm/lte-system/internal/api"
 	"github.com/addxemmm/lte-system/internal/config"
 	"github.com/addxemmm/lte-system/internal/lte"
@@ -55,7 +56,7 @@ func main() {
 	apiHandler := api.New(cfg, mgr).Handler()
 	uiPort, _ := config.ListenPort(cfg.UIListenAddr)
 	apiPort, _ := config.ListenPort(cfg.ListenAddr)
-	ui := webui.Handler(apiHandler, webui.PublicConfig{Version: "2.1", APIExposed: cfg.ExposeAPI, UIPort: uiPort, APIPort: apiPort, AuthRequired: cfg.APIToken != ""}, cfg.UIAllowedHosts...)
+	ui := webui.Handler(apiHandler, webui.PublicConfig{Version: ltesystem.Version(), APIExposed: cfg.ExposeAPI, UIPort: uiPort, APIPort: apiPort, AuthRequired: cfg.APIToken != ""}, cfg.UIAllowedHosts...)
 	servers, err := bindServers(cfg, ui, apiHandler)
 	if err != nil {
 		log.Fatalf("bind listeners: %v", err)
