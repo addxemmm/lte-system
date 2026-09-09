@@ -3,6 +3,14 @@
 > 模板，非已发布版本。发布前替换占位符并删除不适用项；未执行的检查明确标注，不以计划代替证据。
 > Template, not a published release. Replace placeholders and remove inapplicable items; label unperformed checks rather than presenting plans as evidence.
 
+## 中文
+
+填写本版本的中文摘要、主要变化、兼容性和已知限制。保留本节标题，发布校验要求中文与英文两节同时存在。
+
+## English
+
+Write the English summary, main changes, compatibility and known limitations here. Keep both language headings: release validation requires both sections.
+
 ## 状态与标识 / Status and identity
 
 | 字段 / Field | 值 / Value |

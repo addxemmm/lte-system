@@ -10,6 +10,8 @@ Current version remains **2.1**. The user has approved **Public** visibility for
 
 The linked workflow is implemented; this document does not assert that any particular run has completed. Success requires a verified remote digest and completed GitHub Release. The old server Web test image retains its original worktree provenance.
 
+**首次正式发布已完成：** [2.1 验收记录](releases/2.1-automation-acceptance.md) 包含成功运行、公开镜像 digest、Release 附件与重复 resume 不修改产物的证据。 / **First formal publication completed:** the linked acceptance record contains successful runs, the public digest, Release assets and no-mutation resume evidence.
+
 ## 四种操作 / Four modes
 
 GitHub → **Actions → release → Run workflow**，默认选择 `master`，mode 默认 `verify`。
@@ -25,12 +27,16 @@ Open Actions → release → Run workflow on master. The default mode is verify.
 
 CLI 示例（先确认 CLI 登录正确 GitHub 账号）/ CLI examples:
 
+以下 master 命令用于已准备好新版本、尚未发布的 commit。2.1 已发布；master 后补文档后仍为 2.1 时，版本身份检查会阻止从不同 commit 重发。核对已发布版本请使用原始 tag 的 `resume`。 / The master commands below apply to a prepared, unpublished version. Since 2.1 is published, later documentation commits retaining VERSION=2.1 are intentionally rejected as a different release source. Check an existing release using resume at its original tag.
+
 ```bash
 gh workflow run release.yml --repo addxemmm/lte-system --ref master -f mode=verify
 gh workflow run release.yml --repo addxemmm/lte-system --ref master -f mode=build
 # This publishes a PUBLIC Docker image and creates a GitHub Release.
 gh workflow run release.yml --repo addxemmm/lte-system --ref master -f mode=publish
 gh run list --repo addxemmm/lte-system --workflow release.yml
+# Verify the completed 2.1 release without rebuilding or modifying it:
+gh workflow run release.yml --repo addxemmm/lte-system --ref v2.1 -f mode=resume
 ```
 
 普通 master push 只运行 `ci.yml`。推送符合版本规则的 `v*` tag 会自动运行 publish；请将创建版本 tag 视为公开镜像发布操作。所有 release 执行串行，不取消正在上传的任务。

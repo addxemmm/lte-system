@@ -1,5 +1,11 @@
 # 更新日志 Changelog
 
+## [2.1] 正式发布验收 - 2026-09-09 / Formal publication acceptance
+
+- 已成功生成 [v2.1 GitHub Release](https://github.com/addxemmm/lte-system/releases/tag/v2.1)，公开 Docker Hub 的 `2.1` 与完整 SHA tag 指向同一已验证镜像；源码 commit 为 `a449d7cc57e79b5497525a6e12ebec3ab6737f7e`。 / Published the formal v2.1 GitHub Release and matching public version/full-SHA image tags from the verified source commit.
+- 全部发布门禁与重复 `resume` 验收成功，后者核对源码/digest 后保持产物不变。详见 [完整双语验收记录](docs/releases/2.1-automation-acceptance.md)。 / All publication gates and repeat-resume acceptance passed; resume verified source/digest without modifying published artifacts. See the bilingual evidence record.
+- 本条为发版后补充文档，不移动 `v2.1`；版本保持 2.1，本次没有部署服务器、启动 LTE 或改动 GSM。后续条目保留当时的历史状态。 / This post-release documentation does not move v2.1; the version remains 2.1, with no server deployment, LTE startup or GSM changes. Older entries retain their historical status.
+
 ## [2.1] 自动发布流程 - 2026-09-09 / Automated publication workflow
 
 - 用户确认 Docker Hub 改为 Public；新增 verify/build/publish/resume，版本 tag 自动发布，普通分支仅 CI。 / Confirm Public Docker Hub; add verify/build/publish/resume, version-tag publication and branch-only CI.

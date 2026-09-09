@@ -9,7 +9,8 @@
 | [DEPLOY.md](DEPLOY.md) | 服务器部署、升级、备份、排障 / Server deploy, upgrade, backup, and troubleshooting |
 | [WEB_UI.md](WEB_UI.md) | 中英管理台、可选 API 端口、鉴权与停止操作 / Bilingual console, optional API, authentication and shutdown |
 | [WEB_UI_RELEASE_2026-09-09.md](WEB_UI_RELEASE_2026-09-09.md) | 2.1 管理台验收与按要求停机记录 / 2.1 console acceptance and requested shutdown |
-| [RELEASING.md](RELEASING.md) | 版本、GitHub Release 与 Docker Hub 发布规划 / Versioning, GitHub Releases and Docker Hub publication plan |
+| [RELEASING.md](RELEASING.md) | 已实现的版本、GitHub Release 与 Docker Hub 自动发布操作 / Implemented versioning, GitHub Releases and Docker Hub automation |
+| [releases/2.1-automation-acceptance.md](releases/2.1-automation-acceptance.md) | 2.1 正式发布、公开镜像 digest、测试证据与幂等恢复验收 / Formal 2.1 publication, public image digest, evidence and idempotent resume acceptance |
 | [../CHANGELOG.md](../CHANGELOG.md) | 中英变更记录 / Bilingual change history |
 | [releases/TEMPLATE.md](releases/TEMPLATE.md) | 未来正式发布的双语记录模板 / Bilingual template for future formal releases |
 | [RELEASE_2.1_2026-09-07.md](RELEASE_2.1_2026-09-07.md) | 2.1 已部署与清理：restricted 生效、正常路径注册证据、一个回滚与待手机验收 / Deployed 2.1, cleanup, enabled restricted policy, normal-path registration and pending handset acceptance |
