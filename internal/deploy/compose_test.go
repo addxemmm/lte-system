@@ -61,15 +61,15 @@ func TestComposeListenerContract(t *testing.T) {
 	if h.NetworkMode != "host" || len(h.Ports) != 0 || b.NetworkMode != "" {
 		t.Fatal("host rollback and isolated bridge publishing must remain separate")
 	}
-	if !reflect.DeepEqual(b.Ports, []string{"${LTE_UI_PORT:-8080}:8080"}) {
+	if !reflect.DeepEqual(b.Ports, []string{"${LTE_UI_PORT:-18081}:18081"}) {
 		t.Fatalf("default bridge must publish only the Web UI, got %v", b.Ports)
 	}
-	if b.Environment["LTE_UI_LISTEN"] != "0.0.0.0:8080" ||
+	if b.Environment["LTE_UI_LISTEN"] != "0.0.0.0:18081" ||
 		b.Environment["LTE_LISTEN"] != "0.0.0.0:8081" ||
 		b.Environment["LTE_EXPOSE_API"] != "false" {
 		t.Fatalf("unexpected bridge listener environment: %v", b.Environment)
 	}
-	if h.Environment["LTE_UI_LISTEN"] != "${LTE_UI_LISTEN:-0.0.0.0:8080}" ||
+	if h.Environment["LTE_UI_LISTEN"] != "${LTE_UI_LISTEN:-0.0.0.0:18081}" ||
 		h.Environment["LTE_LISTEN"] != "${LTE_LISTEN:-0.0.0.0:8081}" ||
 		h.Environment["LTE_EXPOSE_API"] != "${LTE_EXPOSE_API:-false}" {
 		t.Fatalf("unexpected host listener environment: %v", h.Environment)
@@ -79,7 +79,7 @@ func TestComposeListenerContract(t *testing.T) {
 		t.Fatalf("test override must explicitly enable and publish the direct API: %+v", test)
 	}
 	mergedPorts := append(append([]string{}, b.Ports...), test.Ports...)
-	if !reflect.DeepEqual(mergedPorts, []string{"${LTE_UI_PORT:-8080}:8080", "${LTE_API_PORT:-8081}:8081"}) {
+	if !reflect.DeepEqual(mergedPorts, []string{"${LTE_UI_PORT:-18081}:18081", "${LTE_API_PORT:-8081}:8081"}) {
 		t.Fatalf("bridge plus test override must retain both ports, got %v", mergedPorts)
 	}
 	if b.Environment["LTE_API_TOKEN"] != "${LTE_API_TOKEN:-}" || h.Environment["LTE_API_TOKEN"] != "${LTE_API_TOKEN:-}" {
@@ -143,22 +143,22 @@ func TestDockerfilesUseEmbeddedUIWithoutNodeOrNginx(t *testing.T) {
 					t.Fatalf("Dockerfile must not add a Node/nginx frontend runtime: found %q", forbidden)
 				}
 			}
+			var expose []string
+			for _, line := range strings.Split(text, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "EXPOSE ") {
+					expose = append(expose, line)
+				}
+			}
+			if !reflect.DeepEqual(expose, []string{"EXPOSE 18081"}) {
+				t.Fatalf("image metadata must expose only the default UI port, got %v", expose)
+			}
 		})
 	}
 
 	b, err := os.ReadFile(deploymentPath("deploy", "docker", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
-	}
-	var expose []string
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "EXPOSE ") {
-			expose = append(expose, line)
-		}
-	}
-	if !reflect.DeepEqual(expose, []string{"EXPOSE 8080"}) {
-		t.Fatalf("canonical image metadata must expose only the default UI port, got %v", expose)
 	}
 	if !strings.Contains(string(b), "COPY deploy/docker/*.yml deploy/docker/Dockerfile* ./deploy/docker/") {
 		t.Fatal("canonical go-builder must copy every deployment contract used by internal/deploy tests")

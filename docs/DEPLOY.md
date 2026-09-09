@@ -1,20 +1,24 @@
 # 部署与回滚 / Deployment and rollback
 
+> 当前源码默认前端 **18081**、后端 **8081**，后端仍需显式启用。已发布的不可变 Hub `2.1` 镜像内置旧 UI 默认值/`EXPOSE 8080`，本次没有覆盖该镜像；使用它时显式设置 `LTE_UI_LISTEN=0.0.0.0:18081` 并发布 `18081:18081`。当前服务器已采用此配置。裸 `8080/tcp` 元数据不等于宿主发布或实际监听。详见 [端口统一记录](PORTS_2026-09-09.md)。
+>
+> Current source defaults are UI **18081**, API **8081**, with API exposure still opt-in. The immutable published Hub 2.1 image retains its old baked-in UI default/EXPOSE 8080; it was not overwritten. Run it with explicit LTE_UI_LISTEN=0.0.0.0:18081 and mapping 18081:18081, as on the current server. Bare EXPOSE metadata is neither host publishing nor an active listener.
+
 开发机只编辑、测试与管理 Git；Docker 构建、容器替换和 SDR 验证均在服务器执行。版本保持 **2.1**。容器启动管理服务，但不会自动启动 LTE 小区。
 
 Development machines only edit, test and manage Git. Build images, replace containers and validate SDR hardware on the server. The version remains **2.1**. Container creation starts management services but never starts the LTE cell automatically.
 
-> **部署默认值有破坏性变化 / Breaking deployment default:** 旧客户端默认使用的独立 `HOST:8081` API 不再监听或发布。默认入口改为 `HOST:8080` Web 控制台及其有限同源管理网关。旧客户端或完整 API 测试必须显式设置 `LTE_EXPOSE_API=true`；bridge 还必须叠加 `docker-compose.test.yml` 发布 8081。
+> **部署默认值有破坏性变化 / Breaking deployment default:** 旧客户端默认使用的独立 `HOST:8081` API 不再监听或发布。默认入口改为 `HOST:18081` Web 控制台及其有限同源管理网关。旧客户端或完整 API 测试必须显式设置 `LTE_EXPOSE_API=true`；bridge 还必须叠加 `docker-compose.test.yml` 发布 8081。
 >
-> The direct `HOST:8081` API used by older clients is no longer listening or published by default. The default entry is the Web console on `HOST:8080` and its limited same-origin management gateway. Legacy clients or full-API tests must explicitly set `LTE_EXPOSE_API=true`; bridge deployments must also add `docker-compose.test.yml` to publish 8081.
+> The direct `HOST:8081` API used by older clients is no longer listening or published by default. The default entry is the Web console on `HOST:18081` and its limited same-origin management gateway. Legacy clients or full-API tests must explicitly set `LTE_EXPOSE_API=true`; bridge deployments must also add `docker-compose.test.yml` to publish 8081.
 
 ## 1. 文件、端口与范围 / Files, ports and scope
 
 | 模式 Mode | Compose 文件 Compose files | 宿主入口 Host entry | 独立完整 API Direct full API |
 |---|---|---|---|
-| bridge 默认 / default | `deploy/docker/docker-compose.bridge.yml` | `${LTE_UI_PORT:-8080}:8080` | 关闭且不发布 / disabled, not published |
-| bridge 测试 / test | bridge + `deploy/docker/docker-compose.test.yml` | `${LTE_UI_PORT:-8080}:8080` | `${LTE_API_PORT:-8081}:8081`，已启用 |
-| host 默认 / default | `deploy/docker/docker-compose.yml` | `${LTE_UI_LISTEN:-0.0.0.0:8080}` | 关闭；无 `ports` / disabled; no port map |
+| bridge 默认 / default | `deploy/docker/docker-compose.bridge.yml` | `${LTE_UI_PORT:-18081}:18081` | 关闭且不发布 / disabled, not published |
+| bridge 测试 / test | bridge + `deploy/docker/docker-compose.test.yml` | `${LTE_UI_PORT:-18081}:18081` | `${LTE_API_PORT:-8081}:8081`，已启用 |
+| host 默认 / default | `deploy/docker/docker-compose.yml` | `${LTE_UI_LISTEN:-0.0.0.0:18081}` | 关闭；无 `ports` / disabled; no port map |
 | host 测试 / test | host base + `LTE_EXPOSE_API=true` | `LTE_UI_LISTEN` | `LTE_LISTEN`（默认 `0.0.0.0:8081`）；仍无 `ports` |
 
 bridge 和 host 两个**基础文件绝不叠加**。`docker-compose.test.yml` 只是 bridge 测试 override。测试时 `LTE_UI_PORT` 和 `LTE_API_PORT` 必须不同。应用只在 `expose_api=true` 时拒绝相同的内部 UI/API 监听端口。Dockerfile 的 `EXPOSE` 是元数据，不构成网络隔离。
@@ -63,15 +67,15 @@ Private server `.env` example; never commit a real token:
 
 ```dotenv
 LTE_IMAGE=ltesystem-dep:WEB_TEST_TAG
-LTE_UI_PORT=8080
+LTE_UI_PORT=18081
 LTE_API_PORT=8081
 LTE_EXPOSE_API=false
 LTE_API_TOKEN=TOKEN
 ```
 
-bridge 容器内地址固定为 `0.0.0.0:8080` 和 `0.0.0.0:8081`；host 可用 `LTE_UI_LISTEN`/`LTE_LISTEN` 覆盖。`LTE_EXPOSE_API` 是严格布尔值，只接受 `true`/`false`。非空 `LTE_API_TOKEN` 优先于 YAML `api_token`；空环境变量不清除 YAML Token。Token 不写入镜像、URL、Git 或 `/ui-config.json`。
+bridge 容器内地址固定为 `0.0.0.0:18081` 和 `0.0.0.0:8081`；host 可用 `LTE_UI_LISTEN`/`LTE_LISTEN` 覆盖。`LTE_EXPOSE_API` 是严格布尔值，只接受 `true`/`false`。非空 `LTE_API_TOKEN` 优先于 YAML `api_token`；空环境变量不清除 YAML Token。Token 不写入镜像、URL、Git 或 `/ui-config.json`。
 
-Bridge container addresses are fixed at `0.0.0.0:8080` and `0.0.0.0:8081`; host mode can override them with `LTE_UI_LISTEN`/`LTE_LISTEN`. `LTE_EXPOSE_API` is a strict boolean accepting only `true`/`false`. A nonempty `LTE_API_TOKEN` overrides YAML `api_token`; an empty environment value does not erase the YAML token. Never put the token in an image, URL, Git or `/ui-config.json`.
+Bridge container addresses are fixed at `0.0.0.0:18081` and `0.0.0.0:8081`; host mode can override them with `LTE_UI_LISTEN`/`LTE_LISTEN`. `LTE_EXPOSE_API` is a strict boolean accepting only `true`/`false`. A nonempty `LTE_API_TOKEN` overrides YAML `api_token`; an empty environment value does not erase the YAML token. Never put the token in an image, URL, Git or `/ui-config.json`.
 
 需要私有 YAML 时，以只读 bind mount 显式选择，保持实际文件在镜像/Git 外：
 
@@ -166,9 +170,9 @@ docker build -f deploy/docker/Dockerfile.web-upgrade \
   -t "$WEB_IMAGE" .
 ```
 
-该构建没有 Token build arg，不会烘焙真实 Token。OCI `version`/`revision` 标签由 build args 覆盖。由于父 2.1 镜像可能继承旧 `EXPOSE 8081` 元数据，增量镜像 inspect 可能同时看到 8080/8081；这不会发布端口，安全边界仍由 `LTE_EXPOSE_API=false` 与 Compose 仅发布 8080 实现。规范完整镜像只声明 8080。
+该构建没有 Token build arg，不会烘焙真实 Token。OCI `version`/`revision` 标签由 build args 覆盖。由于父 2.1 镜像可能继承旧 `EXPOSE 8081` 元数据，增量镜像 inspect 可能同时看到 18081/8081；这不会发布端口，安全边界仍由 `LTE_EXPOSE_API=false` 与 Compose 仅发布 18081 实现。规范完整镜像只声明 18081。
 
-This build has no token build argument and never bakes a real token. OCI `version`/`revision` labels are overridden by build args. Because the parent 2.1 image may carry legacy `EXPOSE 8081` metadata, inspection of the incremental image may show both 8080/8081; that publishes nothing. The boundary remains `LTE_EXPOSE_API=false` plus Compose publishing only 8080. The canonical full image declares only 8080.
+This build has no token build argument and never bakes a real token. OCI `version`/`revision` labels are overridden by build args. Because the parent 2.1 image may carry legacy `EXPOSE 8081` metadata, inspection of the incremental image may show both 18081/8081; that publishes nothing. The boundary remains `LTE_EXPOSE_API=false` plus Compose publishing only 18081. The canonical full image declares only 18081.
 
 增量构建不是通用升级：base core 未逐项确认、VERSION/core/依赖变化或正式发布时回到完整 Dockerfile。
 
@@ -191,28 +195,28 @@ docker compose -p "$PROJECT" -f "$COMPOSE" config --quiet
 docker compose -p "$PROJECT" -f "$COMPOSE" up -d --no-build --force-recreate
 ACTUAL_VOLUME=$(docker inspect ltesystem --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}')
 test "$ACTUAL_VOLUME" = "$DATA_VOLUME"
-curl -fsS http://127.0.0.1:${LTE_UI_PORT:-8080}/ui-config.json
+curl -fsS http://127.0.0.1:${LTE_UI_PORT:-18081}/ui-config.json
 docker logs --tail 50 ltesystem
 ```
 
-验证：8080 首页/静态资源与五字段 `/ui-config.json`；有 Token 时未授权网关请求为 401、授权请求成功；默认 8081 没有监听/发布；控制台受限路由工作且 crack/SIM/upload/capture 返回网关 404。浏览器测试确认 Token 只在页面内存，刷新后清除。不要在基础 smoke 中点击“启动小区”。
+验证：18081 首页/静态资源与五字段 `/ui-config.json`；有 Token 时未授权网关请求为 401、授权请求成功；默认 8081 没有监听/发布；控制台受限路由工作且 crack/SIM/upload/capture 返回网关 404。浏览器测试确认 Token 只在页面内存，刷新后清除。不要在基础 smoke 中点击“启动小区”。
 
-Validate the 8080 page/assets and five-field `/ui-config.json`; with a token, verify unauthorized gateway requests return 401 and authorized requests succeed; confirm 8081 is not listening/published by default; verify permitted console routes and gateway 404 for crack/SIM/upload/capture. Confirm in a browser that the token is page-memory only and clears on refresh. Do not select “Start cell” during basic smoke validation.
+Validate the 18081 page/assets and five-field `/ui-config.json`; with a token, verify unauthorized gateway requests return 401 and authorized requests succeed; confirm 8081 is not listening/published by default; verify permitted console routes and gateway 404 for crack/SIM/upload/capture. Confirm in a browser that the token is page-memory only and clears on refresh. Do not select “Start cell” during basic smoke validation.
 
 ### 双端口完整 API 测试 / Dual-port full API test
 
 ```bash
 COMPOSE_BASE=deploy/docker/docker-compose.bridge.yml
 COMPOSE_TEST=deploy/docker/docker-compose.test.yml
-test "${LTE_UI_PORT:-8080}" != "${LTE_API_PORT:-8081}"
+test "${LTE_UI_PORT:-18081}" != "${LTE_API_PORT:-8081}"
 docker compose -p "$PROJECT" -f "$COMPOSE_BASE" -f "$COMPOSE_TEST" config --quiet
 docker compose -p "$PROJECT" -f "$COMPOSE_BASE" -f "$COMPOSE_TEST" up -d --no-build --force-recreate
 BASE=http://127.0.0.1:${LTE_API_PORT:-8081} bash scripts/smoke.sh
 ```
 
-测试 override 显式设置 `LTE_EXPOSE_API=true`，同时保留 8080。host 测试只设置该环境值，不叠加 test override、不使用 `ports`。smoke 只读 `/api/v1/cell` 和 `/api/v1/profile`，不会启停小区、写卡、上传、抓包或破解。
+测试 override 显式设置 `LTE_EXPOSE_API=true`，同时保留 18081。host 测试只设置该环境值，不叠加 test override、不使用 `ports`。smoke 只读 `/api/v1/cell` 和 `/api/v1/profile`，不会启停小区、写卡、上传、抓包或破解。
 
-The test override explicitly sets `LTE_EXPOSE_API=true` while retaining 8080. In host-mode tests, set only that environment value: do not add the test override or use `ports`. Smoke reads only `/api/v1/cell` and `/api/v1/profile`; it never starts/stops a cell, programs a SIM, uploads, captures or cracks.
+The test override explicitly sets `LTE_EXPOSE_API=true` while retaining 18081. In host-mode tests, set only that environment value: do not add the test override or use `ports`. Smoke reads only `/api/v1/cell` and `/api/v1/profile`; it never starts/stops a cell, programs a SIM, uploads, captures or cracks.
 
 ## 7. 跳过硬件探测的管理模式 / Management mode without hardware probes
 
@@ -237,7 +241,7 @@ Use it only after confirming `docker_lte-data` (or the actual volume resolved fr
 ```bash
 export LTE_IMAGE="ltesystem-dep:rollback-$RELEASE"
 docker compose -p "$PROJECT" -f deploy/docker/docker-compose.bridge.yml up -d --no-build --force-recreate
-curl -fsS http://127.0.0.1:${LTE_UI_PORT:-8080}/ui-config.json
+curl -fsS http://127.0.0.1:${LTE_UI_PORT:-18081}/ui-config.json
 ```
 
 回滚镜像时保持同一数据卷。只在服务停止、确有需要时校验 SHA-256 后恢复 `data.tgz`；恢复会覆盖同名文件，不能覆盖更新后的 SQN。保留旧镜像与备份，稳定验收前不清理 build cache。host 回滚要同时恢复原 host compose 与 profile 的网络/DNS；不要只换镜像。

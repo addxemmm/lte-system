@@ -16,7 +16,7 @@ def docker(*args, check=True):
     return result
 
 
-def http(name, path, port=8080, auth=False):
+def http(name, path, port=18081, auth=False):
     args = ["exec", name, "curl", "-sS", "--max-time", "3", "-w", "\n%{http_code}"]
     if auth:
         args += ["-H", "Authorization: Bearer release-smoke-only-not-a-secret"]
@@ -43,7 +43,7 @@ def main():
             docker("run", "-d", "--name", name, "--network", "none", "--cap-drop=ALL",
                    "--security-opt=no-new-privileges", "--read-only", "--tmpfs", "/data:rw,nosuid,noexec,size=32m",
                    "--entrypoint", "/usr/local/bin/lte-system",
-                   "-e", "LTE_UI_LISTEN=127.0.0.1:8080", "-e", "LTE_LISTEN=127.0.0.1:8081",
+                   "-e", "LTE_UI_LISTEN=127.0.0.1:18081", "-e", "LTE_LISTEN=127.0.0.1:8081",
                    "-e", "LTE_EXPOSE_API=" + str(authenticated).lower(),
                    "-e", "LTE_API_TOKEN=" + ("release-smoke-only-not-a-secret" if authenticated else ""), image)
             for _ in range(30):
@@ -55,13 +55,14 @@ def main():
             cfg = json.loads(body)
             assert set(cfg) == {"version", "api_exposed", "api_port", "ui_port", "auth_required"}
             assert cfg["version"] == metadata["version"]
+            assert cfg["ui_port"] == 18081 and cfg["api_port"] == 8081, "listener metadata ports differ from release defaults"
             assert cfg["api_exposed"] is authenticated and cfg["auth_required"] is authenticated
             assert http(name, "/")[0] == 200
             assert http(name, "/api/v1/cell")[0] == (401 if authenticated else 200)
             direct = http(name, "/api/v1/cell", port=8081)[0]
             assert direct == (401 if authenticated else 0), "direct API listener policy failed"
             if authenticated:
-                for port in (8080, 8081):
+                for port in (18081, 8081):
                     status, body = http(name, "/api/v1/cell", port=port, auth=True)
                     assert status == 200 and json.loads(body)["code"] == 0
             # Docker's daemon filters host ps output by container PID, so the

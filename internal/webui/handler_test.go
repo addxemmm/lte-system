@@ -81,14 +81,15 @@ func TestConsoleAndDirectAPIShareAuthentication(t *testing.T) {
 }
 
 func TestConsoleStaticAndPublicMetadata(t *testing.T) {
-	h := Handler(http.NotFoundHandler(), PublicConfig{Version: "2.1", APIExposed: false, APIPort: 8081, UIPort: 8080, AuthRequired: true}, "example.com")
+	h := Handler(http.NotFoundHandler(), PublicConfig{Version: "2.1", APIExposed: false, APIPort: 8081, UIPort: 18081, AuthRequired: true}, "example.com")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/ui-config.json", nil))
 	var body map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body) != 5 || body["auth_required"] != true || body["api_exposed"] != false {
+	if len(body) != 5 || body["auth_required"] != true || body["api_exposed"] != false ||
+		body["api_port"] != float64(8081) || body["ui_port"] != float64(18081) {
 		t.Fatal("wrong public metadata")
 	}
 	for _, p := range []string{"/", "/app.js", "/styles.css"} {
@@ -113,11 +114,11 @@ func TestConsoleRejectsRebindingHostAndCrossSite(t *testing.T) {
 		host, site string
 		status     int
 	}{
-		{"rebind.invalid:8080", "same-origin", 403},
-		{"127.0.0.1:8080", "cross-site", 403},
-		{"192.0.2.10:8080", "same-origin", 204},
-		{"[::1]:8080", "same-origin", 204},
-		{"localhost:8080", "same-origin", 204},
+		{"rebind.invalid:18081", "same-origin", 403},
+		{"127.0.0.1:18081", "cross-site", 403},
+		{"192.0.2.10:18081", "same-origin", 204},
+		{"[::1]:18081", "same-origin", 204},
+		{"localhost:18081", "same-origin", 204},
 	} {
 		r := httptest.NewRequest("POST", "http://"+tc.host+"/api/v1/cell", strings.NewReader("{}"))
 		r.Header.Set("Origin", "http://"+tc.host)

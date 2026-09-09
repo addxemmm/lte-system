@@ -1,6 +1,6 @@
 listen_addr: ":8081"
 # 前端始终启用；独立后端监听默认关闭。 / UI enabled; direct API listener disabled by default.
-ui_listen_addr: ":8080"
+ui_listen_addr: ":18081"
 # 默认接受 IP/localhost；自定义域名需列入此处（无协议/端口）。
 # Literal IP/localhost work by default; explicitly list custom DNS hostnames.
 ui_allowed_hosts: []

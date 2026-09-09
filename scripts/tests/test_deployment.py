@@ -26,16 +26,16 @@ class ComposeListenerTests(unittest.TestCase):
 
     def test_default_bridge_publishes_only_web_ui(self):
         compose = self.compose("docker-compose.bridge.yml")
-        self.assertIn('- "${LTE_UI_PORT:-8080}:8080"', compose)
+        self.assertIn('- "${LTE_UI_PORT:-18081}:18081"', compose)
         self.assertNotIn('${LTE_API_PORT:-8081}:8081', compose)
         self.assertIn('LTE_EXPOSE_API: "false"', compose)
-        self.assertIn("LTE_UI_LISTEN: 0.0.0.0:8080", compose)
+        self.assertIn("LTE_UI_LISTEN: 0.0.0.0:18081", compose)
         self.assertIn("LTE_LISTEN: 0.0.0.0:8081", compose)
 
     def test_test_override_explicitly_adds_direct_api(self):
         bridge = self.compose("docker-compose.bridge.yml")
         override = self.compose("docker-compose.test.yml")
-        self.assertIn('- "${LTE_UI_PORT:-8080}:8080"', bridge)
+        self.assertIn('- "${LTE_UI_PORT:-18081}:18081"', bridge)
         self.assertIn('- "${LTE_API_PORT:-8081}:8081"', override)
         self.assertIn('LTE_EXPOSE_API: "true"', override)
         self.assertNotIn("network_mode: host", override)
@@ -44,7 +44,7 @@ class ComposeListenerTests(unittest.TestCase):
         compose = self.compose("docker-compose.yml")
         self.assertIn("network_mode: host", compose)
         self.assertNotIn("\n    ports:", compose)
-        self.assertIn("LTE_UI_LISTEN: ${LTE_UI_LISTEN:-0.0.0.0:8080}", compose)
+        self.assertIn("LTE_UI_LISTEN: ${LTE_UI_LISTEN:-0.0.0.0:18081}", compose)
         self.assertIn('LTE_EXPOSE_API: "${LTE_EXPOSE_API:-false}"', compose)
         self.assertIn("LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}", compose)
 
@@ -65,10 +65,12 @@ class ComposeListenerTests(unittest.TestCase):
             self.assertNotIn("npm ", lower)
             self.assertNotIn("from nginx", lower)
             self.assertNotIn("apt-get install nginx", lower)
+        for name in ("Dockerfile", "Dockerfile.web-upgrade"):
+            dockerfile = self.compose(name)
+            expose = [line.strip() for line in dockerfile.splitlines()
+                      if line.strip().startswith("EXPOSE ")]
+            self.assertEqual(expose, ["EXPOSE 18081"])
         canonical = self.compose("Dockerfile")
-        expose = [line.strip() for line in canonical.splitlines()
-                  if line.strip().startswith("EXPOSE ")]
-        self.assertEqual(expose, ["EXPOSE 8080"])
         self.assertIn("COPY deploy/docker/*.yml deploy/docker/Dockerfile* ./deploy/docker/", canonical)
 
     def test_web_upgrade_is_explicit_and_does_not_rebuild_core(self):

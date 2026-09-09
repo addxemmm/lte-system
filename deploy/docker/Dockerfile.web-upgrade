@@ -37,4 +37,4 @@ COPY configs/app.yaml.example /app/configs/app.yaml
 
 # RUNTIME_BASE may retain legacy EXPOSE metadata; Compose publishing remains the
 # enforcement point. No token is accepted as a build argument or baked here.
-EXPOSE 8080
+EXPOSE 18081

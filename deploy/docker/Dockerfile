@@ -158,7 +158,7 @@ ENV LTE_CONFIG=/app/configs/app.yaml \
 # Default surface: Web UI plus its limited same-origin management gateway.
 # Direct API port 8081 is optional for explicit legacy/test use. EXPOSE is
 # image metadata, not a firewall and not a host publishing rule.
-EXPOSE 8080
+EXPOSE 18081
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Keep source-specific metadata last so a new revision does not invalidate

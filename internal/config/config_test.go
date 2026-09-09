@@ -37,7 +37,7 @@ func TestDefault_Paths(t *testing.T) {
 func TestLoad_YAML(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "app.yaml")
-	y := "listen_addr: \":18081\"\ndefault_tx_gain: 70\nsim_defaults:\n  ki: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+	y := "listen_addr: \":18082\"\ndefault_tx_gain: 70\nsim_defaults:\n  ki: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
 	if err := os.WriteFile(p, []byte(y), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestLoad_YAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != ":18081" || c.DefaultTxGain != 70 || c.Sim.Ki != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+	if c.ListenAddr != ":18082" || c.DefaultTxGain != 70 || c.Sim.Ki != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("unexpected load: %+v", c)
 	}
 }

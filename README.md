@@ -21,8 +21,8 @@ The current version remains **2.1**. Following console acceptance on 2026-09-09,
 
 ## 功能 Features
 
-- 内嵌 Web 控制台默认监听 8080，提供非敏感 `/ui-config.json` 和同源管理网关；网关只开放管理只读与小区启停，不代理 crack/SIM/upload/capture。完整独立 API `:8081` 默认关闭，测试/旧客户端须显式启用。这是部署默认值的 breaking change，详见 [Web UI](docs/WEB_UI.md)。
-  Embedded Web console on port 8080 with non-sensitive `/ui-config.json` and a same-origin management gateway. The gateway permits only management reads and cell start/stop, not crack/SIM/upload/capture. The direct full API on `:8081` is disabled by default and must be enabled explicitly for tests/legacy clients. This is a breaking deployment default; see [Web UI](docs/WEB_UI.md).
+- 内嵌 Web 控制台默认监听 18081，提供非敏感 `/ui-config.json` 和同源管理网关；网关只开放管理只读与小区启停，不代理 crack/SIM/upload/capture。完整独立 API `:8081` 默认关闭，测试/旧客户端须显式启用。这是部署默认值的 breaking change，详见 [Web UI](docs/WEB_UI.md)。
+  Embedded Web console on port 18081 with non-sensitive `/ui-config.json` and a same-origin management gateway. The gateway permits only management reads and cell start/stop, not crack/SIM/upload/capture. The direct full API on `:8081` is disabled by default and must be enabled explicitly for tests/legacy clients. This is a breaking deployment default; see [Web UI](docs/WEB_UI.md).
 - 可选固定 API Token：私有 YAML 的 `api_token` 非空时启用 Bearer 鉴权，空值开放访问；兼容非空 `LTE_API_TOKEN` 覆盖，版本保持 2.1。配置与 Postman 用法见 [API 文档](docs/API.md)。
   Optional static API token: a nonempty YAML `api_token` enables Bearer authentication; empty allows anonymous access. Nonempty `LTE_API_TOKEN` remains an override. Version stays 2.1; see the API guide for configuration and Postman usage.
 - 标准 REST：`/api/v1`（正确状态码 + `{"code","message","data","request_id"}` 包络 + OpenAPI，见 [`docs/API.md`](docs/API.md)）
@@ -65,8 +65,8 @@ third_party/pysim   定制 testsim 卡逻辑（GPL，随 era-pinned pysim 使用
 ```bash
 cd ~/lte-system
 sudo docker compose -f deploy/docker/docker-compose.bridge.yml up -d --build
-curl --fail http://127.0.0.1:8080/ui-config.json; echo
-# Open http://HOST:8080. Container creation does not start the LTE cell.
+curl --fail http://127.0.0.1:18081/ui-config.json; echo
+# Open http://HOST:18081. Container creation does not start the LTE cell.
 ```
 
 完整 API 双端口测试须显式叠加 override；`LTE_UI_PORT` 与 `LTE_API_PORT` 不得相同：

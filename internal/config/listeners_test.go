@@ -11,7 +11,7 @@ func TestConsoleListenerDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("LTE_LISTEN", "")
 	t.Setenv("LTE_EXPOSE_API", "")
 	cfg, err := Load("")
-	if err != nil || cfg.ExposeAPI || cfg.UIListenAddr != ":8080" || cfg.ListenAddr != ":8081" {
+	if err != nil || cfg.ExposeAPI || cfg.UIListenAddr != ":18081" || cfg.ListenAddr != ":8081" {
 		t.Fatal("unexpected listener defaults")
 	}
 	p := filepath.Join(t.TempDir(), "app.yaml")
@@ -19,13 +19,14 @@ func TestConsoleListenerDefaultsAndOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, err = Load(p)
-	if err != nil || !cfg.ExposeAPI || cfg.UIListenAddr != ":9090" {
+	if err != nil || !cfg.ExposeAPI || cfg.UIListenAddr != ":9090" || cfg.ListenAddr != ":9091" {
 		t.Fatal("file listener configuration failed")
 	}
 	t.Setenv("LTE_EXPOSE_API", "false")
 	t.Setenv("LTE_UI_LISTEN", "127.0.0.1:8081")
+	t.Setenv("LTE_LISTEN", "127.0.0.1:18082")
 	cfg, err = Load(p)
-	if err != nil || cfg.ExposeAPI || cfg.UIListenAddr != "127.0.0.1:8081" {
+	if err != nil || cfg.ExposeAPI || cfg.UIListenAddr != "127.0.0.1:8081" || cfg.ListenAddr != "127.0.0.1:18082" {
 		t.Fatal("explicit false override failed")
 	}
 	t.Setenv("LTE_EXPOSE_API", "typo")
@@ -35,13 +36,13 @@ func TestConsoleListenerDefaultsAndOverrides(t *testing.T) {
 }
 
 func TestListenerPortValidation(t *testing.T) {
-	for _, value := range []string{"", ":0", ":65536", "http://localhost:8080", "localhost", "localhost:api"} {
+	for _, value := range []string{"", ":0", ":65536", "http://localhost:18081", "localhost", "localhost:api"} {
 		if _, err := ListenPort(value); err == nil {
 			t.Fatalf("bad port accepted: %q", value)
 		}
 	}
 	c := Default()
-	c.ListenAddr = ":8080"
+	c.ListenAddr = ":18081"
 	c.ExposeAPI = true
 	if c.ValidateListeners() == nil {
 		t.Fatal("port collision accepted")

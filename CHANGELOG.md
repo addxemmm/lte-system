@@ -1,5 +1,10 @@
 # 更新日志 Changelog
 
+## [2.1] 前端 18081、后端 8081 - 2026-09-09 / Console 18081, API 8081
+
+- 按用户指定统一源码默认值、YAML example、bridge/host Compose、Dockerfile、管理 smoke、OpenAPI/Postman 与中英文档：前端 18081，后端 8081；独立后端仍默认不启用，测试实例显式开放双端口。 / Unify source defaults, example YAML, Compose, Dockerfiles, smoke, API/Postman and bilingual docs: console 18081 and API 8081. Direct API remains opt-in; the test instance exposes both.
+- 服务器通过环境变量与端口映射调整已有正式 2.1 镜像，替换临时前端 8083；不覆盖 Hub 镜像或移动 v2.1。原数据卷和鉴权保留，GSM 不变，小区仍停止。旧镜像的 EXPOSE 8080 是历史元数据，不代表仍在监听。 / Apply runtime overrides to the existing formal 2.1 image, replacing temporary console port 8083 without overwriting Hub or moving v2.1. Preserve data/auth, leave GSM unchanged and the LTE cell stopped. Old EXPOSE 8080 metadata does not mean an active listener.
+
 ## [2.1] Docker Hub 单版本标签 - 2026-09-09 / Single version-tag policy
 
 - 按用户要求，后续发布仅创建版本号标签，不生成 sha-commit/latest 别名；保留 OCI revision、Git tag、Release commit/digest 和校验和溯源。 / Publish only a version tag, without SHA/latest aliases; retain OCI revision, Git tag, Release commit/digest and checksum provenance.

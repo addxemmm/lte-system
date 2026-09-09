@@ -18,9 +18,9 @@ The machine-readable contract is [`api/openapi.yaml`](api/openapi.yaml). v3 expo
 
 ### 同容器管理台与端口 / Same-container console and ports
 
-管理台默认监听 `:8080`，独立 API 默认不监听。`ui_listen_addr` / `LTE_UI_LISTEN` 控制管理台；`listen_addr` / `LTE_LISTEN` 控制可选 API；`expose_api` / `LTE_EXPOSE_API` 决定是否创建 API socket。环境开关仅接受 `true` 或 `false`。双端口启用时端口号必须不同。测试使用 bridge 基础文件加 `docker-compose.test.yml`，同时发布 8080/8081，运行版本仍为 **2.1**。
+管理台默认监听 `:18081`，独立 API 默认不监听。`ui_listen_addr` / `LTE_UI_LISTEN` 控制管理台；`listen_addr` / `LTE_LISTEN` 控制可选 API；`expose_api` / `LTE_EXPOSE_API` 决定是否创建 API socket。环境开关仅接受 `true` 或 `false`。双端口启用时端口号必须不同。测试使用 bridge 基础文件加 `docker-compose.test.yml`，同时发布 18081/8081，运行版本仍为 **2.1**。
 
-The console listens on `:8080` by default; the independent API socket is disabled. Listener addresses and exposure are startup configuration, not browser preferences. Use the bridge compose file plus the test override to publish both ports. Disabling the independent API does not disable the console's authenticated management gateway.
+The console listens on `:18081` by default; the independent API socket is disabled. Listener addresses and exposure are startup configuration, not browser preferences. Use the bridge compose file plus the test override to publish both ports. Disabling the independent API does not disable the console's authenticated management gateway.
 
 - 管理台同源 `/api/v1` 网关只允许：GET `cell`, `network`, `ues`, `ues/{imsi}`, `subscribers`, `subscribers/{imsi}`, `profile`, `health`, `diagnostics/connectivity`；POST/DELETE `cell`。其余端点不通过管理台转发。
 - The same-origin gateway forwards only the management operations listed above. The complete Postman collection targets the optional independent API, not the restricted gateway.

@@ -21,7 +21,7 @@ Remove or replace any older `lte-system` collection in Postman before importing.
 
 ## 变量 Variables
 
-**管理台端口更新 / Console port update:** 默认只启用前端 8080 和受限同源管理网关。完整集合继续使用 `http://HOST:8081`，需在启动时设置 `LTE_EXPOSE_API=true` 并发布 8081（测试 compose override）。只读集合的六个 GET 也可使用前端 origin `http://HOST:8080`；完整集合不适用此前端网关。Token 规则在两处相同。/ The full collection requires the explicitly enabled independent API on port 8081. The six-GET read-only collection also works with the console origin on port 8080. Both use the same token rules. See [console deployment](../docs/WEB_UI.md).
+**管理台端口更新 / Console port update:** 默认只启用前端 18081 和受限同源管理网关。完整集合继续使用 `http://HOST:8081`，需在启动时设置 `LTE_EXPOSE_API=true` 并发布 8081（测试 compose override）。只读集合的六个 GET 也可使用前端 origin `http://HOST:18081`；完整集合不适用此前端网关。Token 规则在两处相同。/ The full collection requires the explicitly enabled independent API on port 8081. The six-GET read-only collection also works with the console origin on port 18081. Both use the same token rules. See [console deployment](../docs/WEB_UI.md).
 
 - `base_url` 默认是不可路由占位符 `http://HOST:8081`；改成 API origin，不要附加 `/api/v1`。
 - 服务端启用固定 Token 鉴权时，在 Postman 的 collection 或 environment scope 填写 `token`；开放模式留空。仓库默认值为空，不填写或提交真实秘密。

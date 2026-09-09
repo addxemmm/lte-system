@@ -25,7 +25,7 @@ services:
     environment:
       LTE_CONFIG: /app/configs/app.yaml
       # The Web UI and its same-origin management gateway are the default surface.
-      LTE_UI_LISTEN: ${LTE_UI_LISTEN:-0.0.0.0:8080}
+      LTE_UI_LISTEN: ${LTE_UI_LISTEN:-0.0.0.0:18081}
       # Strict boolean. Set true only for direct legacy/test API access.
       LTE_EXPOSE_API: "${LTE_EXPOSE_API:-false}"
       LTE_LISTEN: ${LTE_LISTEN:-0.0.0.0:8081}

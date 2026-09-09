@@ -7,6 +7,7 @@
 | [API.md](API.md) | **v1 标准接口**完整参考（包络/状态码/错误码/多 UE 与订户管理） / Complete reference for the **v1 standard API** (envelope/status codes/error codes/multi-UE and subscriber management) |
 | [api/openapi.yaml](api/openapi.yaml) | v1 的 OpenAPI 3.0 机器契约 / Machine-readable contract for v1 in OpenAPI 3.0 |
 | [DEPLOY.md](DEPLOY.md) | 服务器部署、升级、备份、排障 / Server deploy, upgrade, backup, and troubleshooting |
+| [PORTS_2026-09-09.md](PORTS_2026-09-09.md) | 当前端口：LTE 前端 18081、后端 8081，以及正式镜像迁移验收 / Current LTE UI 18081/API 8081 and formal-image migration acceptance |
 | [WEB_UI.md](WEB_UI.md) | 中英管理台、可选 API 端口、鉴权与停止操作 / Bilingual console, optional API, authentication and shutdown |
 | [WEB_UI_RELEASE_2026-09-09.md](WEB_UI_RELEASE_2026-09-09.md) | 2.1 管理台验收与按要求停机记录 / 2.1 console acceptance and requested shutdown |
 | [RELEASING.md](RELEASING.md) | 已实现的版本、GitHub Release 与 Docker Hub 自动发布操作 / Implemented versioning, GitHub Releases and Docker Hub automation |

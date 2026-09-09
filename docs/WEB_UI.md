@@ -12,14 +12,14 @@ The version remains **2.1**. This page describes the general deployment contract
 
 | 场景 Scenario | Web 控制台 / Console | 独立完整 API / Direct full API | 说明 Notes |
 |---|---|---|---|
-| bridge 默认 / default | `HOST:${LTE_UI_PORT:-8080}` → `:8080` | 不监听、不发布 / not listening or published | 推荐部署；只发布控制台口 / recommended |
-| bridge 测试 / test | `HOST:${LTE_UI_PORT:-8080}` → `:8080` | `HOST:${LTE_API_PORT:-8081}` → `:8081` | `docker-compose.test.yml` 显式启用 |
-| host 默认 / default | `${LTE_UI_LISTEN:-0.0.0.0:8080}` | 不监听 / not listening | host 网络没有 `ports` 隔离层 |
+| bridge 默认 / default | `HOST:${LTE_UI_PORT:-18081}` → `:18081` | 不监听、不发布 / not listening or published | 推荐部署；只发布控制台口 / recommended |
+| bridge 测试 / test | `HOST:${LTE_UI_PORT:-18081}` → `:18081` | `HOST:${LTE_API_PORT:-8081}` → `:8081` | `docker-compose.test.yml` 显式启用 |
+| host 默认 / default | `${LTE_UI_LISTEN:-0.0.0.0:18081}` | 不监听 / not listening | host 网络没有 `ports` 隔离层 |
 | host 测试 / test | `LTE_UI_LISTEN` | `LTE_LISTEN`（默认 `0.0.0.0:8081`） | 设 `LTE_EXPOSE_API=true`；不使用 `ports` |
 
-`ui_listen_addr`（默认 `:8080`）始终启动控制台；`listen_addr`（默认 `:8081`）只定义独立完整 API 地址，只有 `expose_api: true` 才绑定。`LTE_UI_LISTEN`、`LTE_LISTEN` 分别覆盖地址；`LTE_EXPOSE_API` 只接受不区分大小写的 `true` 或 `false`，其它非空值会令服务启动失败。
+`ui_listen_addr`（默认 `:18081`）始终启动控制台；`listen_addr`（默认 `:8081`）只定义独立完整 API 地址，只有 `expose_api: true` 才绑定。`LTE_UI_LISTEN`、`LTE_LISTEN` 分别覆盖地址；`LTE_EXPOSE_API` 只接受不区分大小写的 `true` 或 `false`，其它非空值会令服务启动失败。
 
-`ui_listen_addr` (default `:8080`) always starts the console. `listen_addr` (default `:8081`) defines the direct full-API address and binds only when `expose_api: true`. `LTE_UI_LISTEN` and `LTE_LISTEN` override the addresses. `LTE_EXPOSE_API` strictly accepts case-insensitive `true` or `false`; any other nonempty value fails startup.
+`ui_listen_addr` (default `:18081`) always starts the console. `listen_addr` (default `:8081`) defines the direct full-API address and binds only when `expose_api: true`. `LTE_UI_LISTEN` and `LTE_LISTEN` override the addresses. `LTE_EXPOSE_API` strictly accepts case-insensitive `true` or `false`; any other nonempty value fails startup.
 
 只有在 `expose_api=true` 时，控制台与独立 API 端口相同才被拒绝。bridge 测试中 `LTE_UI_PORT` 与 `LTE_API_PORT` 也必须不同，否则 Docker 无法同时发布两个宿主端口。`EXPOSE` 只是镜像元数据，不是防火墙；实际边界由应用是否绑定监听器、Compose `ports` 和宿主防火墙共同决定。
 
@@ -90,7 +90,7 @@ Default bridge (console port only):
 COMPOSE=deploy/docker/docker-compose.bridge.yml
 docker compose -p "$PROJECT" -f "$COMPOSE" config --quiet
 docker compose -p "$PROJECT" -f "$COMPOSE" up -d --no-build --force-recreate
-curl -fsS http://127.0.0.1:${LTE_UI_PORT:-8080}/ui-config.json
+curl -fsS http://127.0.0.1:${LTE_UI_PORT:-18081}/ui-config.json
 docker compose -p "$PROJECT" -f "$COMPOSE" stop
 ```
 
@@ -101,10 +101,10 @@ Bridge dual-port test (include both files in this order):
 ```bash
 COMPOSE_BASE=deploy/docker/docker-compose.bridge.yml
 COMPOSE_TEST=deploy/docker/docker-compose.test.yml
-test "${LTE_UI_PORT:-8080}" != "${LTE_API_PORT:-8081}"
+test "${LTE_UI_PORT:-18081}" != "${LTE_API_PORT:-8081}"
 docker compose -p "$PROJECT" -f "$COMPOSE_BASE" -f "$COMPOSE_TEST" config --quiet
 docker compose -p "$PROJECT" -f "$COMPOSE_BASE" -f "$COMPOSE_TEST" up -d --no-build --force-recreate
-curl -fsS http://127.0.0.1:${LTE_UI_PORT:-8080}/ui-config.json
+curl -fsS http://127.0.0.1:${LTE_UI_PORT:-18081}/ui-config.json
 BASE=http://127.0.0.1:${LTE_API_PORT:-8081} bash scripts/smoke.sh
 docker compose -p "$PROJECT" -f "$COMPOSE_BASE" -f "$COMPOSE_TEST" stop
 ```
@@ -142,7 +142,7 @@ Use this override only with a **confirmed, already seeded deployment that keeps 
 docker inspect -f '{{.Name}} {{.Id}} {{.Config.Image}} {{.State.Status}}' ltesystem
 docker stop --timeout 210 ltesystem
 docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}}' ltesystem
-ss -ltn '( sport = :8080 or sport = :8081 )'
+ss -ltn '( sport = :18081 or sport = :8081 )'
 ```
 
 如使用自定义名称/端口，请先调整检查命令。不要用共享 Compose 项目的 `down`、`--remove-orphans` 或 `down -v` 代替定向停止；这些操作可能影响 GSM 或数据卷。停止操作不会上传镜像、创建 Release 或自动恢复服务。需要恢复时，应另行确认原配置和数据挂载，再执行已核对容器的启动操作。

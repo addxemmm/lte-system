@@ -92,7 +92,7 @@ type SimDefaults struct {
 // Default returns sane defaults matching legacy behavior + srsRAN_4G paths.
 func Default() Config {
 	return Config{
-		UIListenAddr:        ":8080",
+		UIListenAddr:        ":18081",
 		ListenAddr:          ":8081",
 		DataDir:             "/data",
 		SrsEPCBin:           "srsepc",

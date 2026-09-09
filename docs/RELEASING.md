@@ -67,7 +67,7 @@ VERSION is embedded into the Go binary. Git tags are v + VERSION; Docker Hub rec
   **Isolation:** separate jobs; no registry secrets in build; scoped publication permissions; pinned actions and no persisted checkout credentials.
 - **完整构建**：GitHub 隔离 Linux runner，完整 Dockerfile，不使用服务器旧镜像增量升级。Go/vet/race、Python/JS、shell、FPGA 哈希，以及 Dockerfile 七项 CTest 全部作为门禁。当前仅 linux/amd64。
   **Build:** isolated full source build with all CPU/contract/firmware checks and seven CTests, initially linux/amd64 only.
-- **镜像 smoke**：无 USB/特权/宿主端口，network none、只读根目录、临时 data；跳过硬件入口直接启动 Go，核对 8080、默认 8081 关闭、启用后共享鉴权、元数据、版本标签及对应源码。
+- **镜像 smoke**：无 USB/特权/宿主端口，network none、只读根目录、临时 data；跳过硬件入口直接启动 Go，核对 18081、默认 8081 关闭、启用后共享鉴权、元数据、版本标签及对应源码。
   **Smoke:** hardware-free, unprivileged, no host ports, read-only root and temporary data, direct Go entrypoint and listener/auth/identity/source checks.
 - **同一产物**：测试后的 docker save 压缩产物跨 job 传递，校验归档 SHA-256 和 image ID 后才 push；没有第二次构建。
   **Artifact identity:** transfer the exact tested archive; verify checksum/image ID before pushing, with no second build.

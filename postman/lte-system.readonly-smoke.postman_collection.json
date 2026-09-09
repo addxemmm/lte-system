@@ -11,7 +11,7 @@
     {
       "key": "base_url",
       "value": "http://HOST:8081",
-      "description": "Use enabled direct API :8081 or console :8080 for these six GET checks; no /api/v1 suffix / 可用前端 8080 或已启用的 API 8081"
+      "description": "Use enabled direct API :8081 or console :18081 for these six GET checks; no /api/v1 suffix / 可用前端 18081 或已启用的 API 8081"
     },
     {
       "key": "token",

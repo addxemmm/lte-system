@@ -20,14 +20,14 @@ services:
     sysctls:
       net.ipv4.ip_forward: "1"
     ports:
-      - "${LTE_UI_PORT:-8080}:8080"
+      - "${LTE_UI_PORT:-18081}:18081"
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - lte-data:/data
     environment:
       LTE_CONFIG: /app/configs/app.yaml
       # The Web UI and its limited same-origin management gateway use this port.
-      LTE_UI_LISTEN: 0.0.0.0:8080
+      LTE_UI_LISTEN: 0.0.0.0:18081
       # Strict boolean; the test override changes this to true and publishes 8081.
       LTE_EXPOSE_API: "false"
       LTE_LISTEN: 0.0.0.0:8081
