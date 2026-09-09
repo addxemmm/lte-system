@@ -64,8 +64,10 @@ def main():
                 for port in (8080, 8081):
                     status, body = http(name, "/api/v1/cell", port=port, auth=True)
                     assert status == 200 and json.loads(body)["code"] == 0
-            processes = docker("top", name, "-eo", "comm").stdout.splitlines()[1:]
-            assert processes and all(p.strip() == "lte-system" for p in processes), "unexpected background process"
+            # Docker's daemon filters host ps output by container PID, so the
+            # PID column must remain present even when we only inspect names.
+            processes = docker("top", name, "-eo", "pid,comm").stdout.splitlines()[1:]
+            assert processes and all(p.split(maxsplit=1)[1].strip() == "lte-system" for p in processes), "unexpected background process"
         finally:
             docker("rm", "-f", name, check=False)
     docker("run", "--rm", "--network", "none", "--entrypoint", "test", image,

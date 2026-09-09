@@ -92,12 +92,6 @@ RUN embedded_version="$(tr -d '[:space:]' < VERSION)" \
 
 # ---------- stage 3: runtime ----------
 FROM ubuntu:22.04
-ARG OCI_VERSION
-ARG OCI_REVISION
-ARG OCI_SOURCE
-LABEL org.opencontainers.image.version="${OCI_VERSION}" \
-      org.opencontainers.image.revision="${OCI_REVISION}" \
-      org.opencontainers.image.source="${OCI_SOURCE}"
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-program-options1.74.0 libconfig++9v5 libfftw3-single3 \
@@ -166,3 +160,12 @@ ENV LTE_CONFIG=/app/configs/app.yaml \
 # image metadata, not a firewall and not a host publishing rule.
 EXPOSE 8080
 ENTRYPOINT ["/entrypoint.sh"]
+
+# Keep source-specific metadata last so a new revision does not invalidate
+# expensive apt/pip/runtime layers on every release.
+ARG OCI_VERSION
+ARG OCI_REVISION
+ARG OCI_SOURCE
+LABEL org.opencontainers.image.version="${OCI_VERSION}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.source="${OCI_SOURCE}"

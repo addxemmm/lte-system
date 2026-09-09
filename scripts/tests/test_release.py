@@ -145,6 +145,8 @@ class ReleaseTests(unittest.TestCase):
             self.assertNotIn(forbidden, smoke)
         self.assertIn('"--network", "none"', smoke)
         self.assertIn('"--entrypoint", "/usr/local/bin/lte-system"', smoke)
+        self.assertIn('"top", name, "-eo", "pid,comm"', smoke)
+        self.assertNotIn('"top", name, "-eo", "comm"', smoke)
 
 
 if __name__ == "__main__":
