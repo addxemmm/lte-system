@@ -40,13 +40,7 @@ def api_write(path, payload, method="POST"):
 
 def same_identity(expected, actual):
     return all(expected.get(key) == actual.get(key) for key in
-               ("version", "tag", "revision", "image", "source_tag", "platform", "visibility", "source"))
-
-
-def matching_digest(first, second):
-    if first and second and first != second:
-        raise ValueError("version and SHA image tags point to different digests")
-    return first or second
+               ("version", "tag", "revision", "image", "platform", "visibility", "source"))
 
 
 def labels_match(labels, data):
@@ -133,8 +127,7 @@ def main():
     release = found[0] if found else None
     if release and release.get("target_commitish") != data["revision"]:
         raise ValueError("existing release does not name this exact source SHA")
-    first, second = registry.digest(data["version"]), registry.digest(data["source_tag"])
-    digest = matching_digest(first, second)
+    digest = registry.digest(data["version"])
     image = os.environ["TEST_IMAGE"]
     bundle_name = "build-evidence-" + data["revision"] + ".zip"
 
@@ -176,7 +169,7 @@ def main():
     if image_id != (out / "tested-image-id.txt").read_text().strip():
         raise ValueError("image is not the exact smoke-tested image")
     if release and not release["draft"]:
-        if mode != "resume" or not ref or not first or first != second:
+        if mode != "resume" or not ref or not digest:
             raise ValueError("published release is immutable to this workflow")
         with tempfile.TemporaryDirectory() as download:
             run("gh", "release", "download", tag, "--repo", repo, "--pattern", "release.json", "--dir", download)
@@ -215,21 +208,21 @@ def main():
 
     # A draft with original build evidence exists before the first registry mutation.
     registry.public()
-    for image_tag in (data["version"], data["source_tag"]):
-        existing = registry.digest(image_tag)
-        if existing:
-            if mode != "resume" or existing != digest:
-                raise ValueError("refusing to overwrite an existing image tag")
-        else:
-            destination = data["image"] + ":" + image_tag
-            run("docker", "tag", image, destination)
-            run("docker", "push", destination)
-            uploaded = registry.digest(image_tag)
-            if not uploaded or (digest and uploaded != digest):
-                raise ValueError("uploaded image digest mismatch")
-            digest = uploaded
-            # Digest lives in the registry; original build evidence stays immutable.
-    assert digest and registry.digest(data["version"]) == registry.digest(data["source_tag"]) == digest
+    image_tag = data["version"]
+    existing = registry.digest(image_tag)
+    if existing:
+        if mode != "resume" or existing != digest:
+            raise ValueError("refusing to overwrite an existing image tag")
+    else:
+        destination = data["image"] + ":" + image_tag
+        run("docker", "tag", image, destination)
+        run("docker", "push", destination)
+        uploaded = registry.digest(image_tag)
+        if not uploaded or (digest and uploaded != digest):
+            raise ValueError("uploaded image digest mismatch")
+        digest = uploaded
+        # Digest lives in the registry; original build evidence stays immutable.
+    assert digest and registry.digest(data["version"]) == digest
     # No login config in this subprocess: confirm the PUBLIC image is retrievable.
     with tempfile.TemporaryDirectory() as empty_config:
         run("docker", "--config", empty_config, "pull", data["image"] + "@" + digest)

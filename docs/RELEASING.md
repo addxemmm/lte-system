@@ -35,8 +35,8 @@ gh workflow run release.yml --repo addxemmm/lte-system --ref master -f mode=buil
 # This publishes a PUBLIC Docker image and creates a GitHub Release.
 gh workflow run release.yml --repo addxemmm/lte-system --ref master -f mode=publish
 gh run list --repo addxemmm/lte-system --workflow release.yml
-# Verify the completed 2.1 release without rebuilding or modifying it:
-gh workflow run release.yml --repo addxemmm/lte-system --ref v2.1 -f mode=resume
+# Verify legacy 2.1 after its SHA alias migration (read-only by default):
+gh workflow run cleanup-legacy-21-tag.yml --repo addxemmm/lte-system --ref master -f delete_alias=false
 ```
 
 普通 master push 只运行 `ci.yml`。推送符合版本规则的 `v*` tag 会自动运行 publish；请将创建版本 tag 视为公开镜像发布操作。所有 release 执行串行，不取消正在上传的任务。
@@ -45,9 +45,9 @@ Ordinary master pushes run CI only. Pushing a valid v-prefixed version tag autom
 
 ## 版本迭代 / Version iteration
 
-`VERSION` 通过 Go embed 成为运行元数据的单一来源。发布 Git tag 必须等于 `v` + VERSION；镜像标签为 VERSION 和 `sha-<完整commit>`，两者指向同一 digest。2.1 是唯一两段历史例外；以后使用三段版本，如 `2.1.1`、`2.2.0`，预发布支持 `2.2.0-rc.1`（也支持 alpha/beta）。不覆盖正式标签，不自动更新 latest 或次版本别名；历史 2.1 不是将来可移动的 minor alias。
+`VERSION` 通过 Go embed 成为运行元数据的单一来源。发布 Git tag 必须等于 `v` + VERSION；**Docker Hub 每次发版只创建 VERSION 一个标签**，不创建 `sha-<commit>` 或 latest。完整 commit 继续记录在 OCI revision、Release 元数据及证据包中，镜像内容用 digest 校验。2.1 是唯一两段历史例外；以后使用三段版本，如 `2.1.1`、`2.2.0`，预发布支持 `2.2.0-rc.1`（也支持 alpha/beta）。不覆盖正式标签；历史 2.1 不是将来可移动的 minor alias。新版本不会自动删除旧版本标签。
 
-VERSION is embedded into the Go binary. Git tags are v + VERSION; Docker gets the version and full-SHA tags pointing at one digest. Legacy 2.1 is the only two-component exception. Future releases use three-component versions with optional numbered rc/alpha/beta prereleases. Formal tags are never overwritten; latest/minor aliases are not automatically moved, and historical 2.1 remains fixed.
+VERSION is embedded into the Go binary. Git tags are v + VERSION; Docker Hub receives **one version tag per release**, without SHA or latest aliases. Full commit identity remains in OCI labels, Release metadata and evidence, with digest verification. Legacy 2.1 is the only two-component exception. Future versions use three components and optional numbered rc/alpha/beta prereleases. Published version tags are never overwritten or automatically removed when a new version is released.
 
 每次迭代 / Each iteration:
 1. 修改 VERSION，并新增 `docs/releases/<VERSION>.md`（含 `## 中文` 和 `## English`），更新 CHANGELOG。
@@ -71,16 +71,22 @@ VERSION is embedded into the Go binary. Git tags are v + VERSION; Docker gets th
   **Smoke:** hardware-free, unprivileged, no host ports, read-only root and temporary data, direct Go entrypoint and listener/auth/identity/source checks.
 - **同一产物**：测试后的 docker save 压缩产物跨 job 传递，校验归档 SHA-256 和 image ID 后才 push；没有第二次构建。
   **Artifact identity:** transfer the exact tested archive; verify checksum/image ID before pushing, with no second build.
-- **发布顺序**：先创建草稿并上传构建证据，再推 version/SHA 标签；每次记录远端 digest，两标签一致且匿名拉取可用后才完成 Release。
-  **Order:** draft and evidence first, then image tags, matching digests and anonymous pull before completing the Release.
+- **发布顺序**：先创建草稿并上传构建证据，再推唯一版本标签；记录远端 digest，版本标签指向准确镜像且匿名拉取可用后才完成 Release。
+  **Order:** draft and evidence first, then the single version tag, verified digest and anonymous pull before completing the Release.
 - **不自动部署**：整个流程不 SSH 到服务器，不启动小区、不改 GSM、不删除现场镜像或数据。
   **No deployment:** no server SSH, cell startup, GSM changes or on-server cleanup.
 
 ## 失败恢复 / Failure recovery
 
-构建/测试失败：没有镜像发布，修复后重新运行。已出现 Hub 版本/SHA 标签：不要再次 publish 覆盖，选择 `resume`，执行分支选原版本 tag；若尚无 tag，则 master 必须仍为原 commit。恢复要求原构建附件完整、校验和覆盖完整、两镜像标签不冲突、OCI 与版本/SHA匹配，且远端 image ID 等于原 smoke 结果。已有完整 Release 只核对，不修改。
+构建/测试失败：没有镜像发布，修复后重新运行。已出现 Hub 版本标签：不要再次 publish 覆盖，选择 `resume`，执行分支选原版本 tag；若尚无 tag，则 master 必须仍为原 commit。恢复要求原构建附件完整、校验和覆盖完整、版本 digest 与记录一致、OCI 与版本/commit 匹配，且远端 image ID 等于原 smoke 结果。已有完整 Release 只核对，不修改。历史证据中的 `source_tag` 只保留为旧记录，新发布不生成该字段或别名。
 
-Before-upload build/test failures can be fixed and retried. If a registry release tag exists, use resume at the original tag/commit instead of overwriting. Resume requires complete original evidence/checksums, consistent tags, matching labels and the exact tested image ID. A completed matching Release is checked without mutation.
+Before-upload build/test failures can be fixed and retried. If a registry version tag exists, use resume at the original tag/commit instead of overwriting. Resume requires original evidence/checksums, a consistent version digest, matching OCI labels and the exact tested image ID. A completed matching Release is checked without mutation. Legacy source_tag metadata is historical only; new publication creates neither that field nor an alias.
+
+### 2.1 历史标签迁移 / Legacy 2.1 tag migration
+
+`v2.1` 中的旧脚本仍要求两个标签，不移动 Git tag 或覆盖已发布镜像来更新它。删除 SHA 别名后，旧 `v2.1` 的 `resume` 会拒绝缺失的别名；请用 master 的 `cleanup-legacy-21-tag` 工作流只读核对这个已完成版本。该工作流默认 `delete_alias=false`，只允许核对固定的 2.1 Release、commit 和 digest；显式 true 时仅删除准确的旧 SHA 别名，保留 2.1，不删除共享 manifest。若 Token 缺少 Delete 权限，操作会失败，需在 Hub 手动删除该别名或另行配置有删除权限的凭据；不要删除整个镜像。未来版本使用新版单标签 resume。
+
+The immutable v2.1 source still contains the old two-tag workflow. After alias removal its old resume rejects the missing alias; use the master cleanup-legacy-21-tag workflow's default read-only verification for this completed release. It pins the original release/commit/digest; explicit delete_alias=true removes only that exact alias, never the retained version tag or shared manifest. A token without Delete permission causes the operation to fail; remove the alias in Hub or separately provision suitable credentials. Future releases use the updated single-tag resume.
 
 若证据包已上传但首个镜像 push 尚未完成，resume 会从原构建 run 下载同一 tested-image 归档，校验后继续；该传递归档仅保留三天，过期后需人工恢复原产物，不重新构建覆盖。只有部分附件、缺失原始证据或 digest 冲突时，会停止并要求人工核对，不通过删除/覆盖版本来掩盖失败。发布完成前 Release 保持 draft。同一 repo 的工作流并发锁不约束外部手工 docker push；应限制外部写入并保护 master/版本 tag，不宣称这些 GitHub/Hub 账户规则已自动配置。
 

@@ -89,9 +89,8 @@ def main():
     print("Docker Hub login: OK; granted scopes: pull,push; repository visibility: public")
     # Verification does not upload even a test blob.
     if os.environ.get("RELEASE_MODE") == "publish":
-        for tag in (data["version"], data["source_tag"]):
-            if registry.digest(tag):
-                raise ValueError("release image tag already exists; use verified resume, never overwrite")
+        if registry.digest(data["version"]):
+            raise ValueError("release image tag already exists; use verified resume, never overwrite")
     print("Registry preflight passed; no image has been uploaded by this check")
 
 

@@ -1,5 +1,11 @@
 # 更新日志 Changelog
 
+## [2.1] Docker Hub 单版本标签 - 2026-09-09 / Single version-tag policy
+
+- 按用户要求，后续发布仅创建版本号标签，不生成 sha-commit/latest 别名；保留 OCI revision、Git tag、Release commit/digest 和校验和溯源。 / Publish only a version tag, without SHA/latest aliases; retain OCI revision, Git tag, Release commit/digest and checksum provenance.
+- 更新预检、发布、恢复和回归，历史 source_tag 字段不再要求对应 Hub 标签；不覆盖已发布版本或改动现有 2.1 镜像。 / Update preflight, publication, resume and regression coverage; historical source_tag fields do not require registry aliases. Never overwrite a published version or rebuild the existing 2.1 image.
+- 增加仅手动执行、默认只读的旧 2.1 别名维护流程：核对固定 Release/commit/digest 后可定向删除单个 SHA 别名，禁止删除版本号或共享 manifest；权限不足时明确失败。旧 v2.1 代码不移动，迁移后核对使用新维护流程。 / Add manual, read-only-by-default legacy maintenance with pinned Release/commit/digest guards and exact alias-only deletion; never delete the version tag or shared manifest, and fail on insufficient permissions. Preserve the old v2.1 source and use the new maintenance workflow after migration.
+
 ## [2.1] 正式发布验收 - 2026-09-09 / Formal publication acceptance
 
 - 已成功生成 [v2.1 GitHub Release](https://github.com/addxemmm/lte-system/releases/tag/v2.1)，公开 Docker Hub 的 `2.1` 与完整 SHA tag 指向同一已验证镜像；源码 commit 为 `a449d7cc57e79b5497525a6e12ebec3ab6737f7e`。 / Published the formal v2.1 GitHub Release and matching public version/full-SHA image tags from the verified source commit.

@@ -23,7 +23,7 @@ def validate(version, image, ref, sha, tag_sha=None):
     if tag_sha is not None and tag_sha != sha:
         raise ValueError("existing version tag points to another commit; never move it")
     return {"version": version, "tag": tag, "revision": sha, "image": image,
-            "source_tag": "sha-" + sha, "prerelease": "-" in version,
+            "prerelease": "-" in version,
             "platform": "linux/amd64", "visibility": "public"}
 
 
@@ -55,7 +55,7 @@ def main():
     (out / "release.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     (out / "release-notes.md").write_text(body, encoding="utf-8")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-        for key in ("version", "tag", "revision", "source_tag"):
+        for key in ("version", "tag", "revision"):
             output.write(f"{key}={data[key]}\n")
     print("Validated release identity:", data["tag"], sha, data["image"])
 

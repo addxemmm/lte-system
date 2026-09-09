@@ -1,0 +1,31 @@
+name: cleanup-legacy-21-tag
+on:
+  workflow_dispatch:
+    inputs:
+      delete_alias:
+        description: 'Delete only the original 2.1 SHA alias; false verifies without changes'
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: lte-dockerhub-release
+  cancel-in-progress: false
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify original release and retain version tag; optionally remove legacy alias
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DELETE_LEGACY_ALIAS: ${{ inputs.delete_alias }}
+        run: python3 scripts/cleanup_legacy_21_tag.py

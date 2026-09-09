@@ -80,16 +80,208 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     instance.public()
 
-    def test_digest_and_identity_resume_guards(self):
-        a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
-        self.assertEqual(publish.matching_digest(None, a), a)
-        self.assertEqual(publish.matching_digest(a, a), a)
-        with self.assertRaises(ValueError):
-            publish.matching_digest(a, b)
+    def test_identity_resume_guards_ignore_only_legacy_source_tag(self):
         original = self.valid()
+        self.assertNotIn("source_tag", original)
         self.assertTrue(publish.same_identity(original, dict(original)))
+        historical = dict(original, source_tag="sha-" + original["revision"])
+        self.assertTrue(publish.same_identity(original, historical))
+        self.assertTrue(publish.same_identity(historical, original))
         self.assertFalse(publish.same_identity(original, dict(original, revision="b" * 40)))
         self.assertFalse(publish.labels_match({}, dict(original, source="https://github.com/owner/repo")))
+
+    def test_registry_preflight_checks_only_version_tag(self):
+        calls = []
+
+        class FakeRegistry:
+            def __init__(self, image):
+                self.image = image
+
+            def public(self):
+                pass
+
+            def digest(self, tag):
+                calls.append(tag)
+                return None
+
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            data = dict(self.valid(version="2.1.1"), source_tag="sha-" + "a" * 40)
+            (out / "release.json").write_text(json.dumps(data), encoding="utf-8")
+            with patch.dict(os.environ, {"RELEASE_OUT": str(out), "RELEASE_MODE": "publish"}), \
+                    patch.object(registry, "Registry", FakeRegistry), contextlib.redirect_stdout(io.StringIO()):
+                registry.main()
+        self.assertEqual(calls, ["2.1.1"])
+
+    def _release_data(self):
+        return dict(self.valid(version="2.1.1"),
+                    source="https://github.com/owner/repo",
+                    build_url="https://github.com/owner/repo/actions/runs/123")
+
+    def _write_release_evidence(self, out, data):
+        (out / "release.json").write_text(json.dumps(data), encoding="utf-8")
+        (out / "release-notes.md").write_text("## 中文\n完成\n\n## English\nDone\n", encoding="utf-8")
+        (out / "tested-image-id.txt").write_text("sha256:tested-image\n", encoding="utf-8")
+        for name in publish.EVIDENCE_FILES - {"SHA256SUMS", "release.json", "release-notes.md", "tested-image-id.txt"}:
+            (out / name).write_text("evidence-" + name, encoding="utf-8")
+
+    def test_publish_uses_only_version_tag(self):
+        data = self._release_data()
+        digest = "sha256:" + "d" * 64
+        registry_tags, commands = [], []
+        state = {"digest": None, "tag_created": False}
+
+        class FakeRegistry:
+            def __init__(self, image):
+                self.image = image
+
+            def public(self):
+                pass
+
+            def digest(self, tag):
+                registry_tags.append(tag)
+                if tag != data["version"]:
+                    raise AssertionError("publisher inspected a non-version tag")
+                return state["digest"]
+
+        labels = {"org.opencontainers.image." + key: data[key]
+                  for key in ("version", "revision", "source")}
+
+        def fake_run(*args):
+            commands.append(args)
+            if args[:4] == ("gh", "api", "--paginate", "--slurp"):
+                return json.dumps([[]])
+            if args[:2] == ("docker", "inspect") and args[-1] == "{{json .Config.Labels}}":
+                return json.dumps(labels)
+            if args[:2] == ("docker", "inspect") and args[-1] == "{{.Id}}":
+                return "sha256:tested-image"
+            if args[:2] == ("docker", "tag"):
+                self.assertEqual(args[-1], data["image"] + ":" + data["version"])
+            if args[:2] == ("docker", "push"):
+                self.assertEqual(args[-1], data["image"] + ":" + data["version"])
+                state["digest"] = digest
+            if args[:3] == ("gh", "api", "repos/owner/repo/git/refs"):
+                state["tag_created"] = True
+            return ""
+
+        def fake_api(path, missing=False):
+            if "/git/ref/tags/" in path:
+                if not state["tag_created"]:
+                    return None
+                return {"object": {"type": "commit", "sha": data["revision"]}}
+            if path == "repos/owner/repo/releases/1":
+                return {"id": 1, "draft": True, "target_commitish": data["revision"], "assets": []}
+            raise AssertionError("unexpected API read: " + path)
+
+        def fake_api_write(path, payload, method="POST"):
+            if path == "repos/owner/repo/releases" and method == "POST":
+                return {"id": 1, "draft": True, "target_commitish": data["revision"], "assets": []}
+            if path == "repos/owner/repo/releases/1" and method == "PATCH":
+                return {"id": 1, "draft": False}
+            raise AssertionError("unexpected API write: " + path)
+
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            out.mkdir()
+            self._write_release_evidence(out, data)
+            env = {"GITHUB_ACTIONS": "true", "RELEASE_MODE": "publish", "RELEASE_OUT": str(out),
+                   "GITHUB_REPOSITORY": "owner/repo", "TEST_IMAGE": "lte-release-test:123",
+                   "GITHUB_STEP_SUMMARY": str(Path(folder) / "summary.md")}
+            with patch.dict(os.environ, env), patch.object(publish, "Registry", FakeRegistry), \
+                    patch.object(publish, "run", side_effect=fake_run), \
+                    patch.object(publish, "api", side_effect=fake_api), \
+                    patch.object(publish, "api_write", side_effect=fake_api_write), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                publish.main()
+            final = json.loads((out / "release.json").read_text())
+
+        self.assertEqual(set(registry_tags), {data["version"]})
+        self.assertEqual(final["digest"], digest)
+        self.assertNotIn("source_tag", final)
+        self.assertEqual(len([args for args in commands if args[:2] == ("docker", "push")]), 1)
+
+    def _completed_resume(self, published_digest):
+        data = self._release_data()
+        digest = "sha256:" + "d" * 64
+        historical = dict(data, source_tag="sha-" + data["revision"])
+        registry_tags, commands = [], []
+
+        class FakeRegistry:
+            def __init__(self, image):
+                self.image = image
+
+            def public(self):
+                pass
+
+            def digest(self, tag):
+                registry_tags.append(tag)
+                if tag != data["version"]:
+                    raise AssertionError("resume inspected a non-version tag")
+                return digest
+
+        labels = {"org.opencontainers.image." + key: data[key]
+                  for key in ("version", "revision", "source")}
+        bundle_name = "build-evidence-" + data["revision"] + ".zip"
+        release = {"id": 7, "tag_name": data["tag"], "target_commitish": data["revision"],
+                   "draft": False, "assets": [{"name": bundle_name}, {"name": "release.json"}]}
+
+        def fake_run(*args):
+            commands.append(args)
+            if args[:4] == ("gh", "api", "--paginate", "--slurp"):
+                return json.dumps([[release]])
+            if args[:3] == ("gh", "release", "download"):
+                pattern = args[args.index("--pattern") + 1]
+                if pattern == "release.json":
+                    target = Path(args[args.index("--dir") + 1]) / pattern
+                    target.write_text(json.dumps(dict(historical, digest=published_digest)), encoding="utf-8")
+                return ""
+            if args[:2] == ("docker", "inspect") and args[-1] == "{{json .Config.Labels}}":
+                return json.dumps(labels)
+            if args[:2] == ("docker", "inspect") and args[-1] == "{{.Id}}":
+                return "sha256:tested-image"
+            return ""
+
+        def fake_extract(bundle, out):
+            (out / "release.json").write_text(json.dumps(historical), encoding="utf-8")
+
+        def fake_api(path, missing=False):
+            if "/git/ref/tags/" in path:
+                return {"object": {"type": "commit", "sha": data["revision"]}}
+            raise AssertionError("unexpected API read: " + path)
+
+        error = None
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "out"
+            out.mkdir()
+            self._write_release_evidence(out, data)
+            env = {"GITHUB_ACTIONS": "true", "RELEASE_MODE": "resume", "RELEASE_OUT": str(out),
+                   "GITHUB_REPOSITORY": "owner/repo", "TEST_IMAGE": "lte-release-test:456",
+                   "GITHUB_STEP_SUMMARY": str(Path(folder) / "summary.md")}
+            with patch.dict(os.environ, env), patch.object(publish, "Registry", FakeRegistry), \
+                    patch.object(publish, "run", side_effect=fake_run), \
+                    patch.object(publish, "api", side_effect=fake_api), \
+                    patch.object(publish, "extract_evidence", side_effect=fake_extract), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    publish.main()
+                except ValueError as caught:
+                    error = caught
+        return error, registry_tags, commands, data
+
+    def test_completed_release_single_tag_resumes_without_sha_operations(self):
+        digest = "sha256:" + "d" * 64
+        error, registry_tags, commands, data = self._completed_resume(digest)
+        self.assertIsNone(error)
+        self.assertEqual(set(registry_tags), {data["version"]})
+        self.assertFalse(any(args[:2] == ("docker", "push") for args in commands))
+        self.assertNotIn("sha-" + data["revision"], "\n".join(" ".join(args) for args in commands))
+
+    def test_completed_release_metadata_digest_mismatch_refuses(self):
+        error, registry_tags, commands, data = self._completed_resume("sha256:" + "e" * 64)
+        self.assertIsNotNone(error)
+        self.assertIn("completed release metadata differs", str(error))
+        self.assertEqual(set(registry_tags), {data["version"]})
+        self.assertFalse(any(args[:2] == ("docker", "push") for args in commands))
 
     def test_resume_before_first_image_push_uses_original_build(self):
         data = dict(self.valid(), source="https://github.com/owner/repo", build_url="https://github.com/owner/repo/actions/runs/123")

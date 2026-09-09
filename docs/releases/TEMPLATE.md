@@ -22,7 +22,7 @@ Write the English summary, main changes, compatibility and known limitations her
 | 完整 commit / Full commit | <SHA> |
 | CI/build evidence | <URL> |
 | 镜像仓库 / Image repository | namespace/lte-system (Public; verify intended visibility) |
-| 版本与源码 tag / Version and source tags | <VERSION>, sha-<FULL-SHA> |
+| Docker Hub 唯一版本标签 / Single version tag | <VERSION> (no SHA/latest alias) |
 | 分发 digest / Distribution digest | sha256:<DIGEST>, verified remotely |
 | 平台 / Platform | linux/amd64 (only if validated) |
 | 源码/材料/校验和 / Source, materials, checksums | <ATTACHMENTS> |
